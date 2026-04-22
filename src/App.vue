@@ -10,6 +10,7 @@ import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
 import MovementView from './views/MovementView.vue'
 import RetailView from './views/RetailView.vue'
+import SettingsView from './views/SettingsView.vue'
 
 const store = useMainStore()
 
@@ -113,6 +114,7 @@ async function handleLogout() {
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
       <AccountingView v-else-if="store.view === 'accounting'" />
+      <SettingsView v-else-if="store.view === 'settings'" />
     </div>
 
     <div class="nav">

@@ -5,119 +5,158 @@ import { supabase } from '../supabase'
 
 const store = useMainStore()
 
+// --- 狀態定義 ---
 const searchClient = ref('')
 const selectedClient = ref(null)
-const selectedBranch = ref('觀塘')
-const discountRate = ref(1) 
-// 新增：收錢人
-const handledBy = ref('') 
+const selectedBranch = ref('觀塘店')
+const selectedTier = ref('無折扣') // 預設
+
+// 資料庫對應的價格欄位
+const tierMapping = {
+  '無折扣': 'price_standard',
+  '銅級(88折)': 'price_bronze',
+  '銀級(75折)': 'price_silver',
+  '金級(65折)': 'price_gold',
+  '直接58折': 'price_58',
+  '直接半折': 'price_50'
+}
 
 const searchProduct = ref('')
 const selectedCategory = ref('全部')
 const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
+const showCheckoutModal = ref(false)
 
+// 動態收款人 (從設定讀取，若無則預設 Kwan, Cat)
+const payees = computed(() => store.settings?.payees || ['kwan', 'Cat'])
+
+// --- 搜尋客戶與自動帶入等級 ---
 const clientOptions = computed(() => {
   if (!searchClient.value || selectedClient.value) return []
   const q = searchClient.value.toLowerCase()
-  return store.clients.filter(c => (c.name?.toLowerCase().includes(q)) || (c.phone?.includes(q))).slice(0, 5)
+  return store.clients.filter(c => (c.name?.toLowerCase().includes(q) || c.phone?.includes(q))).slice(0, 5)
 })
 
 function selectClient(c) {
-  selectedClient.value = c; searchClient.value = c.name
-  const tiers = { '銅級': 0.88, '銀級': 0.75, '金級': 0.65, '直接58': 0.58, '直接半折': 0.5 }
-  discountRate.value = (c.vip_tier && tiers[c.vip_tier]) ? tiers[c.vip_tier] : 1
+  selectedClient.value = c
+  searchClient.value = c.name
+  // 自動匹配對應字眼
+  if(c.vip_tier && tierMapping[c.vip_tier]) {
+    selectedTier.value = c.vip_tier
+  } else if (c.vip_tier === '銀級') {
+    selectedTier.value = '銀級(75折)'
+  } else {
+    selectedTier.value = '無折扣'
+  }
 }
-function clearClient() { selectedClient.value = null; searchClient.value = ''; discountRate.value = 1 }
 
-// 庫存防呆：確保 store.stock 存在
+// --- 產品顯示與價格抓取 ---
 const displayProducts = computed(() => {
   const stockList = store.stock || []
   let list = store.products.map(p => {
     const sItem = stockList.find(s => s.prod_name === p.name)
-    return { ...p, current_stock: sItem ? sItem.quantity : 0 }
+    // 💡 核心：根據選擇的等級，抓取 Supabase 對應的價格欄位 (若空白則回退到 retail_price)
+    const currentPriceCol = tierMapping[selectedTier.value]
+    const finalPrice = p[currentPriceCol] || p.retail_price || 0
+    
+    return { 
+      ...p, 
+      current_stock: sItem ? sItem.quantity : 0,
+      active_price: finalPrice
+    }
   })
   if (selectedCategory.value !== '全部') list = list.filter(p => p.category === selectedCategory.value)
   if (searchProduct.value) list = list.filter(p => p.name.toLowerCase().includes(searchProduct.value.toLowerCase()))
   return list
 })
 
+// --- 購物車操作 ---
 const addToCart = (product) => {
   const existing = cart.value.find(item => item.id === product.id)
   if (existing) existing.qty++ 
   else cart.value.push({ ...product, qty: 1 })
 }
+const decreaseQty = (item) => {
+  if (item.qty > 1) item.qty--
+  else cart.value = cart.value.filter(i => i.id !== item.id)
+}
 
-const clearCart = () => { cart.value = [] }
-const cartTotal = computed(() => cart.value.reduce((sum, item) => sum + (item.price * item.qty * discountRate.value), 0))
+const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
+const totalRevenue = computed(() => cart.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
+// 預估成本：若資料庫無 cost 欄位，暫以標準價 50% 估算 (符合你截圖的 50% 邏輯)
+const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((item.cost || (item.price_standard * 0.5)) * item.qty), 0))
+const netProfit = computed(() => totalRevenue.value - totalCost.value)
 
-async function handleCheckout() {
-  if (cart.value.length === 0) return alert('請先加入商品！')
-  if (!handledBy.value) return alert('請填寫負責收錢人！') // 強制填寫
-  
-  let totalCost = 0
-  cart.value.forEach(item => { totalCost += (item.cost || 0) * item.qty })
-  const finalTotal = Math.round(cartTotal.value)
+// --- 結帳處理 (由誰收款) ---
+async function finalizeCheckout(payeeName) {
+  if (!selectedClient.value) return alert('請在上方先選擇紀錄對象！')
+
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
 
-  // 寫入交易 (加入 handled_by)
+  // 1. 寫入交易紀錄
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', category: '零售收入', amount: finalTotal, profit: finalTotal - totalCost,
-    branch: selectedBranch.value, client_id: selectedClient.value?.id || null,
-    handled_by: handledBy.value, // ✅ 紀錄誰收錢
-    note: `${searchClient.value || '散客'} (${itemsStr})`
+    type: 'income', 
+    category: '零售收入', 
+    amount: totalRevenue.value, 
+    profit: netProfit.value,
+    branch: selectedBranch.value, 
+    client_id: selectedClient.value.id,
+    handled_by: payeeName, // 準確紀錄是 kwan 還是 Cat 收的錢
+    note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 更新 stock 表
+  // 2. 扣除庫存 (同步 stock 表)
   for (const item of cart.value) {
     const currentQty = item.current_stock || 0
     await supabase.from('stock').update({ quantity: currentQty - item.qty }).eq('prod_name', item.name)
   }
 
-  alert(`✅ 結帳成功！\n由 ${handledBy.value} 收取 $${finalTotal}`)
-  cart.value = []; clearClient(); handledBy.value = ''; await store.syncAll() 
+  alert(`✅ 結帳成功！\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
+  cart.value = []; selectedClient.value = null; searchClient.value = ''; showCheckoutModal.value = false;
+  await store.syncAll() 
 }
 </script>
 
 <template>
   <div class="page" style="padding-bottom: 180px;">
-    <h2 class="page-title">零售收銀 SOP</h2>
+    <h2 class="page-title">零售商品收銀</h2>
 
     <div class="glass-card">
       <div class="form-item">
-        <label>1. 負責收錢人 <span style="color:#ef4444">*</span></label>
-        <input class="modern-inp" v-model="handledBy" placeholder="例如：阿賢 / Queenie">
-      </div>
-
-      <div class="form-item" style="margin-top:15px;">
-        <label>2. 搜尋客戶以套用折扣</label>
-        <div class="search-rel">
-          <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋姓名..." @focus="selectedClient = null">
+        <label>1. 搜尋紀錄對象 <span style="color:#ef4444">*</span></label>
+        <div style="position:relative;">
+          <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="selectedClient = null">
           <div v-if="clientOptions.length > 0" class="drop-menu">
             <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)">
               {{ c.name }} <span class="tier-tag">{{ c.vip_tier || '普通' }}</span>
             </div>
           </div>
         </div>
+        <div v-if="selectedClient" class="selected-badge">✔ 已選擇: {{ selectedClient.name }}</div>
       </div>
       
       <div class="grid-2" style="margin-top:15px;">
-        <div class="form-item"><label>分店</label><select v-model="selectedBranch" class="modern-select"><option value="觀塘">觀塘</option><option value="中環">中環</option></select></div>
-        <div class="form-item"><label>折扣率</label>
-          <select v-model="discountRate" class="modern-select">
-            <option :value="1">無折扣</option><option :value="0.88">銅級(88折)</option>
-            <option :value="0.75">銀級(75折)</option><option :value="0.65">金級(65折)</option>
-            <option :value="0.58">58折</option><option :value="0.5">半折</option>
+        <div class="form-item"><label>2. 庫存分店</label>
+          <select v-model="selectedBranch" class="modern-select">
+            <option value="觀塘店">觀塘店</option><option value="中環店">中環店</option>
+          </select>
+        </div>
+        <div class="form-item"><label>3. 客戶折扣</label>
+          <select v-model="selectedTier" class="modern-select">
+            <option v-for="(col, key) in tierMapping" :key="key" :value="key">{{ key }}</option>
           </select>
         </div>
       </div>
     </div>
 
     <div class="filter-bar">
-      <input class="modern-inp" v-model="searchProduct" placeholder="🔍 搜尋商品..." style="margin-bottom:10px;">
-      <div class="tags-row">
+      <div class="search-box">
+        <span class="s-icon">🔍</span>
+        <input v-model="searchProduct" placeholder="即時搜尋商品..." class="s-inp">
+      </div>
+      <div class="tags-row" style="margin-top:15px;">
         <button v-for="cat in categories" :key="cat" class="cat-btn" :class="{active: selectedCategory === cat}" @click="selectedCategory = cat">{{ cat }}</button>
       </div>
     </div>
@@ -125,58 +164,115 @@ async function handleCheckout() {
     <div v-for="p in displayProducts" :key="p.id" class="p-card">
       <div class="p-info">
         <div class="p-title">{{ p.name }}</div>
-        <div class="p-qty">庫存: <span :style="{color: p.current_stock < 5 ? '#ef4444' : '#64748b'}">{{ p.current_stock }}</span></div>
+        <div class="p-qty">庫存剩餘: <span style="font-weight:900;">{{ p.current_stock }}</span> 件</div>
       </div>
       <div class="p-price-box">
-        <div v-if="discountRate < 1" class="old-p">${{ p.price }}</div>
-        <div class="new-p">${{ Math.round(p.price * discountRate) }}</div>
+        <div class="new-p">$ {{ p.active_price }}</div>
       </div>
       <button class="add-circle" @click="addToCart(p)">+</button>
     </div>
 
-    <div v-if="cart.length > 0" class="float-cart">
-      <div class="cart-left">
-        <span class="total-label">總計 ({{ cart.reduce((s, i)=>s+i.qty, 0) }}件)</span>
-        <span class="total-val">$ {{ Math.round(cartTotal).toLocaleString() }}</span>
+    <div v-if="cart.length > 0" class="float-bar" @click="showCheckoutModal = true">
+      <div class="badge-num">{{ totalItems }}</div>
+      <div style="flex:1; margin-left:15px; font-weight:800; color:white;">件商品</div>
+      <div class="float-total">$ {{ totalRevenue }}</div>
+      <div class="float-btn">結帳 ➔</div>
+    </div>
+
+    <div v-if="showCheckoutModal" class="modal-overlay" @click.self="showCheckoutModal = false">
+      <div class="checkout-modal">
+        <div class="m-header">🛒 結帳明細與總結 <button class="close-x" @click="showCheckoutModal=false">✕</button></div>
+        
+        <div class="cart-items">
+          <div v-for="item in cart" :key="item.id" class="c-item">
+            <div style="flex:1;">
+              <div class="c-name">{{ item.name }}</div>
+              <div class="c-sub">單價 ${{ item.active_price }}</div>
+            </div>
+            <div class="c-price">$ {{ item.active_price * item.qty }}</div>
+            <div class="qty-control">
+              <button @click="decreaseQty(item)">-</button>
+              <span>{{ item.qty }}</span>
+              <button @click="addToCart(item)">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-box">
+          <div class="s-row"><span style="color:#1e293b; font-weight:800;">總營業額</span> <span style="font-weight:900;">$ {{ totalRevenue }}</span></div>
+          <div class="s-row"><span style="color:#ef4444; font-weight:800;">總產品成本 (預估)</span> <span style="color:#ef4444; font-weight:900;">- $ {{ Math.round(totalCost) }}</span></div>
+          <div class="divider-dash"></div>
+          <div class="s-row" style="margin-top:10px;">
+            <span style="color:#4f46e2; font-weight:900; font-size:16px;">🚀 實收淨利潤</span> 
+            <span style="color:#4f46e2; font-weight:900; font-size:24px;">$ {{ Math.round(netProfit) }}</span>
+          </div>
+        </div>
+
+        <div class="payee-buttons">
+          <button v-for="(payee, index) in payees" :key="payee" 
+                  class="payee-btn" :class="'style-' + (index % 2)" 
+                  @click="finalizeCheckout(payee)">
+            💰 {{ payee }} 結帳
+          </button>
+        </div>
       </div>
-      <button class="btn-clear" @click="clearCart">清空</button>
-      <button class="checkout-btn" @click="handleCheckout">確認結帳</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 樣式大幅優化，融合現代感 */
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
-.page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
-.glass-card { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-bottom: 20px; border: 1px solid #eee; }
-.form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #475569; }
-.modern-inp, .modern-select { width: 100%; border: 2px solid #f1f5f9; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; background: #f8fafc; }
-.modern-inp:focus { border-color: #6366f1; background: white; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
-.search-rel { position: relative; }
+.page { padding: 20px; background: #f4f7f6; min-height: 100vh; }
+.page-title { font-weight: 900; font-size: 22px; margin-bottom: 20px; color: #1e293b; }
+.glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
+.form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #1e293b; }
+.modern-inp, .modern-select { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 10px; font-weight: 700; color: #1e293b; outline: none; }
 .drop-menu { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 12px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
 .drop-item { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 700; color: #333; }
-.tier-tag { font-size: 10px; background: #eef2ff; color: #6366f1; padding: 2px 6px; border-radius: 4px; float: right; }
+.selected-badge { background: #eef2ff; color: #4f46e2; padding: 8px 12px; border-radius: 8px; margin-top: 10px; font-weight: 800; font-size: 13px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-.filter-bar { margin-bottom: 20px; }
+.search-box { background: white; display: flex; align-items: center; padding: 10px 15px; border-radius: 99px; border: 1px solid #e2e8f0; }
+.s-inp { border: none; outline: none; flex: 1; margin-left: 10px; font-weight: 700; }
 .tags-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; }
-.cat-btn { padding: 8px 16px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; }
-.cat-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
+.cat-btn { padding: 8px 16px; border-radius: 99px; background: #e2e8f0; border: none; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; }
+.cat-btn.active { background: #4f46e2; color: white; }
 
-.p-card { background: white; padding: 16px; border-radius: 18px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; border: 1px solid #f1f5f9; }
+.p-card { background: white; padding: 16px; border-radius: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; border: 1px solid #e2e8f0; }
 .p-info { flex: 1; }
-.p-title { font-weight: 800; font-size: 16px; color: #1e293b; }
-.p-qty { font-size: 12px; font-weight: 700; margin-top: 4px; }
-.p-price-box { text-align: right; }
-.old-p { font-size: 11px; text-decoration: line-through; color: #94a3b8; }
-.new-p { font-size: 18px; font-weight: 900; color: #6366f1; }
-.add-circle { width: 40px; height: 40px; border-radius: 50%; border: none; background: #eef2ff; font-size: 24px; font-weight: 700; color: #6366f1; cursor: pointer; }
+.p-title { font-weight: 800; font-size: 15px; color: #1e293b; }
+.p-qty { font-size: 11px; font-weight: 700; color: #64748b; margin-top: 4px; }
+.p-price-box { text-align: right; margin-right: 10px; }
+.new-p { font-size: 18px; font-weight: 900; color: #4f46e2; }
+.add-circle { width: 36px; height: 36px; border-radius: 50%; border: none; background: #eef2ff; font-weight: 900; color: #4f46e2; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center;}
 
-.float-cart { position: fixed; bottom: 85px; left: 5%; width: 90%; background: #1e293b; border-radius: 20px; padding: 15px 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 15px 30px rgba(0,0,0,0.2); z-index: 90; }
-.total-label { display: block; font-size: 12px; color: #94a3b8; font-weight: 700; }
-.total-val { font-size: 22px; font-weight: 900; color: white; }
-.btn-clear { background: rgba(255,255,255,0.1); border: none; color: white; padding: 10px 14px; border-radius: 10px; font-weight: 800; }
-.checkout-btn { background: #6366f1; color: white; border: none; padding: 12px 20px; border-radius: 12px; font-weight: 900; font-size: 16px; flex: 1; text-align: center; }
+/* 底部藍色懸浮條 */
+.float-bar { position: fixed; bottom: 80px; left: 5%; width: 90%; background: #4f46e2; border-radius: 99px; padding: 12px 20px; display: flex; align-items: center; box-shadow: 0 10px 25px rgba(79,70,229,0.4); z-index: 90; cursor: pointer; }
+.badge-num { background: white; color: #4f46e2; width: 28px; height: 28px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 14px; }
+.float-total { font-size: 20px; font-weight: 900; color: white; margin-right: 15px; }
+.float-btn { font-size: 14px; font-weight: 800; color: white; opacity: 0.9; }
+
+/* 結帳彈窗 */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; display: flex; align-items: flex-end; justify-content: center; }
+.checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 24px 24px 0 0; padding: 25px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+.close-x { background: transparent; border: none; font-size: 18px; cursor: pointer; }
+
+.cart-items { max-height: 250px; overflow-y: auto; margin-bottom: 20px; }
+.c-item { display: flex; align-items: center; margin-bottom: 15px; }
+.c-name { font-weight: 800; font-size: 14px; color: #1e293b; }
+.c-sub { font-size: 11px; color: #64748b; margin-top: 2px; font-weight: 700; }
+.c-price { font-weight: 900; color: #4f46e2; margin-right: 15px; }
+.qty-control { display: flex; align-items: center; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+.qty-control button { border: none; background: transparent; padding: 5px 12px; font-weight: 900; cursor: pointer; color: #4f46e2; }
+.qty-control span { font-weight: 900; font-size: 14px; width: 20px; text-align: center; }
+
+.summary-box { background: #f8fafc; border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+.s-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 10px 0; }
+
+.payee-buttons { display: flex; gap: 12px; }
+.payee-btn { flex: 1; padding: 18px; border-radius: 16px; border: none; font-weight: 900; color: white; font-size: 16px; cursor: pointer; }
+.style-0 { background: #3b82f6; } /* 藍色 Kwan */
+.style-1 { background: #ec4899; } /* 粉色 Cat */
 </style>
