@@ -7,16 +7,13 @@ const store = useMainStore()
 const searchProduct = ref('')
 const selectedBranch = ref('觀塘')
 
-// 💡 核心修復：正確讀取 store.stock 物件，解決畫面空白 Bug
+// --- 💡 Core Fix: Read store.stock Object safely ---
 const displayInventory = computed(() => {
-  // 先過濾出符合搜尋字詞的產品
   return store.products
     .filter(p => p.name.toLowerCase().includes(searchProduct.value.toLowerCase()))
     .map(p => {
-      // 透過大腦 (mainStore) 的 mapping 來精確抓取該分店的數量
       const stockKey = `${p.name}_${selectedBranch.value}`
       const currentQty = store.stock[stockKey] || 0
-      
       return { 
         ...p, 
         current_qty: currentQty 
@@ -24,73 +21,90 @@ const displayInventory = computed(() => {
     })
 })
 
-// 💡 核心修復：動態計算正確的「當前分店存貨總成本」 (數量 × 成本)
+// --- 💡 Core Fix: Dynamic Total Cost (Qty x Cost) ---
 const currentTotalCost = computed(() => {
   return displayInventory.value.reduce((sum, item) => {
-    // 假設資料庫的成本欄位是 cost 或 price_50
-    const itemCost = item.cost || item.price_50 || 0
+    const itemCost = Number(item.cost) || Number(item.price_50) || 0
     return sum + (item.current_qty * itemCost)
   }, 0)
 })
 
-// --- 🌟 新增：自用紀錄讀取與計算 ---
+// --- 🌟 Self-Use Records ---
 const selfUseRecords = computed(() => {
-  // 從所有的交易流水帳中，抓出分類為「自用消耗」的紀錄
   return store.transactions.filter(t => t.category === '自用消耗')
 })
 
 const selfUseTotalCost = computed(() => {
-  // 計算自用的總成本金額
   return selfUseRecords.value.reduce((sum, t) => sum + Number(t.amount), 0)
 })
 
-// 入貨功能
+// --- 🛡️ FOOLPROOF WRITING LOGIC: Select First, Then Update/Insert ---
+async function updateStock(itemName, newQty) {
+  // 1. Check if the record already exists for this specific product AND branch
+  const { data, error: selectError } = await supabase.from('stock')
+    .select('id')
+    .eq('prod_name', itemName)
+    .eq('branch', selectedBranch.value)
+    .maybeSingle()
+  
+  if (selectError) {
+    console.error('Error selecting stock:', selectError)
+    return { success: false, message: selectError.message }
+  }
+
+  // 2. If it exists, UPDATE. If not, INSERT.
+  if (data && data.id) {
+    const { error: updateError } = await supabase.from('stock')
+      .update({ quantity: newQty })
+      .eq('id', data.id)
+    
+    if (updateError) return { success: false, message: updateError.message }
+  } else {
+    const { error: insertError } = await supabase.from('stock')
+      .insert({
+        prod_name: itemName, 
+        branch: selectedBranch.value, 
+        quantity: newQty
+      })
+      
+    if (insertError) return { success: false, message: insertError.message }
+  }
+  
+  return { success: true }
+}
+
+// --- Inventory Actions ---
+
 async function handleRestock(item) {
-  const amount = prompt(`請輸入「${item.name}」在 ${selectedBranch.value} 的入貨數量：`, "10")
+  const amount = prompt(`[入貨] 請輸入「${item.name}」在 ${selectedBranch.value} 的入貨數量：`, "10")
   if (!amount || isNaN(amount)) return
   
   const newQty = item.current_qty + parseInt(amount)
   
-  // 更新資料庫 (加入 branch 條件，確保不會改錯分店)
-  const { error } = await supabase.from('stock')
-    .update({ quantity: newQty })
-    .match({ prod_name: item.name, branch: selectedBranch.value })
+  const result = await updateStock(item.name, newQty)
   
-  if (error) {
-    // 如果因為該分店還沒有這項產品而 update 失敗，則改用 insert
-    await supabase.from('stock').insert({
-      prod_name: item.name, 
-      branch: selectedBranch.value, 
-      quantity: newQty
-    })
+  if (!result.success) {
+    alert('❌ 入貨失敗: ' + result.message)
+  } else {
+    alert('✅ 入貨成功')
+    store.syncAll() 
   }
-  
-  alert('✅ 入貨成功')
-  store.syncAll() 
 }
 
-// 盤點功能
 async function handleStocktake(item) {
   const newQty = prompt(`[盤點] 請輸入「${item.name}」在 ${selectedBranch.value} 的正確庫存數量：`, item.current_qty)
   if (newQty === null || isNaN(newQty)) return
   
-  const { error } = await supabase.from('stock')
-    .update({ quantity: parseInt(newQty) })
-    .match({ prod_name: item.name, branch: selectedBranch.value })
+  const result = await updateStock(item.name, parseInt(newQty))
 
-  if (error) {
-    await supabase.from('stock').insert({
-      prod_name: item.name, 
-      branch: selectedBranch.value, 
-      quantity: parseInt(newQty)
-    })
+  if (!result.success) {
+    alert('❌ 盤點失敗: ' + result.message)
+  } else {
+    alert('✅ 盤點已完成')
+    store.syncAll() 
   }
-  
-  alert('✅ 盤點已完成')
-  store.syncAll() 
 }
 
-// --- 🌟 新增：自用提取功能 ---
 async function handleSelfUse(item) {
   const qtyStr = prompt(`[內部自用] 請輸入「${item.name}」在 ${selectedBranch.value} 的提取數量：`, "1")
   if (!qtyStr || isNaN(qtyStr)) return
@@ -100,18 +114,16 @@ async function handleSelfUse(item) {
     return alert('❌ 操作失敗：目前庫存數量不足以提取！')
   }
   
-  // 1. 扣除庫存
+  // 1. Deduct Stock
   const newQty = item.current_qty - extractQty
-  const { error: stockError } = await supabase.from('stock')
-    .update({ quantity: newQty })
-    .match({ prod_name: item.name, branch: selectedBranch.value })
+  const stockResult = await updateStock(item.name, newQty)
 
-  if (stockError) {
-    return alert('庫存扣除失敗: ' + stockError.message)
+  if (!stockResult.success) {
+    return alert('庫存扣除失敗: ' + stockResult.message)
   }
 
-  // 2. 寫入流水帳 (紀錄為自用支出)
-  const itemCost = item.cost || item.price_50 || 0
+  // 2. Write to Transactions (Self-Use Expense)
+  const itemCost = Number(item.cost) || Number(item.price_50) || 0
   const totalExpense = itemCost * extractQty
 
   const { error: txnError } = await supabase.from('transactions').insert({
@@ -153,7 +165,7 @@ async function handleSelfUse(item) {
       <div v-for="item in displayInventory" :key="item.id" class="inv-item">
         <div style="flex:1;">
           <div class="inv-name">{{ item.name }}</div>
-          <div class="inv-sub">單個成本: ${{ item.cost || item.price_50 || 0 }}</div>
+          <div class="inv-sub">單個成本: ${{ Number(item.cost) || Number(item.price_50) || 0 }}</div>
         </div>
         <div class="inv-qty" :class="{warn: item.current_qty <= 5}">{{ item.current_qty }}</div>
         <div class="inv-actions">

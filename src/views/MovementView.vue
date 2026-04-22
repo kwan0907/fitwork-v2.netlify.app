@@ -5,141 +5,173 @@ import { supabase } from '../supabase'
 
 const store = useMainStore()
 
-// --- 狀態定義 ---
 const searchClient = ref('')
 const selectedClient = ref(null)
-const selectedPackage = ref({ name: '10點套票 ($850)', price: 850, cost: 385 })
-const isFirstBuy = ref(false)   // 新客首買優惠
-const isReferral = ref(false)   // 轉介優惠堂
+const selectedPkg = ref('pkg_35')
+const isNewCustomer = ref(false)
+const isReferral = ref(false)
 
-// 套票選項 (可自行增減)
-const packageOptions = [
-  { name: '10點套票 ($850)', price: 850, cost: 385 },
-  { name: '35點套票 ($2800)', price: 2800, cost: 1200 },
-  { name: '50點套票 ($3800)', price: 3800, cost: 1600 }
-]
+const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
-// 客戶搜尋邏輯 (修正搜尋不到的問題)
+const packages = {
+  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 0 },
+  'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 }, // 250(店) + 135(產品)
+  'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 } // 800(店) + 472.5(產品)
+}
+
+// 自動下拉搜尋客戶
 const clientOptions = computed(() => {
   if (!searchClient.value || selectedClient.value) return []
   const q = searchClient.value.toLowerCase()
   return store.clients.filter(c => (c.name?.toLowerCase().includes(q) || c.phone?.includes(q))).slice(0, 5)
 })
 
-// 金額計算邏輯
-const finalAmount = computed(() => {
-  let total = selectedPackage.value.price
-  if (isFirstBuy.value) total -= 98 // 首買扣減
-  return total
-})
+function selectClient(c) {
+  selectedClient.value = c
+  searchClient.value = c.name
+  // 若是試堂客，自動開啟「新客首買」
+  isNewCustomer.value = c.status === 'prospect'
+}
 
-const estimatedProfit = computed(() => {
-  let cost = selectedPackage.value.cost
-  if (isReferral.value) cost += 52 // 轉介成本增加
-  return finalAmount.value - cost
-})
-
-async function handleCheckout() {
-  if (!selectedClient.value) return alert('請先搜尋並選擇客戶！')
+// 核心：精確計算營業額與成本
+const exCalc = computed(() => {
+  let p = packages[selectedPkg.value].price
+  let c = packages[selectedPkg.value].baseCost
   
-  // 1. 寫入交易紀錄
+  // 新客首買優惠：扣減 $98 營業額 (試堂除外)
+  if (isNewCustomer.value && selectedPkg.value !== 'trial') {
+    p -= 98
+  }
+  // 轉介紹優惠堂：增加 $52 成本
+  if (isReferral.value) {
+    c += 52
+  }
+  
+  return { price: p, cost: c, profit: p - c }
+})
+
+async function handleCheckout(staff) {
+  if (!selectedClient.value) return alert('請在上方搜尋並選擇客戶！')
+
+  const calc = exCalc.value
+  const branch = selectedClient.value.branch || '觀塘'
+  const pkgName = packages[selectedPkg.value].name.split(' ')[1]
+
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income',
-    category: '運動套票',
-    amount: finalAmount.value,
-    profit: estimatedProfit.value,
-    branch: selectedClient.value.branch || '觀塘',
-    note: `${selectedClient.value.name} 購買 ${selectedPackage.value.name}`,
-    created_at: new Date().toISOString()
+    type: 'income', 
+    category: selectedPkg.value === 'trial' ? '試堂' : '運動套票', 
+    amount: calc.price, 
+    cost: calc.cost,
+    profit: calc.profit,
+    branch: branch, 
+    client_id: selectedClient.value.id,
+    staff: staff,
+    handled_by: staff,
+    note: `售出 ${pkgName} ${isNewCustomer.value? '(首買扣98)':''} ${isReferral.value? '(轉介加52成本)':''}`
   }])
 
-  if (txnError) return alert('收銀失敗')
+  if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 2. 更新 stock 表 (套票也是庫存的一種)
-  // 這裡假設 stock 表裡有對應套票名稱的庫存
-  const sItem = store.stock.find(s => s.prod_name.includes(selectedPackage.value.name.split(' ')[0]))
-  if (sItem) {
-    await supabase.from('stock').update({ quantity: sItem.quantity - 1 }).eq('id', sItem.id)
+  // 更新客戶狀態
+  if (selectedPkg.value !== 'trial') {
+    const updates = { 
+      status: 'active', 
+      pkg_count: (selectedClient.value.pkg_count || 0) + 1 
+    }
+    await supabase.from('clients').update(updates).eq('id', selectedClient.value.id)
   }
 
-  alert(`✅ 收銀成功！\n應收金額：$${finalAmount.value}`)
-  store.syncAll()
+  alert(`✅ 結帳成功！\n由 ${staff} 收取 $${calc.price}\n預估淨利潤: $${calc.profit}`)
+  selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
+  store.syncAll() 
 }
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" style="padding-bottom: 180px;">
     <h2 class="page-title">運動套票收銀</h2>
 
-    <div class="card cashier-card">
+    <div class="glass-card">
       <div class="form-item">
         <label>1. 選擇套票類型</label>
-        <select v-model="selectedPackage" class="inp">
-          <option v-for="opt in packageOptions" :key="opt.name" :value="opt">🎟️ {{ opt.name }}</option>
+        <select v-model="selectedPkg" class="modern-select highlight-sel">
+          <option v-for="(pkg, key) in packages" :key="key" :value="key">{{ pkg.name }}</option>
         </select>
       </div>
 
       <div class="form-item" style="margin-top:20px;">
-        <label>2. 搜尋客戶 (必填)</label>
-        <div style="position:relative;">
-          <input class="inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="selectedClient = null">
-          <div v-if="clientOptions.length > 0" class="dropdown">
-            <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectedClient = c; searchClient = c.name">
-              {{ c.name }} ({{ c.phone }})
+        <label>2. 搜尋客戶 (必填) <span style="color:#ef4444">*</span></label>
+        <div class="search-rel">
+          <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="selectedClient = null">
+          <div v-if="clientOptions.length > 0" class="drop-menu">
+            <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)">
+              {{ c.name }} <span class="sub-text">({{ c.phone }})</span>
             </div>
           </div>
         </div>
+        <div v-if="selectedClient" class="selected-badge">✔ 已選擇: {{ selectedClient.name }}</div>
       </div>
     </div>
 
-    <div class="card toggle-card">
+    <div class="glass-card" style="background:#f8fafc;">
       <div class="toggle-row">
-        <div>
-          <div class="t-title">🆕 新客首買優惠</div>
-          <div class="t-sub">自動扣減 $98</div>
-        </div>
-        <div class="switch" :class="{on: isFirstBuy}" @click="isFirstBuy = !isFirstBuy"></div>
+        <div><div class="t-title">🆕 新客首買優惠</div><div class="t-sub">自動扣減 $98</div></div>
+        <div class="toggle" :class="{on: isNewCustomer}" @click="isNewCustomer = !isNewCustomer"></div>
       </div>
-      <div class="divider"></div>
+      <div class="divider-dash"></div>
       <div class="toggle-row">
-        <div>
-          <div class="t-title">🤝 轉介介紹優惠堂</div>
-          <div class="t-sub">成本將增加 $52</div>
-        </div>
-        <div class="switch" :class="{on: isReferral}" @click="isReferral = !isReferral"></div>
+        <div><div class="t-title">🤝 轉介紹優惠堂</div><div class="t-sub" style="color:#ef4444;">成本將增加 $52</div></div>
+        <div class="toggle" :class="{on: isReferral}" @click="isReferral = !isReferral"></div>
       </div>
     </div>
 
-    <div class="total-box">
-      <div class="total-label">應收總額 (營業額)</div>
-      <div class="total-val">$ {{ finalAmount }}</div>
-      <div class="profit-val">預估扣除成本後淨利潤：<span style="color:#10b981;">$ {{ estimatedProfit }}</span></div>
+    <div class="total-display">
+      <div class="t-label">應收總額 (營業額)</div>
+      <div class="t-val">$ {{ exCalc.price }}</div>
+      <div class="p-label">預估扣除成本後淨利潤: <span style="color:#10b981; font-size:18px;">$ {{ exCalc.profit }}</span></div>
     </div>
 
-    <button class="btn-checkout" @click="handleCheckout" :disabled="!selectedClient">確認收銀</button>
+    <div class="payee-buttons" style="margin-top:20px;" v-if="staffList.length > 0">
+      <button v-for="(staff, index) in staffList" :key="staff" class="payee-btn" :class="'style-' + (index % 2)" @click="handleCheckout(staff)">
+        💰 {{ staff }} 結帳
+      </button>
+    </div>
+    <div v-else style="text-align:center; color:#ef4444; font-weight:700; margin-top:20px;">請先至設定新增收款人</div>
   </div>
 </template>
 
 <style scoped>
-.cashier-card { padding: 25px; border-radius: 20px; background: #fff; border: 1px solid #eee; margin-bottom: 20px; }
-.form-item label { display: block; margin-bottom: 10px; font-weight: 800; color: #333; }
-.dropdown { position: absolute; top: 100%; left: 0; width: 100%; background: white; border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); z-index: 10; }
-.drop-item { padding: 12px; border-bottom: 1px solid #f8fafc; cursor: pointer; font-weight: 700; }
+.page { padding: 20px; background: #f4f7f6; min-height: 100vh; }
+.page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
+.glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
+.form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #1e293b; }
+.modern-inp, .modern-select { width: 100%; border: 1px solid #cbd5e1; padding: 14px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; }
+.modern-inp:focus { border-color: #4f46e2; }
+.highlight-sel { border: 2px solid #4f46e2; color: #4f46e2; font-weight: 900; background: #eef2ff; }
 
-.toggle-card { padding: 20px; border-radius: 20px; }
-.toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; }
-.t-title { font-weight: 800; font-size: 14px; }
-.t-sub { font-size: 11px; color: #ef4444; font-weight: 700; margin-top: 2px; }
-.switch { width: 50px; height: 26px; background: #e2e8f0; border-radius: 99px; position: relative; cursor: pointer; transition: 0.3s; }
-.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; background: white; border-radius: 50%; transition: 0.3s; }
-.switch.on { background: #6366f1; }
-.switch.on::after { transform: translateX(24px); }
+.search-rel { position: relative; }
+.drop-menu { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 12px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+.drop-item { padding: 14px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 700; color: #333; }
+.sub-text { font-size: 12px; color: #64748b; font-weight: normal; margin-left: 5px; }
+.selected-badge { background: #eef2ff; color: #4f46e2; padding: 10px 14px; border-radius: 10px; margin-top: 12px; font-weight: 800; font-size: 14px; }
 
-.total-box { background: #eef2ff; border: 2px solid #6366f1; padding: 30px; border-radius: 24px; text-align: center; margin-top: 25px; }
-.total-label { color: #6366f1; font-weight: 800; font-size: 13px; }
-.total-val { font-size: 42px; font-weight: 900; color: #4f46e2; margin: 10px 0; }
-.profit-val { font-size: 12px; font-weight: 700; color: #64748b; }
+.toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+.t-title { font-weight: 800; font-size: 15px; color: #1e293b; }
+.t-sub { font-size: 12px; color: #f59e0b; font-weight: 700; margin-top: 4px; }
+.toggle { width: 50px; height: 28px; background: #cbd5e1; border-radius: 99px; position: relative; cursor: pointer; transition: 0.3s; }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.toggle.on { background: #4f46e2; }
+.toggle.on::after { transform: translateX(22px); }
+.divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 15px 0; }
 
-.btn-checkout { width: 100%; margin-top: 20px; padding: 18px; border-radius: 18px; background: #6366f1; color: white; font-weight: 900; font-size: 18px; border: none; cursor: pointer; }
-.btn-checkout:disabled { background: #cbd5e1; cursor: not-allowed; }
+.total-display { background: #eef2ff; border: 2px solid #4f46e2; border-radius: 20px; padding: 30px; text-align: center; }
+.t-label { color: #64748b; font-weight: 800; font-size: 14px; }
+.t-val { font-size: 48px; font-weight: 900; color: #4f46e2; margin: 10px 0; }
+.p-label { font-size: 14px; font-weight: 800; color: #475569; }
+
+.payee-buttons { display: flex; gap: 12px; }
+.payee-btn { flex: 1; padding: 18px; border-radius: 16px; border: none; font-weight: 900; color: white; font-size: 16px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+.payee-btn:active { transform: scale(0.95); }
+.style-0 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.style-1 { background: linear-gradient(135deg, #ec4899, #db2777); }
 </style>
