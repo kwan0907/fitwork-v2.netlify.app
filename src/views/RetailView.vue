@@ -140,8 +140,10 @@ async function finalizeCheckout(payeeName) {
       <div class="grid-2" style="margin-top:15px;">
         <div class="form-item"><label>2. 庫存分店</label>
           <select v-model="selectedBranch" class="modern-select">
-            <option value="觀塘店">觀塘店</option><option value="中環店">中環店</option>
-          </select>
+   <option value="觀塘店">觀塘店</option>
+   <option value="中環店">中環店</option>
+   <option value="佐敦店">佐敦店</option>
+</select>
         </div>
         <div class="form-item"><label>3. 客戶折扣</label>
           <select v-model="selectedTier" class="modern-select">
