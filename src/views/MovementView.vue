@@ -1,80 +1,104 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useMainStore } from '../stores/mainStore'
+import { supabase } from '../supabase'
 
-const selectedPackage = ref('10點套票 ($850)')
+const store = useMainStore()
 const searchClient = ref('')
-const isNewClient = ref(false)
-const isReferral = ref(false)
+const selectedClient = ref(null)
 
-// 模擬計算
-const basePrice = 850
-const baseCost = 400
-
-const totalAmount = computed(() => {
-  return basePrice - (isNewClient.value ? 98 : 0)
+// 修正：從 Store 搜尋現有客戶
+const clientOptions = computed(() => {
+  if (!searchClient.value || selectedClient.value) return []
+  const q = searchClient.value.toLowerCase()
+  return store.clients.filter(c => (c.name && c.name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q))).slice(0, 5)
 })
 
-const finalProfit = computed(() => {
-  return totalAmount.value - baseCost + (isReferral.value ? 52 : 0)
+const exercises = [
+  { name: 'CardioStep', icon: '👟' },
+  { name: 'Trampoline', icon: '🦘' },
+  { name: 'TRX', icon: '⛓️' },
+  { name: 'Fat Loss', icon: '🔥' },
+  { name: 'Yoga', icon: '🧘' }
+]
+
+const record = ref({ 
+  type: 'CardioStep', 
+  date: new Date().toISOString().split('T')[0], 
+  intensity: 5,
+  note: '' 
 })
+
+async function saveMovement() {
+  if (!selectedClient.value) return alert('請先選擇客戶')
+  const { error } = await supabase.from('movement_records').insert([{
+    client_id: selectedClient.value.id,
+    client_name: selectedClient.value.name,
+    ...record.value
+  }])
+  if (error) alert('儲存失敗')
+  else { alert('✅ 訓練記錄已同步'); searchClient.value = ''; selectedClient.value = null; }
+}
 </script>
 
 <template>
-  <div class="page">
-    <h2 class="page-title">運動套票收銀</h2>
-
-    <div class="card" style="padding:20px; margin-bottom:15px;">
-      <div class="form-item" style="margin-bottom:15px;">
-        <label>1. 選擇套票類型</label>
-        <select v-model="selectedPackage" class="inp" style="color:var(--p); font-weight:800;">
-          <option>🎟️ 10點套票 ($850)</option>
-          <option>🎟️ 35點套票 ($2500)</option>
-        </select>
-      </div>
-
-      <div class="form-item">
-        <label>2. 搜尋客戶 (必填)</label>
-        <input class="inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話...">
-      </div>
+  <div class="page movement-page">
+    <div class="hero-section">
+      <h2 class="hero-title">Training Log</h2>
+      <div class="status-dot">LIVE</div>
     </div>
 
-    <div class="card" style="padding:15px 20px; margin-bottom:20px;">
-      <div class="toggle-row" style="margin-bottom:15px; padding-bottom:15px; border-bottom:1px solid var(--border);">
-        <div>
-          <div class="toggle-title">🆕 新客首買優惠</div>
-          <div class="toggle-desc" style="color:#d97706;">自動扣減 $98</div>
+    <div class="glass-box">
+      <label class="box-label">TRAINEE 客戶</label>
+      <div class="search-wrapper">
+        <input v-model="searchClient" class="ghost-inp" placeholder="搜尋客戶姓名..." @focus="selectedClient = null">
+        <div v-if="clientOptions.length > 0" class="ghost-drop">
+          <div v-for="c in clientOptions" :key="c.id" class="ghost-item" @click="selectedClient = c; searchClient = c.name">
+            {{ c.name }} <span class="sub">{{ c.phone }}</span>
+          </div>
         </div>
-        <input type="checkbox" v-model="isNewClient" class="toggle-checkbox">
       </div>
+      <div v-if="selectedClient" class="client-active-tag">已選擇: {{ selectedClient.name }}</div>
+    </div>
 
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-title">🤝 轉介紹優惠堂</div>
-          <div class="toggle-desc" style="color:#dc2626;">成本將增加 $52</div>
-        </div>
-        <input type="checkbox" v-model="isReferral" class="toggle-checkbox">
+    <div class="exercise-scroller">
+      <div v-for="ex in exercises" :key="ex.name" 
+           class="ex-pill" :class="{active: record.type === ex.name}"
+           @click="record.type = ex.name">
+        <span class="ex-pill-icon">{{ ex.icon }}</span>
+        <span class="ex-pill-name">{{ ex.name }}</span>
       </div>
     </div>
 
-    <div class="summary-box">
-      <div style="font-size:13px; font-weight:800; color:var(--t2);">應收總額 (營業額)</div>
-      <div class="amount">$ {{ totalAmount }}</div>
-      <div style="font-size:12px; font-weight:700; color:#16a34a; margin-top:8px;">
-        預估扣除成本後淨利潤: $ {{ finalProfit }}
-      </div>
+    <div class="glass-box" style="margin-top:20px;">
+      <label class="box-label">INTENSITY 強度: {{ record.intensity }}</label>
+      <input type="range" min="1" max="10" v-model="record.intensity" class="pro-range">
+      <div class="range-labels"><span>Easy</span><span>Mid</span><span>Hard</span></div>
     </div>
+
+    <button class="btn-action" @click="saveMovement">UPLOAD TRAINING DATA</button>
   </div>
 </template>
 
 <style scoped>
-.form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: var(--t2); }
-.toggle-row { display: flex; justify-content: space-between; align-items: center; }
-.toggle-title { font-weight: 800; font-size: 14px; color: var(--t); margin-bottom: 2px; }
-.toggle-desc { font-size: 11px; font-weight: 700; }
+.movement-page { background: #0f172a; color: #f8fafc; min-height: 100vh; padding: 25px; }
+.hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.hero-title { font-weight: 900; font-size: 32px; letter-spacing: -2px; }
+.status-dot { background: #10b981; color: white; padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: 900; }
 
-/* 簡單的 Checkbox 替代 Switch UI */
-.toggle-checkbox { width: 45px; height: 24px; accent-color: var(--p); cursor: pointer; }
+.glass-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 24px; }
+.box-label { font-size: 11px; font-weight: 900; color: #6366f1; letter-spacing: 2px; margin-bottom: 15px; display: block; }
+.ghost-inp { width: 100%; background: transparent; border: none; border-bottom: 2px solid rgba(255,255,255,0.1); padding: 10px 0; color: white; font-size: 18px; font-weight: 700; outline: none; }
+.ghost-inp:focus { border-bottom-color: #6366f1; }
 
-.summary-box { background: #eef2ff; border: 2px solid var(--p); border-radius: 16px; padding: 25px; text-align: center; }
-.summary-box .amount { font-size: 36px; font-weight: 900; color: var(--p); margin-top: 5px; }
+.exercise-scroller { display: flex; gap: 10px; overflow-x: auto; margin-top: 25px; padding-bottom: 10px; }
+.ex-pill { background: rgba(255,255,255,0.05); padding: 12px 20px; border-radius: 99px; display: flex; align-items: center; gap: 8px; white-space: nowrap; transition: 0.3s; border: 1px solid transparent; }
+.ex-pill.active { background: #6366f1; border-color: #818cf8; box-shadow: 0 10px 20px rgba(99,102,241,0.3); }
+.ex-pill-name { font-weight: 800; font-size: 14px; }
+
+.btn-action { width: 100%; margin-top: 40px; background: white; color: #0f172a; border: none; padding: 20px; border-radius: 20px; font-weight: 900; letter-spacing: 1px; box-shadow: 0 20px 40px rgba(255,255,255,0.1); }
+.btn-action:active { transform: scale(0.98); }
+
+.pro-range { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 5px; appearance: none; outline: none; }
+.pro-range::-webkit-slider-thumb { appearance: none; width: 24px; height: 24px; background: #6366f1; border: 4px solid white; border-radius: 50%; cursor: pointer; }
 </style>

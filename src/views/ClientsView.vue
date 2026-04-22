@@ -11,13 +11,14 @@ const showAddModal = ref(false)
 const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
-const filterStatus = ref('active') // 預設看正式會員
-
-// 預設今天日期
+const filterStatus = ref('active')
 const todayStr = new Date().toISOString().split('T')[0]
 
+// 完整欄位初始化 (不刪減任何欄位)
 const newClient = ref({ 
-  name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', is_vip: false, join_date: todayStr, package_count: 0, expiry_date: todayStr 
+  name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
+  is_vip: false, is_marathon: false, join_date: todayStr, 
+  package_count: 0, expiry_date: todayStr, handled_by: '', payment_received: 0 
 })
 const editingClient = ref({})
 
@@ -33,57 +34,39 @@ const filteredClients = computed(() => {
 })
 
 // --- 功能函數 ---
-
-// 1. 新增客戶
 async function handleAddClient() {
   if (!newClient.value.name) return alert('請填寫姓名')
   const { error } = await supabase.from('clients').insert([newClient.value])
   if (error) alert('新增失敗: ' + error.message)
-  else {
-    showAddModal.value = false 
-    newClient.value = { name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', is_vip: false, join_date: todayStr, package_count: 0, expiry_date: todayStr } 
-    store.syncAll() 
-  }
+  else { showAddModal.value = false; store.syncAll(); alert('✅ 新增成功') }
 }
 
-// 2. 打開編輯彈窗
+async function handleUpdateClient() {
+  if (!editingClient.value.name) return alert('請填寫姓名')
+  const { error } = await supabase.from('clients').update(editingClient.value).eq('id', editingClient.value.id)
+  if (error) alert('更新失敗: ' + error.message)
+  else { showEditModal.value = false; store.syncAll(); alert('✅ 修改已儲存') }
+}
+
+async function handleDeleteClient() {
+  if(!confirm(`⚠️ 徹底刪除「${editingClient.value.name}」？此操作不可還原！`)) return
+  const { error } = await supabase.from('clients').delete().eq('id', editingClient.value.id)
+  if (error) alert('刪除失敗')
+  else { showEditModal.value = false; store.syncAll(); alert('已刪除') }
+}
+
 function openEditModal(client) {
   editingClient.value = { ...client }
   showEditModal.value = true
 }
 
-// 3. 儲存編輯修改
-async function handleUpdateClient() {
-  if (!editingClient.value.name) return alert('請填寫姓名')
-  const { error } = await supabase.from('clients').update(editingClient.value).eq('id', editingClient.value.id)
-  if (error) alert('更新失敗: ' + error.message)
-  else { showEditModal.value = false; store.syncAll() }
-}
-
-// 4. 刪除客戶 (新功能)
-async function handleDeleteClient() {
-  // 彈出警告視窗防呆
-  if(!confirm(`⚠️ 警告：確定要徹底刪除客戶「${editingClient.value.name}」嗎？\n此動作無法復原！`)) {
-    return // 如果按取消，就停止執行
-  }
-  
-  const { error } = await supabase.from('clients').delete().eq('id', editingClient.value.id)
-  
-  if (error) {
-    alert('刪除失敗: ' + error.message)
-  } else {
-    alert('✅ 客戶已成功刪除')
-    showEditModal.value = false 
-    store.syncAll() // 重新抓取資料
-  }
-}
-
-// 計算客戶代數
+// 核心功能：計算代數 (不刪減)
 const getClientGen = (id) => {
   let g = 1; let c = store.clients.find(x => x.id === id); let count = 0
   while (c && c.referred_by_id && count < 15) { g++; c = store.clients.find(x => x.id === c.referred_by_id); count++ }
   return g
 }
+
 const getExpiryClass = (date) => {
   if (!date) return ''
   const d = (new Date(date) - new Date()) / 86400000
@@ -93,128 +76,152 @@ const getExpiryClass = (date) => {
 
 <template>
   <div class="page">
-    <h2 class="page-title">客戶管理系統</h2>
+    <div class="header-section">
+      <h2 class="page-title">FITWORK PRO 管理端</h2>
+      <p class="subtitle">數據即時同步中 ⚡️</p>
+    </div>
     
-    <div class="card" style="padding:15px; margin-bottom:15px;">
-      <input class="inp search-inp" v-model="clientSearch" placeholder="🔍 即時搜尋姓名、電話...">
-      <div class="filter-tags" style="margin-top:12px;">
-        <button class="filter-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
-        <button class="filter-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
-        <div class="divider"></div>
-        <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="filter-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
+    <div class="card search-box">
+      <input class="inp-clean" v-model="clientSearch" placeholder="🔍 即時搜尋姓名、電話、負責人...">
+      <div class="filter-row">
+        <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
+        <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
+        <div class="v-line"></div>
+        <button v-for="b in ['觀塘','中環']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
       </div>
     </div>
 
-    <div v-if="filteredClients.length === 0" class="empty-msg">找不到相關客戶</div>
-
-    <div v-for="c in filteredClients" :key="c.id" class="item-card clickable-card" @click="openEditModal(c)">
-      <div class="client-avatar">{{ (c.name || '?').charAt(0).toUpperCase() }}</div>
-      <div style="flex:1;">
-        <div class="client-name">{{ c.name }} <span v-if="c.is_vip" class="tag-gold">折扣會員</span></div>
-        <div class="client-info">{{ c.phone || '未錄入' }} · {{ c.branch || '未設定' }} <span v-if="c.source" style="margin-left:4px; opacity:0.7;">(來源: {{ c.source }})</span></div>
-      </div>
-      <div style="text-align:right;">
-        <div class="gen-tag" v-if="c.status!=='prospect'">第 {{ getClientGen(c.id) }} 代</div>
-        <div :class="['expiry-date', getExpiryClass(c.expiry_date)]">{{ c.status==='prospect' ? '試堂預約' : (c.expiry_date || '無效期') }}</div>
+    <div class="list-container">
+      <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openEditModal(c)">
+        <div class="c-avatar">{{ (c.name || '?').charAt(0) }}</div>
+        <div class="c-main">
+          <div class="c-name-row">
+            <span class="c-name">{{ c.name }}</span>
+            <span v-if="c.is_vip" class="badge-vip">VIP</span>
+            <span v-if="c.is_marathon" class="badge-run">RUN</span>
+          </div>
+          <div class="c-meta">
+            {{ c.phone || '無電話' }} · {{ c.branch }}
+            <span v-if="c.handled_by" class="handled-text"> (由 {{ c.handled_by }} 持有)</span>
+          </div>
+        </div>
+        <div class="c-side">
+          <div class="c-gen" v-if="c.status!=='prospect'">Gen {{ getClientGen(c.id) }}</div>
+          <div :class="['c-expiry', getExpiryClass(c.expiry_date)]">
+            {{ c.status==='prospect' ? '預約中' : (c.expiry_date || '無效期') }}
+          </div>
+        </div>
       </div>
     </div>
-    
-    <button class="fab-large" @click="showAddModal = true"><span>+</span> 新增客戶</button>
 
-    <BaseModal :show="showAddModal" title="✨ 新增客戶" @close="showAddModal = false">
-      <div class="status-toggle-box">
-        <button class="filter-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">⭐️ 正式會員</button>
-        <button class="filter-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">👀 試堂/預約</button>
+    <button class="main-fab" @click="showAddModal = true">+</button>
+
+    <BaseModal :show="showEditModal" title="🔧 客戶詳細設定" @close="showEditModal = false">
+      <div class="modal-form">
+        <div class="toggle-group">
+          <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
+        </div>
+
+        <div class="section-title">💰 財務持有設定</div>
+        <div class="grid-2">
+          <div class="f-item">
+            <label>誰負責收錢？</label>
+            <input v-model="editingClient.handled_by" class="modern-inp" placeholder="例如：阿賢 / Queenie">
+          </div>
+          <div class="f-item">
+            <label>持有金額 ($)</label>
+            <input type="number" v-model="editingClient.payment_received" class="modern-inp">
+          </div>
+        </div>
+
+        <div class="section-title">👤 基本資料</div>
+        <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
+        <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
+
+        <div class="grid-2">
+          <div class="f-item"><label>分店</label><select v-model="editingClient.branch" class="modern-select"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
+          <div class="f-item"><label>來源</label><select v-model="editingClient.source" class="modern-select"><option value="廣告">廣告</option><option value="IG">IG</option><option value="朋友介紹">朋友介紹</option></select></div>
+        </div>
+
+        <div class="section-title">📅 關鍵日期</div>
+        <div class="grid-2">
+          <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
+          <div class="f-item"><label>到期日期</label><input type="date" v-model="editingClient.expiry_date" class="modern-date"></div>
+        </div>
+
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: editingClient.is_marathon}" @click="editingClient.is_marathon = !editingClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: editingClient.is_vip}" @click="editingClient.is_vip = !editingClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
+          <button class="btn-confirm" @click="handleUpdateClient">確認修改並同步</button>
+        </div>
       </div>
-      <div class="form-item" style="margin-top:15px;"><label>姓名</label><input v-model="newClient.name" class="inp" placeholder="請輸入姓名"></div>
-      <div class="form-item" style="margin-top:15px;"><label>電話</label><input v-model="newClient.phone" class="inp" placeholder="請輸入聯絡電話"></div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:15px;">
-        <div class="form-item"><label>分店</label><select v-model="newClient.branch" class="inp"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
-        <div class="form-item"><label>來源</label><select v-model="newClient.source" class="inp"><option value="廣告">廣告</option><option value="朋友介紹">朋友介紹</option><option value="IG">IG</option><option value="FB">FB</option><option value="其他">其他</option></select></div>
-      </div>
-      <div class="vip-toggle-box" @click="newClient.is_vip = !newClient.is_vip">
-        <div class="vip-text">👑 升級為折扣會員</div><div class="toggle-switch" :class="{on: newClient.is_vip}"></div>
-      </div>
-      <div class="form-item" style="margin-top:15px;"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="inp"></div>
-      <div class="form-item" style="margin-top:15px;"><label>購買運動套票總次數</label><input type="number" v-model="newClient.package_count" class="inp"></div>
-      <div class="form-item" style="margin-top:15px;"><label>到期日 (購買套票會自動延長)</label><input type="date" v-model="newClient.expiry_date" class="inp"></div>
-      <button class="btn-primary submit-btn" @click="handleAddClient">確認提交資料</button>
     </BaseModal>
 
-    <BaseModal :show="showEditModal" title="✏️ 編輯客戶資料" @close="showEditModal = false">
-      <div class="status-toggle-box">
-        <button class="filter-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">⭐️ 正式會員</button>
-        <button class="filter-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">👀 試堂/預約</button>
-      </div>
-      <div class="form-item" style="margin-top:15px;"><label>姓名</label><input v-model="editingClient.name" class="inp"></div>
-      <div class="form-item" style="margin-top:15px;"><label>電話</label><input v-model="editingClient.phone" class="inp"></div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:15px;">
-        <div class="form-item"><label>分店</label><select v-model="editingClient.branch" class="inp"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
-        <div class="form-item"><label>來源</label><select v-model="editingClient.source" class="inp"><option value="廣告">廣告</option><option value="朋友介紹">朋友介紹</option><option value="IG">IG</option><option value="FB">FB</option><option value="其他">其他</option></select></div>
-      </div>
-      <div class="vip-toggle-box" @click="editingClient.is_vip = !editingClient.is_vip">
-        <div class="vip-text">👑 升級為折扣會員</div><div class="toggle-switch" :class="{on: editingClient.is_vip}"></div>
-      </div>
-      <div class="form-item" style="margin-top:15px;"><label>成為客戶日期</label><input type="date" v-model="editingClient.join_date" class="inp"></div>
-      <div class="form-item" style="margin-top:15px;"><label>購買運動套票總次數</label><input type="number" v-model="editingClient.package_count" class="inp"></div>
-      <div class="form-item" style="margin-top:15px;"><label>到期日</label><input type="date" v-model="editingClient.expiry_date" class="inp"></div>
-      
-      <div style="display: flex; gap: 12px; margin-top: 25px;">
-        <button class="btn-danger" @click="handleDeleteClient">
-          🗑️ 刪除
-        </button>
-        <button class="btn-primary submit-btn" style="margin-top: 0; flex: 1;" @click="handleUpdateClient">
-          儲存修改
-        </button>
+    <BaseModal :show="showAddModal" title="➕ 登記新客戶" @close="showAddModal = false">
+      <div class="modal-form">
+        <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="姓名"></div>
+        <div class="f-item"><label>負責收錢人</label><input v-model="newClient.handled_by" class="modern-inp" placeholder="誰收這筆錢？"></div>
+        <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="電話"></div>
+        <button class="btn-confirm" style="width:100%" @click="handleAddClient">立即新增</button>
       </div>
     </BaseModal>
   </div>
 </template>
 
 <style scoped>
-/* 原有樣式保留... */
-.search-inp { border-radius: 99px; padding-left: 20px; font-size: 15px; }
-.filter-tags { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; }
-.filter-btn { padding: 8px 16px; border-radius: 99px; background: transparent; border: 1px solid var(--border); color: var(--t2); font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; transition: all 0.2s ease; }
-.filter-btn:hover { background: #f3f4f6; }
-.filter-btn.active { background: var(--p); color: white; border-color: var(--p); box-shadow: 0 4px 10px rgba(79,70,229,0.25); }
-.divider { width: 1px; background: var(--border); margin: 0 5px; flex-shrink: 0; }
-.client-name { font-weight: 800; font-size: 17px; display: flex; align-items: center; gap: 6px; }
-.client-info { font-size: 13px; color: var(--t2); margin-top: 4px; font-weight: 600; }
-.gen-tag { font-size: 12px; color: var(--p); font-weight: 900; margin-bottom: 4px; }
-.expiry-date { font-size: 12px; font-weight: 800; color: var(--t3); }
-.tag-red { color: var(--r); } .tag-orange { color: var(--o); } .tag-green { color: var(--g); }
-.item-card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s; }
-.clickable-card { cursor: pointer; }
-.clickable-card:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.05); border-color: var(--p); }
-.client-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--p), var(--pd)); color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 18px;}
-.fab-large { position: fixed; right: 20px; bottom: 100px; padding: 14px 20px; border-radius: 99px; background: var(--p); color: #fff; font-weight: 800; border: none; box-shadow: 0 8px 20px rgba(79,70,229,0.4); z-index: 10; cursor: pointer; transition: 0.2s; }
-.fab-large:hover { transform: scale(1.05); }
-.empty-msg { text-align: center; padding: 50px; color: var(--t3); font-weight: 700; }
-.tag-gold { background: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 6px; font-size: 10px; font-weight: 800; }
-.form-item label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--p); }
-.status-toggle-box { display: flex; gap: 10px; margin-bottom: 5px; }
-.vip-toggle-box { margin-top: 20px; background: #fffbeb; border: 1px solid #fef08a; border-radius: 12px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
-.vip-text { font-weight: 800; color: #854d0e; font-size: 14px; }
-.toggle-switch { width: 44px; height: 24px; background: #cbd5e1; border-radius: 99px; position: relative; transition: 0.3s; }
-.toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-.toggle-switch.on { background: var(--g); }
-.toggle-switch.on::after { transform: translateX(20px); }
-.submit-btn { width: 100%; margin-top: 25px; padding: 14px; font-size: 16px; border-radius: 12px; background: var(--p); color: white; font-weight: bold; border: none; cursor: pointer; }
-.submit-btn:active { opacity: 0.8; }
+/* 顏色變數 */
+:host { --p: #6366f1; --pd: #4f46e2; --run: linear-gradient(135deg, #4f46e2, #9333ea); }
 
-/* 刪除按鈕專屬樣式 */
-.btn-danger {
-  padding: 14px;
-  font-size: 15px;
-  border-radius: 12px;
-  background: #fef2f2;
-  color: #ef4444;
-  font-weight: bold;
-  border: 1px solid #fca5a5;
-  cursor: pointer;
-  transition: 0.2s;
-  white-space: nowrap;
-}
-.btn-danger:hover { background: #ef4444; color: white; }
+.page { background: #f8fafc; min-height: 100vh; padding: 20px; }
+.header-section { margin-bottom: 25px; }
+.page-title { font-weight: 900; font-size: 26px; color: #1e293b; margin: 0; }
+.subtitle { color: #64748b; font-size: 14px; font-weight: 600; }
+
+.search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
+.inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
+
+.filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; }
+.f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; }
+.f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
+.v-line { width: 1px; background: #e2e8f0; margin: 0 5px; }
+
+.client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; }
+.client-card:active { transform: scale(0.97); }
+.c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
+.c-name { font-weight: 800; font-size: 17px; color: #1e293b; }
+.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
+.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
+.c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
+.handled-text { color: #6366f1; }
+.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; }
+.c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; }
+
+/* 彈窗內樣式 */
+.section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; }
+.modern-inp:focus { border-color: #6366f1; background: white; }
+
+.toggle-group { display: flex; gap: 8px; background: #f1f5f9; padding: 5px; border-radius: 15px; }
+.t-btn { flex: 1; border: none; padding: 10px; border-radius: 11px; font-weight: 800; color: #64748b; background: transparent; }
+.t-btn.active { background: white; color: #6366f1; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+
+.row-flex { display: flex; gap: 10px; }
+.toggle-card { flex: 1; padding: 15px; border-radius: 15px; border: 2px solid #f1f5f9; text-align: center; font-weight: 800; font-size: 14px; }
+.toggle-card.active { border-color: #6366f1; background: #eef2ff; color: #6366f1; }
+.toggle-card.active:first-child { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; border: none; }
+
+.action-row { display: flex; gap: 10px; margin-top: 30px; }
+.btn-confirm { flex: 1; background: #6366f1; color: white; border: none; padding: 16px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px rgba(99,102,241,0.2); }
+.btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; }
+
+.main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; }
+
+.tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 </style>
