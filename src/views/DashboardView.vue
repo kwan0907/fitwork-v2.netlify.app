@@ -34,6 +34,29 @@ const upcomingTrials = computed(() => {
     .slice(0, 5)
 })
 
+// --- 🌟 補回缺失的核心：財務總覽 (營業額、成本、利潤) ---
+const financialStats = computed(() => {
+  let revenue = 0, cost = 0, profit = 0;
+  store.transactions.forEach(t => {
+    // 簡單的月份篩選 (可依需求擴充)
+    if (filterMonth.value === '本月') {
+      if (new Date(t.created_at).getMonth() !== new Date().getMonth()) return;
+    }
+    // 分店篩選
+    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
+
+    const amt = Number(t.amount) || 0;
+    if (t.type === 'income') {
+      revenue += amt;
+      profit += Number(t.profit ?? amt);
+    } else if (t.type === 'expense') {
+      cost += amt;
+      profit -= amt;
+    }
+  })
+  return { revenue, cost, profit };
+})
+
 // --- 2. 馬拉松百分比 ---
 const marathonRate = computed(() => {
   if (activeClients.value.length === 0) return "0.0"
@@ -110,7 +133,22 @@ const packageStats = computed(() => {
       </div>
     </div>
 
-    <div class="section-title">👥 分店正式客戶人數</div>
+    <div class="finance-grid" style="margin-top: 20px;">
+      <div class="f-card">
+        <div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div>
+        <div class="f-label">總營業額</div>
+      </div>
+      <div class="f-card">
+        <div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div>
+        <div class="f-label">總成本支出</div>
+      </div>
+    </div>
+    <div class="profit-box">
+      <div class="p-title">💎 總實收淨利潤</div>
+      <div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div>
+    </div>
+
+    <div class="section-title" style="margin-top: 25px;">👥 分店正式客戶人數</div>
     <div class="grid-3">
       <div class="b-card"><div class="num">{{ branchCounts.kwunTong }}</div><div class="loc">觀塘</div></div>
       <div class="b-card"><div class="num">{{ branchCounts.central }}</div><div class="loc">中環</div></div>
@@ -152,6 +190,7 @@ const packageStats = computed(() => {
 </template>
 
 <style scoped>
+/* 原有樣式一字不刪 */
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .title { font-weight: 900; font-size: 24px; color: #1e293b; }
@@ -193,4 +232,16 @@ const packageStats = computed(() => {
 .s-val { font-size: 24px; font-weight: 900; color: #f59e0b; }
 .s-label { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 5px; }
 .s-sub { font-size: 11px; color: #64748b; font-weight: 700; margin-top: 5px; }
+
+/* 🌟 新增的財務區塊樣式 (還原 V1) */
+.finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; }
+.f-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
+.f-val { font-size: 20px; font-weight: 900; margin-bottom: 5px; }
+.f-label { font-size: 12px; color: #64748b; font-weight: 700; }
+.text-green { color: #10b981; }
+.text-red { color: #ef4444; }
+
+.profit-box { background: #eef2ff; border: 1.5px solid #6366f1; padding: 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
+.p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }
 </style>
