@@ -98,6 +98,9 @@ async function handleLogout() {
       </div>
       <div style="display:flex; gap:8px;">
         <button class="icon-btn" @click="store.syncAll()"><span>↻</span></button>
+        
+        <button class="icon-btn" @click="store.view='settings'"><span style="font-size:16px;">⚙️</span></button>
+        
         <button class="icon-btn" @click="handleLogout"><span style="font-size:14px;">🚪</span></button>
       </div>
     </div>

@@ -9,6 +9,7 @@ const selectedBranch = ref('觀塘')
 
 // 核心：合併兩個表的資料顯示 (Bug 修復)
 const displayInventory = computed(() => {
+  const stockList = store.stock || [] // 這裡加上 || [] 防止空白
   return store.products.map(p => {
     // 根據產品名稱從 stock 表抓數量
     const sItem = store.stock.find(s => s.prod_name === p.name)
