@@ -1,50 +1,87 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { useMainStore } from '../stores/mainStore'
+import { supabase } from '../supabase'
 
-const history = ref([
-  { id: 1, loc: 'rest', date: '21/4/2026', time: '下午03:11 至 下午03:11', duration: '0 分鐘', flyers: 10, trials: 0 }
-])
+const store = useMainStore()
+const searchClient = ref('')
+const selectedClient = ref(null)
+
+const clientOptions = computed(() => {
+  if (!searchClient.value || selectedClient.value) return []
+  const q = searchClient.value.toLowerCase()
+  return store.clients.filter(c => (c.name?.toLowerCase().includes(q) || c.phone?.includes(q))).slice(0, 5)
+})
+
+const promos = [
+  { id: 1, title: 'IG 限動打卡', points: 10, icon: '📸' },
+  { id: 2, title: 'Google 五星評論', points: 50, icon: '⭐️' },
+  { id: 3, title: '帶朋友免費試堂', points: 100, icon: '🤝' }
+]
+
+// 💡 核心修復：打卡寫入邏輯
+async function handleCheckIn(promo) {
+  if (!selectedClient.value) return alert('請先搜尋並選擇客戶！')
+
+  // 寫入宣傳/打卡紀錄 (作為流水帳的一種)
+  const { error } = await supabase.from('transactions').insert({
+    type: 'income', // 雖然不一定是錢，但歸類為正向互動
+    category: '宣傳打卡',
+    amount: 0, 
+    staff: '系統',
+    branch: selectedClient.value.branch || '觀塘',
+    client_id: selectedClient.value.id,
+    note: `${selectedClient.value.name} 參與 [${promo.title}] (獲得 ${promo.points} 積分)`
+  })
+
+  if (error) alert('打卡失敗: ' + error.message)
+  else {
+    alert(`✅ 打卡成功！\n${selectedClient.value.name} 已記錄參與 ${promo.title}`)
+    searchClient.value = ''; selectedClient.value = null; store.syncAll()
+  }
+}
 </script>
 
 <template>
   <div class="page">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-      <h2 class="page-title" style="margin:0;">宣傳打卡系統</h2>
-      <button style="background:var(--p); color:white; border:none; padding:8px 16px; border-radius:20px; font-weight:800;">+ 新增紀錄</button>
+    <h2 class="page-title">宣傳與打卡</h2>
+
+    <div class="glass-card">
+      <label style="font-weight:900; color:#475569; font-size:13px; display:block; margin-bottom:8px;">1. 搜尋打卡客戶</label>
+      <input class="modern-inp" v-model="searchClient" placeholder="🔍 輸入姓名或電話..." @focus="selectedClient = null">
+      <div v-if="clientOptions.length > 0" class="drop-menu">
+        <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectedClient = c; searchClient = c.name">{{ c.name }}</div>
+      </div>
+      <div v-if="selectedClient" class="selected-badge">✔ 已選擇: {{ selectedClient.name }}</div>
     </div>
 
-    <div style="font-size:14px; font-weight:800; color:var(--t2); margin-bottom:10px;">📊 宣傳轉換漏斗 (歷史累計)</div>
-    <div class="card" style="padding:10px 20px; margin-bottom:25px;">
-      <div class="funnel-row"><span>📄 派發傳單總數</span><span class="val">10 張</span></div>
-      <div class="funnel-row"><span>📱 獲得電話數</span><span class="val" style="color:var(--p);">0 個</span></div>
-      <div class="funnel-row"><span>💬 產生查詢數</span><span class="val" style="color:#d97706;">0 次</span></div>
-      <div class="funnel-row"><span>🏃 成功試堂數</span><span class="val" style="color:var(--p);">0 人</span></div>
-      <div class="funnel-row final"><span>⭐ 最終轉化為正式客戶</span><span class="val">0 人</span></div>
-    </div>
-
-    <div style="font-size:14px; font-weight:800; color:var(--t2); margin-bottom:10px;">📝 近期宣傳紀錄</div>
-    <div v-for="h in history" :key="h.id" class="card" style="padding:15px; margin-bottom:10px;">
-      <div style="display:flex; justify-content:space-between;">
-        <div style="font-weight:900; color:var(--p); font-size:15px;">📍 {{ h.loc }}</div>
-        <div style="cursor:pointer; opacity:0.5;">🗑️</div>
-      </div>
-      <div style="font-size:11px; font-weight:700; color:var(--t3); margin:6px 0 12px;">
-        📅 {{ h.date }} · {{ h.time }}<br>
-        歷時 {{ h.duration }}
-      </div>
-      <div style="display:flex; gap:10px;">
-        <div class="badge-blue">傳單: {{ h.flyers }}</div>
-        <div class="badge-outline">試堂: {{ h.trials }}</div>
+    <div style="margin-top:20px;">
+      <div v-for="p in promos" :key="p.id" class="promo-card">
+        <div class="p-icon">{{ p.icon }}</div>
+        <div style="flex:1;">
+          <div class="p-title">{{ p.title }}</div>
+          <div class="p-pts">獎勵: {{ p.points }} 積分</div>
+        </div>
+        <button class="btn-checkin" @click="handleCheckIn(p)">✔ 登記打卡</button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.funnel-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 800; color: var(--t2); }
-.funnel-row.final { border-bottom: none; color: #16a34a; }
-.funnel-row .val { font-weight: 900; font-size: 14px; color: var(--t); }
+.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
+.page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
+.glass-card { background: white; padding: 20px; border-radius: 20px; border: 1px solid #e2e8f0; position: relative; }
+.modern-inp { width: 100%; border: 2px solid #cbd5e1; padding: 12px; border-radius: 10px; font-weight: 700; outline: none; }
+.modern-inp:focus { border-color: #4f46e2; }
+.drop-menu { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 12px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+.drop-item { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 700; color: #333; }
+.selected-badge { background: #eef2ff; color: #4f46e2; padding: 8px 12px; border-radius: 8px; margin-top: 10px; font-weight: 800; font-size: 13px; }
 
-.badge-blue { background: #eef2ff; color: var(--p); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; }
-.badge-outline { border: 1px solid var(--border); color: var(--t3); padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+.promo-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; border: 1px solid #e2e8f0; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
+.p-icon { font-size: 32px; background: #f1f5f9; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; border-radius: 16px; }
+.p-title { font-weight: 900; font-size: 16px; color: #1e293b; }
+.p-pts { font-size: 12px; color: #10b981; font-weight: 800; margin-top: 4px; }
+.btn-checkin { background: #4f46e2; color: white; border: none; padding: 12px 16px; border-radius: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; }
+.btn-checkin:active { transform: scale(0.95); }
 </style>

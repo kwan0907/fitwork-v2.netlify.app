@@ -50,21 +50,27 @@ function selectClient(c) {
   }
 }
 
-// --- 產品顯示與價格抓取 ---
+// --- 💡 核心修復：正確讀取字典格式的庫存，解決畫面空白 Bug ---
 const displayProducts = computed(() => {
-  const stockList = store.stock || []
   let list = store.products.map(p => {
-    const sItem = stockList.find(s => s.prod_name === p.name)
-    // 💡 核心：根據選擇的等級，抓取 Supabase 對應的價格欄位 (若空白則回退到 retail_price)
+    // 轉換分店名稱以匹配 store.stock 的 Key (例如: "觀塘店" -> "觀塘")
+    const branchKey = selectedBranch.value.replace('店', '')
+    const stockKey = `${p.name}_${branchKey}`
+    
+    // 精準抓取數量，若無則為 0，絕對不會崩潰
+    const currentQty = store.stock[stockKey] || 0
+    
+    // 根據選擇的等級，抓取 Supabase 對應的價格欄位 (若空白則回退到 retail_price)
     const currentPriceCol = tierMapping[selectedTier.value]
     const finalPrice = p[currentPriceCol] || p.retail_price || 0
     
     return { 
       ...p, 
-      current_stock: sItem ? sItem.quantity : 0,
+      current_stock: currentQty,
       active_price: finalPrice
     }
   })
+  
   if (selectedCategory.value !== '全部') list = list.filter(p => p.category === selectedCategory.value)
   if (searchProduct.value) list = list.filter(p => p.name.toLowerCase().includes(searchProduct.value.toLowerCase()))
   return list
@@ -83,7 +89,7 @@ const decreaseQty = (item) => {
 
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
 const totalRevenue = computed(() => cart.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
-// 預估成本：若資料庫無 cost 欄位，暫以標準價 50% 估算 (符合你截圖的 50% 邏輯)
+// 預估成本：若資料庫無 cost 欄位，暫以標準價 50% 估算
 const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((item.cost || (item.price_standard * 0.5)) * item.qty), 0))
 const netProfit = computed(() => totalRevenue.value - totalCost.value)
 
@@ -92,6 +98,7 @@ async function finalizeCheckout(payeeName) {
   if (!selectedClient.value) return alert('請在上方先選擇紀錄對象！')
 
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
+  const branchKey = selectedBranch.value.replace('店','')
 
   // 1. 寫入交易紀錄
   const { error: txnError } = await supabase.from('transactions').insert([{
@@ -99,18 +106,21 @@ async function finalizeCheckout(payeeName) {
     category: '零售收入', 
     amount: totalRevenue.value, 
     profit: netProfit.value,
-    branch: selectedBranch.value, 
+    branch: branchKey, 
     client_id: selectedClient.value.id,
-    handled_by: payeeName, // 準確紀錄是 kwan 還是 Cat 收的錢
+    handled_by: payeeName,
     note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 2. 扣除庫存 (同步 stock 表)
+  // 2. 💡 扣除庫存 (同步 stock 表)
   for (const item of cart.value) {
     const currentQty = item.current_stock || 0
-    await supabase.from('stock').update({ quantity: currentQty - item.qty }).eq('prod_name', item.name)
+    await supabase.from('stock').upsert(
+      { prod_name: item.name, branch: branchKey, quantity: currentQty - item.qty }, 
+      { onConflict: 'prod_name,branch' }
+    )
   }
 
   alert(`✅ 結帳成功！\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
@@ -140,10 +150,10 @@ async function finalizeCheckout(payeeName) {
       <div class="grid-2" style="margin-top:15px;">
         <div class="form-item"><label>2. 庫存分店</label>
           <select v-model="selectedBranch" class="modern-select">
-   <option value="觀塘店">觀塘店</option>
-   <option value="中環店">中環店</option>
-   <option value="佐敦店">佐敦店</option>
-</select>
+            <option value="觀塘店">觀塘店</option>
+            <option value="中環店">中環店</option>
+            <option value="佐敦店">佐敦店</option>
+          </select>
         </div>
         <div class="form-item"><label>3. 客戶折扣</label>
           <select v-model="selectedTier" class="modern-select">
@@ -247,13 +257,11 @@ async function finalizeCheckout(payeeName) {
 .new-p { font-size: 18px; font-weight: 900; color: #4f46e2; }
 .add-circle { width: 36px; height: 36px; border-radius: 50%; border: none; background: #eef2ff; font-weight: 900; color: #4f46e2; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center;}
 
-/* 底部藍色懸浮條 */
 .float-bar { position: fixed; bottom: 80px; left: 5%; width: 90%; background: #4f46e2; border-radius: 99px; padding: 12px 20px; display: flex; align-items: center; box-shadow: 0 10px 25px rgba(79,70,229,0.4); z-index: 90; cursor: pointer; }
 .badge-num { background: white; color: #4f46e2; width: 28px; height: 28px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 14px; }
 .float-total { font-size: 20px; font-weight: 900; color: white; margin-right: 15px; }
 .float-btn { font-size: 14px; font-weight: 800; color: white; opacity: 0.9; }
 
-/* 結帳彈窗 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; display: flex; align-items: flex-end; justify-content: center; }
 .checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 24px 24px 0 0; padding: 25px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
