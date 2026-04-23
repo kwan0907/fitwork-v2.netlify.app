@@ -4,6 +4,13 @@ import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
 
+// 🌟 1. 引入 Chart.js 相關套件
+import { Line } from 'vue-chartjs'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+
+// 🌟 2. 註冊 Chart.js 元件 (這是使用圖表的必要設定)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+
 const store = useMainStore()
 
 // --- 全局篩選狀態 ---
@@ -159,6 +166,84 @@ async function updateTrial() {
   if (error) alert('更新失敗: ' + error.message)
   else { alert('✅ 預約資料已更新'); showEditModal.value = false; store.syncAll() }
 }
+
+// 🌟 6. 準備動態圖表數據 (過去 7 天走勢)
+const trendChartData = computed(() => {
+  const labels = []
+  const revData = []
+  const profData = []
+
+  // 產生過去 7 天的標籤與數據
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    labels.push(`${d.getMonth() + 1}月${d.getDate()}日`) // 例: "4月23日"
+
+    // 篩選出這天的交易，並套用分店過濾
+    const dailyTxns = store.transactions.filter(t => {
+      const td = new Date(t.created_at)
+      const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
+      const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
+      return isSameDay && isBranchMatch
+    })
+
+    let dailyRev = 0
+    let dailyProf = 0
+    dailyTxns.forEach(t => {
+      const amt = Number(t.amount) || 0
+      if (t.type === 'income') {
+        dailyRev += amt
+        dailyProf += Number(t.profit ?? amt)
+      } else if (t.type === 'expense') {
+        dailyProf -= amt
+      }
+    })
+
+    revData.push(dailyRev)
+    profData.push(dailyProf)
+  }
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: '總營業額 ($)',
+        borderColor: '#4f46e2', // 藍紫色
+        backgroundColor: 'rgba(79, 70, 226, 0.15)', // 漸層填充色
+        data: revData,
+        fill: true,
+        tension: 0.4, // 讓線條變圓滑
+        pointRadius: 4,
+        pointBackgroundColor: '#4f46e2'
+      },
+      {
+        label: '淨利潤 ($)',
+        borderColor: '#10b981', // 綠色
+        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+        data: profData,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 4,
+        pointBackgroundColor: '#10b981'
+      }
+    ]
+  }
+})
+
+// 🌟 7. 圖表樣式設定
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { position: 'top', labels: { usePointStyle: true, font: { weight: 'bold', family: 'sans-serif' } } },
+    tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(30, 41, 59, 0.9)', titleFont: { size: 14 }, bodyFont: { size: 14, weight: 'bold' } }
+  },
+  scales: {
+    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { weight: 'bold' } } },
+    x: { grid: { display: false }, ticks: { font: { weight: 'bold', color: '#64748b' } } }
+  },
+  interaction: { mode: 'nearest', axis: 'x', intersect: false }
+}
 </script>
 
 <template>
@@ -186,18 +271,10 @@ async function updateTrial() {
       <input type="date" v-model="customStart" class="d-inp"> <span>至</span> <input type="date" v-model="customEnd" class="d-inp">
     </div>
 
-    <div class="section-title">📅 近期試堂預約 (點擊可修改)</div>
-    <div class="card p-list">
-      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
-      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
-        <div class="p-date">
-          <div class="m">{{ getMonthStr(p.trial_date) }}</div>
-          <div class="d">{{ getDayStr(p.trial_date) }}</div>
-        </div>
-        <div class="p-info">
-          <div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div>
-          <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
-        </div>
+    <div class="chart-wrapper">
+      <div class="chart-header">📈 過去 7 天業績走勢 ({{ filterBranch }})</div>
+      <div class="canvas-container">
+        <Line :data="trendChartData" :options="chartOptions" />
       </div>
     </div>
 
@@ -214,6 +291,21 @@ async function updateTrial() {
     <div class="profit-box">
       <div class="p-title">💎 總實收淨利潤</div>
       <div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div>
+    </div>
+
+    <div class="section-title">📅 近期試堂預約 (點擊可修改)</div>
+    <div class="card p-list">
+      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
+      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
+        <div class="p-date">
+          <div class="m">{{ getMonthStr(p.trial_date) }}</div>
+          <div class="d">{{ getDayStr(p.trial_date) }}</div>
+        </div>
+        <div class="p-info">
+          <div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div>
+          <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
+        </div>
+      </div>
     </div>
 
     <div class="section-title" style="margin-top: 25px;">👥 分店正式客戶人數</div>
@@ -274,7 +366,7 @@ async function updateTrial() {
 </template>
 
 <style scoped>
-/* 原有樣式一字不刪，新增可點擊與自訂日期樣式 */
+/* 原有樣式一字不刪 */
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .title { font-weight: 900; font-size: 24px; color: #1e293b; }
@@ -284,6 +376,11 @@ async function updateTrial() {
 .d-inp { border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; outline: none; }
 .section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
 .card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
+
+/* 🌟 新增圖表區塊樣式 */
+.chart-wrapper { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; margin-bottom: 20px; margin-top: 10px; }
+.chart-header { font-weight: 900; color: #1e293b; font-size: 15px; margin-bottom: 15px; display: flex; align-items: center; }
+.canvas-container { position: relative; height: 220px; width: 100%; }
 
 .p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
 .p-item:last-child { border-bottom: none; margin-bottom:0; padding-bottom:0; }
