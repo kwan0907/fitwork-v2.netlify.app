@@ -162,8 +162,8 @@ const trendChartData = computed(() => {
   return {
     labels,
     datasets: [
-      { label: '營業額 ($)', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
-      { label: '利潤 ($)', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
+      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
+      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
     ]
   }
 })
@@ -198,11 +198,21 @@ const chartOptions = {
       <input type="date" v-model="customStart" class="d-inp"> <span>至</span> <input type="date" v-model="customEnd" class="d-inp">
     </div>
 
-    <div class="chart-wrapper">
-      <div class="chart-header">📈 過去 7 天業績走勢 ({{ filterBranch }})</div>
-      <div class="canvas-container">
-        <Line :data="trendChartData" :options="chartOptions" />
+    <div class="section-title" style="margin-top: 10px;">📅 近期試堂預約 (點擊可修改)</div>
+    <div class="card p-list" style="margin-bottom: 20px; border-color: #a5b4fc; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);">
+      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
+      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
+        <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
+        <div class="p-info">
+          <div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div>
+          <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
+        </div>
       </div>
+    </div>
+
+    <div class="chart-wrapper">
+      <div class="chart-header">📈 過去 7 天趨勢走勢</div>
+      <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
     </div>
 
     <div class="finance-grid" style="margin-top: 20px;">
@@ -210,15 +220,6 @@ const chartOptions = {
       <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
     </div>
     <div class="profit-box"><div class="p-title">💎 區間實收淨利潤</div><div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div></div>
-
-    <div class="section-title">📅 近期試堂預約 (點擊修改)</div>
-    <div class="card p-list">
-      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
-      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
-        <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
-        <div class="p-info"><div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div><div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div></div>
-      </div>
-    </div>
 
     <div class="section-title" style="margin-top: 25px;">👥 分店正式客戶人數</div>
     <div class="grid-3">
@@ -244,8 +245,8 @@ const chartOptions = {
 
     <div class="section-title">📈 廣告與套票數據</div>
     <div class="grid-2">
-      <div class="stat-card"><div class="s-val">{{ marketingStats.adCount }} 人</div><div class="s-label">總廣告來源</div><div class="s-sub">成功轉正式: {{ marketingStats.adActive }} 人</div></div>
-      <div class="stat-card"><div class="s-val">{{ packageStats.pkg850 }} / {{ packageStats.pkg2550 }}</div><div class="s-label">區間套票銷量</div><div class="s-sub">10點 / 35點</div></div>
+      <div class="stat-card"><div class="s-val">{{ marketingStats.adCount }} 人</div><div class="s-label">廣告來源客戶</div><div class="s-sub">成功轉正式: {{ marketingStats.adActive }}</div></div>
+      <div class="stat-card"><div class="s-val">{{ packageStats.pkg850 }} / {{ packageStats.pkg2550 }}</div><div class="s-label">套票銷量</div><div class="s-sub">10點 / 35點</div></div>
     </div>
 
     <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
