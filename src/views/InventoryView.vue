@@ -7,11 +7,11 @@ const store = useMainStore()
 const searchProduct = ref('')
 const selectedBranch = ref('觀塘')
 
-// 🌟 完美還原：分類狀態
+// 🌟 分類狀態
 const selectedCategory = ref('全部')
 const categories = ['全部', '內在營養', '外在保養']
 
-// 🌟 完美還原：自訂排序 (Shake/蛋白素 -> 佳能 -> 蘆薈汁 -> 茶)
+// 🌟 自訂排序 (Shake/蛋白素 -> 佳能 -> 蘆薈汁 -> 茶)
 const sortedProducts = computed(() => {
   return [...store.products].sort((a, b) => {
     const getW = (p) => {
@@ -26,23 +26,20 @@ const sortedProducts = computed(() => {
   })
 })
 
-// 💡 核心：整合排序、分類(內/外)、中英文搜尋、以及庫存映射
+// 💡 整合排序、分類(內/外)、中英文搜尋、以及庫存映射
 const displayInventory = computed(() => {
-  // 1. 抓取庫存並映射
   let list = sortedProducts.value.map(p => {
     const stockKey = `${p.name}_${selectedBranch.value}`
     const currentQty = store.stock[stockKey] || 0
     return { ...p, current_qty: currentQty }
   })
 
-  // 2. 分類篩選 (精確對齊 Supabase 的 '內' 或 '外')
   if (selectedCategory.value === '內在營養') {
     list = list.filter(p => p.category && p.category.includes('內'))
   } else if (selectedCategory.value === '外在保養') {
     list = list.filter(p => p.category && p.category.includes('外'))
   }
 
-  // 3. 搜尋篩選 (支援中/英文與代號)
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
     list = list.filter(p => 
@@ -55,7 +52,7 @@ const displayInventory = computed(() => {
   return list
 })
 
-// 動態計算正確的「當前分店存貨總成本」 (數量 × 成本)
+// 動態計算正確的「當前分店存貨總成本」
 const currentTotalCost = computed(() => {
   return displayInventory.value.reduce((sum, item) => {
     const itemCost = Number(item.cost) || Number(item.price_50) || 0
@@ -67,10 +64,11 @@ const currentTotalCost = computed(() => {
 const selfUseRecords = computed(() => store.transactions.filter(t => t.category === '自用消耗'))
 const selfUseTotalCost = computed(() => selfUseRecords.value.reduce((sum, t) => sum + Number(t.amount), 0))
 
-// 🛡️ 絕對安全寫入邏輯：先 Select，有就 Update，沒有就 Insert
+// 🛡️ 絕對安全寫入邏輯：徹底移除對 `id` 的依賴！
 async function updateStock(itemName, newQty) {
+  // 1. 改找 quantity 而不是 id，因為你的資料庫沒有 id 欄位！
   const { data, error: selectError } = await supabase.from('stock')
-    .select('id')
+    .select('quantity')
     .eq('prod_name', itemName)
     .eq('branch', selectedBranch.value)
     .maybeSingle()
@@ -80,23 +78,28 @@ async function updateStock(itemName, newQty) {
     return { success: false, message: selectError.message }
   }
 
-  if (data && data.id) {
+  if (data) {
+    // 2. 如果存在，用名稱和分店作為條件進行更新
     const { error: updateError } = await supabase.from('stock')
       .update({ quantity: newQty })
-      .eq('id', data.id)
+      .eq('prod_name', itemName)
+      .eq('branch', selectedBranch.value)
+      
     if (updateError) return { success: false, message: updateError.message }
   } else {
+    // 3. 如果不存在，直接新增
     const { error: insertError } = await supabase.from('stock')
       .insert({ prod_name: itemName, branch: selectedBranch.value, quantity: newQty })
+      
     if (insertError) return { success: false, message: insertError.message }
   }
   
   return { success: true }
 }
 
-// 💡 支援輸入正負數 (+ 加貨, - 扣除)
+// 💡 支援正負加減，且【沒有預設數字】
 async function handleRestock(item) {
-  const amountStr = prompt(`[入貨 / 扣除]\n請輸入「${item.name}」要變動的數量：\n(輸入正數為增加，輸入負數如 -5 為減少)`, "10")
+  const amountStr = prompt(`[加減庫存]\n請輸入「${item.name}」要變動的數量：\n(輸入正數為增加，輸入負數如 -5 為減少)`, "")
   if (!amountStr || isNaN(amountStr)) return
   
   const amount = parseInt(amountStr)
@@ -107,17 +110,20 @@ async function handleRestock(item) {
   else { alert(`✅ 已成功${amount >= 0 ? '增加' : '扣除'}數量`); store.syncAll() }
 }
 
+// 💡 盤點覆蓋，【沒有預設數字】
 async function handleStocktake(item) {
-  const newQty = prompt(`[盤點覆蓋]\n請輸入「${item.name}」現場的真實庫存總數：`, item.current_qty)
-  if (newQty === null || isNaN(newQty)) return
+  const newQty = prompt(`[盤點覆蓋]\n請輸入「${item.name}」現場的真實庫存總數：`, "")
+  // 如果輸入空白或按取消，就直接退出
+  if (newQty === null || newQty === '' || isNaN(newQty)) return
   
   const result = await updateStock(item.name, parseInt(newQty))
   if (!result.success) alert('❌ 盤點失敗: ' + result.message)
   else { alert('✅ 盤點數量已更新'); store.syncAll() }
 }
 
+// 💡 內部自用，【沒有預設數字】
 async function handleSelfUse(item) {
-  const qtyStr = prompt(`[內部自用]\n請輸入「${item.name}」提取自用的數量：`, "1")
+  const qtyStr = prompt(`[內部自用]\n請輸入「${item.name}」提取自用的數量：`, "")
   if (!qtyStr || isNaN(qtyStr)) return
   
   const extractQty = parseInt(qtyStr)
@@ -125,6 +131,7 @@ async function handleSelfUse(item) {
   
   const newQty = item.current_qty - extractQty
   const stockResult = await updateStock(item.name, newQty)
+
   if (!stockResult.success) return alert('庫存扣除失敗: ' + stockResult.message)
 
   const itemCost = Number(item.cost) || Number(item.price_50) || 0
@@ -209,11 +216,10 @@ async function handleSelfUse(item) {
 .branch-tabs button { flex: 1; padding: 12px 15px; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; }
 .branch-tabs button.active { background: #4f46e2; color: #fff; border-color: #4f46e2; box-shadow: 0 4px 10px rgba(79,70,229,0.2); }
 
-/* 🌟 防手機放大的 16px 設定 */
+/* 防手機放大 */
 .search-box { width: 100%; border: 2px solid #e2e8f0; padding: 14px; border-radius: 14px; font-weight: 700; color: #1e293b; outline: none; background: white; font-size: 16px; appearance: none; }
 .search-box:focus { border-color: #4f46e2; }
 
-/* 🌟 分類標籤樣式 */
 .tags-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; }
 .cat-btn { padding: 8px 16px; border-radius: 99px; background: #e2e8f0; border: none; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; cursor: pointer; }
 .cat-btn.active { background: #4f46e2; color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.3); }
