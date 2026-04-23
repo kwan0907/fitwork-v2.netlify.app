@@ -1,269 +1,304 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
-import { supabase } from '../supabase'
-
-// 🌟 1. 引入 Chart.js 相關套件
-import { Line } from 'vue-chartjs'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
-
-// 🌟 2. 註冊 Chart.js 元件
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+import { supabase } from '../supabase' 
 
 const store = useMainStore()
 
-// --- 全局篩選狀態 ---
-const filterTime = ref('month')
-const customStart = ref('')
-const customEnd = ref('')
-const filterBranch = ref('全部分店')
-
-// --- 編輯試堂狀態 ---
+// --- 狀態定義 ---
+const showAddModal = ref(false)
 const showEditModal = ref(false)
-const editingClient = ref(null)
+const clientSearch = ref('') 
+const filterBranch = ref('')
+const filterStatus = ref('active')
+const todayStr = new Date().toISOString().split('T')[0]
+const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
 
-const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
-const getDayStr = (d) => new Date(d).getDate().toString().padStart(2, '0')
-const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
-
-const isDateInRange = (dateStr) => {
-  if (!dateStr) return false
-  const d = new Date(dateStr)
-  const now = new Date()
-  if (filterTime.value === 'all') return true
-  if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
-  if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  if (filterTime.value === 'week') {
-    const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
-    return d >= weekAgo && d <= now;
-  }
-  if (filterTime.value === 'custom') {
-    if (!customStart.value || !customEnd.value) return true
-    const start = new Date(customStart.value); start.setHours(0,0,0,0)
-    const end = new Date(customEnd.value); end.setHours(23,59,59,999)
-    return d >= start && d <= end
-  }
-  return true
+const defaultNewClient = { 
+  name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
+  is_vip: false, is_marathon: false, join_date: todayStr, 
+  package_count: 0, expiry_date: '', handled_by: staffList.value[0], payment_received: 0,
+  referred_by_id: null
 }
 
-const prospectClients = computed(() => store.clients.filter(c => c.status === 'prospect'))
-const activeClients = computed(() => store.clients.filter(c => c.status === 'active'))
+const newClient = ref({ ...defaultNewClient })
+const editingClient = ref({})
 
-const branchCounts = computed(() => {
-  return {
-    kwunTong: activeClients.value.filter(c => c.branch === '觀塘').length,
-    central: activeClients.value.filter(c => c.branch === '中環').length,
-    jordan: activeClients.value.filter(c => c.branch === '佐敦').length
+const allClientsOptions = computed(() => {
+    return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
+})
+
+// --- 篩選邏輯 ---
+const filteredClients = computed(() => {
+  let list = store.clients
+  const q = clientSearch.value.toLowerCase()
+  if (q) list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q)))
+  if (filterBranch.value) list = list.filter(c => c.branch === filterBranch.value)
+  if (filterStatus.value === 'active') list = list.filter(c => c.status !== 'prospect')
+  else list = list.filter(c => c.status === 'prospect')
+  return list
+})
+
+// --- 功能函數 ---
+function openAddModal() {
+    newClient.value = { ...defaultNewClient }
+    showAddModal.value = true
+}
+
+async function handleAddClient() {
+  if (!newClient.value.name) return alert('請填寫姓名')
+  
+  const dataToInsert = { ...newClient.value }
+  if (dataToInsert.source !== '朋友介紹') {
+      dataToInsert.referred_by_id = null
   }
-})
 
-const upcomingTrials = computed(() => {
-  const now = new Date(); now.setHours(0,0,0,0);
-  return prospectClients.value
-    .filter(c => c.trial_date)
-    .filter(c => { const tDate = new Date(c.trial_date); return tDate >= now || tDate.toDateString() === now.toDateString(); })
-    .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => new Date(a.trial_date) - new Date(b.trial_date))
-    .slice(0, 5)
-})
+  const { error } = await supabase.from('clients').insert([dataToInsert])
+  if (error) alert('新增失敗: ' + error.message)
+  else { showAddModal.value = false; store.syncAll(); alert('✅ 新增成功') }
+}
 
-const financialStats = computed(() => {
-  let revenue = 0, cost = 0, profit = 0;
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
-    const amt = Number(t.amount) || 0;
-    if (t.type === 'income') { revenue += amt; profit += Number(t.profit ?? amt); } 
-    else if (t.type === 'expense') { cost += amt; profit -= amt; }
-  })
-  return { revenue, cost, profit };
-})
+async function handleUpdateClient() {
+  if (!editingClient.value.name) return alert('請填寫姓名')
+  const { error } = await supabase.from('clients').update(editingClient.value).eq('id', editingClient.value.id)
+  if (error) alert('更新失敗: ' + error.message)
+  else { showEditModal.value = false; store.syncAll(); alert('✅ 修改已儲存') }
+}
 
-const marathonRate = computed(() => {
-  if (activeClients.value.length === 0) return "0.0"
-  const runners = activeClients.value.filter(c => c.is_marathon).length
-  return ((runners / activeClients.value.length) * 100).toFixed(1)
-})
+async function handleDeleteClient() {
+  if(!confirm(`⚠️ 徹底刪除「${editingClient.value.name}」？此操作不可還原！`)) return
+  const { error } = await supabase.from('clients').delete().eq('id', editingClient.value.id)
+  if (error) alert('刪除失敗')
+  else { showEditModal.value = false; store.syncAll(); alert('已刪除') }
+}
 
-const cashSummary = computed(() => {
-  const summary = {}
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (!t.handled_by && !t.staff) return
-    const person = t.handled_by || t.staff
-    if (!summary[person]) summary[person] = { in: 0, out: 0 }
-    if (t.type === 'income') summary[person].in += Number(t.amount)
-    if (t.type === 'expense') summary[person].out += Number(t.amount)
-  })
-  return summary
-})
-
-const marketingStats = computed(() => {
-  let adSpend = 0, inquiries = 0
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if(t.type === 'expense' && t.category === '廣告費用') { adSpend += Number(t.amount); inquiries += (t.ad_inquiries || 0) }
-  })
-  const adClients = store.clients.filter(c => c.source === '廣告')
-  return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c.status === 'active').length }
-})
-
-const packageStats = computed(() => {
-  let pkg850 = 0, pkg2550 = 0
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (t.category === '運動套票' || t.category === '運動') {
-      if (t.amount === 850 || (t.note && t.note.includes('pkg_10'))) pkg850++
-      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35'))) pkg2550++
-    }
-  })
-  return { pkg850, pkg2550 }
-})
-
-function openTrialEdit(client) {
+function openEditModal(client) {
   editingClient.value = { ...client }
-  if (editingClient.value.trial_date) {
-    const d = new Date(editingClient.value.trial_date)
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-    editingClient.value.trial_date = d.toISOString().slice(0,16)
-  }
   showEditModal.value = true
 }
 
-async function updateTrial() {
-  const { error } = await supabase.from('clients').update({
-    name: editingClient.value.name, phone: editingClient.value.phone,
-    trial_date: editingClient.value.trial_date, status: editingClient.value.status
-  }).eq('id', editingClient.value.id)
-
-  if (error) alert('更新失敗: ' + error.message)
-  else { alert('✅ 預約資料已更新'); showEditModal.value = false; store.syncAll() }
+const getClientGen = (id) => {
+  let g = 1; let c = store.clients.find(x => x.id === id); let count = 0
+  while (c && c.referred_by_id && count < 15) { g++; c = store.clients.find(x => x.id === c.referred_by_id); count++ }
+  return g
 }
 
-// 🌟 準備動態圖表數據
-const trendChartData = computed(() => {
-  const labels = [], revData = [], profData = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
-    
-    const dailyTxns = store.transactions.filter(t => {
-      const td = new Date(t.created_at)
-      const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
-      const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
-      return isSameDay && isBranchMatch
-    })
+const getExpiryClass = (date) => {
+  if (!date) return ''
+  const d = (new Date(date) - new Date()) / 86400000
+  return d < 0 ? 'tag-red' : (d < 14 ? 'tag-orange' : 'tag-green')
+}
 
-    let dailyRev = 0, dailyProf = 0
-    dailyTxns.forEach(t => {
-      const amt = Number(t.amount) || 0
-      if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
-      else if (t.type === 'expense') { dailyProf -= amt; }
-    })
-    revData.push(dailyRev); profData.push(dailyProf)
-  }
-  return {
-    labels,
-    datasets: [
-      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
-      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
-    ]
-  }
-})
+// --- 匯入功能 ---
+function downloadCSVTemplate() {
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF姓名,電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD)\n王小明,98765432,觀塘,active,2024-01-01"
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", "fitwork_clients_template.csv")
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+}
 
-const chartOptions = {
-  responsive: true, maintainAspectRatio: false,
-  plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { weight: 'bold' } } } },
-  scales: {
-    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { weight: 'bold' } } },
-    x: { grid: { display: false }, ticks: { font: { weight: 'bold', color: '#64748b' } } }
-  },
-  interaction: { mode: 'nearest', axis: 'x', intersect: false }
+function triggerFileInput() {
+    document.getElementById('csvFileInput').click()
+}
+
+async function handleImport(event) {
+    const file = event.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+        const text = e.target.result
+        console.log("讀取到檔案內容:", text)
+        alert("匯入功能準備好解析 CSV！")
+    }
+    reader.readAsText(file)
 }
 </script>
 
 <template>
-  <div class="page" style="padding-bottom: 150px;">
-    <div class="d-header">
-      <h2 class="title">數據中心 2.0</h2>
-      <div class="filters">
-        <select v-model="filterTime" class="f-sel">
-          <option value="today">今日</option><option value="week">本週</option><option value="month">本月</option>
-          <option value="custom">自訂區間</option><option value="all">全部</option>
-        </select>
-        <select v-model="filterBranch" class="f-sel">
-          <option value="全部分店">全部分店</option><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
-        </select>
+  <div class="page">
+    <div class="header-section">
+      <h2 class="page-title">FITWORK PRO 管理端</h2>
+      <p class="subtitle">數據即時同步中 ⚡️</p>
+    </div>
+    
+    <div class="card search-box">
+      <input class="inp-clean" v-model="clientSearch" placeholder="🔍 即時搜尋姓名、電話、負責人...">
+      <div class="filter-row">
+        <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
+        <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
+        <div class="v-line"></div>
+        <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
       </div>
     </div>
 
-    <div v-if="filterTime === 'custom'" class="custom-date-box">
-      <input type="date" v-model="customStart" class="d-inp"> <span>至</span> <input type="date" v-model="customEnd" class="d-inp">
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;">
+        <button class="btn-outline" @click="downloadCSVTemplate">📥 下載匯入格式</button>
+        <button class="btn-outline" @click="triggerFileInput">📤 匯入客戶名單</button>
+        <input type="file" id="csvFileInput" accept=".csv" style="display: none;" @change="handleImport">
     </div>
 
-    <div class="section-title" style="margin-top: 10px;">📅 近期試堂預約 (點擊可修改)</div>
-    <div class="card p-list" style="margin-bottom: 20px; border-color: #a5b4fc; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);">
-      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
-      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
-        <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
-        <div class="p-info">
-          <div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div>
-          <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
+    <div class="list-container">
+      <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openEditModal(c)">
+        <div class="c-avatar">{{ (c.name || '?').charAt(0) }}</div>
+        <div class="c-main">
+          <div class="c-name-row">
+            <span class="c-name">{{ c.name }}</span>
+            <span v-if="c.is_vip" class="badge-vip">VIP</span>
+            <span v-if="c.is_marathon" class="badge-run">RUN</span>
+          </div>
+          <div class="c-meta">
+            {{ c.phone || '無電話' }} · {{ c.branch }}
+            <span v-if="c.handled_by" class="handled-text"> (由 {{ c.handled_by }} 持有)</span>
+          </div>
+        </div>
+        <div class="c-side">
+          <div class="c-gen" v-if="c.status!=='prospect'">Gen {{ getClientGen(c.id) }}</div>
+          <div :class="['c-expiry', getExpiryClass(c.expiry_date)]">
+            {{ c.status==='prospect' ? '預約中' : (c.expiry_date || '無效期') }}
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="chart-wrapper">
-      <div class="chart-header">📈 過去 7 天趨勢走勢</div>
-      <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
-    </div>
-
-    <div class="finance-grid" style="margin-top: 20px;">
-      <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
-      <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
-    </div>
-    <div class="profit-box"><div class="p-title">💎 區間實收淨利潤</div><div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div></div>
-
-    <div class="section-title" style="margin-top: 25px;">👥 分店正式客戶人數</div>
-    <div class="grid-3">
-      <div class="b-card"><div class="num">{{ branchCounts.kwunTong }}</div><div class="loc">觀塘</div></div>
-      <div class="b-card"><div class="num">{{ branchCounts.central }}</div><div class="loc">中環</div></div>
-      <div class="b-card"><div class="num">{{ branchCounts.jordan }}</div><div class="loc">佐敦</div></div>
-    </div>
-
-    <div class="marathon-card">
-      <div class="m-title">客戶轉馬拉松百分比</div>
-      <div class="m-val">{{ marathonRate }}% <span style="float:right; font-size:32px;">🏃</span></div>
-      <div class="m-foot"><span>活躍: {{ activeClients.filter(c=>c.is_marathon).length }} 人</span><span>正式會員: {{ activeClients.length }} 人</span></div>
-    </div>
-
-    <div class="section-title" v-if="Object.keys(cashSummary).length > 0">💰 經手人資金結算</div>
-    <div class="grid-2">
-      <div v-for="(data, name, index) in cashSummary" :key="name" class="cash-card" :class="'border-'+(index%2)">
-        <div class="c-name">{{ name }}</div>
-        <div class="c-total">$ {{ (data.in - data.out).toLocaleString() }}</div>
-        <div class="c-foot"><span>收: ${{ data.in }}</span><span>支: ${{ data.out }}</span></div>
-      </div>
-    </div>
-
-    <div class="section-title">📈 廣告與套票數據</div>
-    <div class="grid-2">
-      <div class="stat-card"><div class="s-val">{{ marketingStats.adCount }} 人</div><div class="s-label">廣告來源客戶</div><div class="s-sub">成功轉正式: {{ marketingStats.adActive }}</div></div>
-      <div class="stat-card"><div class="s-val">{{ packageStats.pkg850 }} / {{ packageStats.pkg2550 }}</div><div class="s-label">套票銷量</div><div class="s-sub">10點 / 35點</div></div>
-    </div>
+    <button class="main-fab" @click="openAddModal">+</button>
 
     <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-      <div class="edit-modal">
-        <div class="m-header">✏️ 編輯試堂預約 <button class="close-x" @click="showEditModal=false">✕</button></div>
-        <div v-if="editingClient">
-          <div class="form-item"><label>客戶姓名</label><input v-model="editingClient.name" class="mod-inp"></div>
-          <div class="form-item" style="margin-top:12px;"><label>聯絡電話</label><input v-model="editingClient.phone" class="mod-inp"></div>
-          <div class="form-item" style="margin-top:12px;"><label>預約日期與時間</label><input type="datetime-local" v-model="editingClient.trial_date" class="mod-inp"></div>
-          <div class="form-item" style="margin-top:12px;"><label>更改狀態</label>
-            <select v-model="editingClient.status" class="mod-inp">
-              <option value="prospect">👀 維持預約狀態</option>
-              <option value="active">⭐️ 轉為正式會員</option>
+      <div class="center-modal scrollable-modal">
+        <div class="m-header">🔧 客戶詳細設定 <button class="close-x" @click="showEditModal=false">✕</button></div>
+        
+        <div class="toggle-group">
+          <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
+        </div>
+
+        <div class="section-title">💰 財務持有設定</div>
+        <div class="grid-2">
+          <div class="f-item">
+            <label>誰負責收錢？</label>
+            <select v-model="editingClient.handled_by" class="modern-select">
+                <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
             </select>
           </div>
-          <button class="btn-save" @click="updateTrial">確認儲存</button>
+          <div class="f-item">
+            <label>持有金額 ($)</label>
+            <input type="number" v-model="editingClient.payment_received" class="modern-inp">
+          </div>
         </div>
+
+        <div class="section-title">👤 基本資料</div>
+        <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
+        <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
+
+        <div class="grid-2">
+          <div class="f-item"><label>分店</label><select v-model="editingClient.branch" class="modern-select"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
+          <div class="f-item">
+              <label>來源</label>
+              <select v-model="editingClient.source" class="modern-select">
+                  <option value="廣告">廣告</option>
+                  <option value="傳單">傳單</option>
+                  <option value="IG">IG</option>
+                  <option value="朋友介紹">朋友介紹</option>
+                  <option value="其他">其他</option>
+              </select>
+            </div>
+        </div>
+        
+        <div class="f-item" v-if="editingClient.source === '朋友介紹'" style="margin-top: 12px;">
+            <label>介紹人</label>
+            <select v-model="editingClient.referred_by_id" class="modern-select">
+                <option :value="null">請選擇介紹人...</option>
+                <option v-for="c in allClientsOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+            </select>
+        </div>
+
+        <div class="section-title">📅 關鍵日期</div>
+        <div class="grid-2">
+          <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
+          <div class="f-item"><label>套票到期日</label><input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空"></div>
+        </div>
+
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: editingClient.is_marathon}" @click="editingClient.is_marathon = !editingClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: editingClient.is_vip}" @click="editingClient.is_vip = !editingClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
+          <button class="btn-confirm" @click="handleUpdateClient">確認修改</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
+      <div class="center-modal scrollable-modal">
+        <div class="m-header">➕ 登記新客戶 <button class="close-x" @click="showAddModal=false">✕</button></div>
+        
+        <div class="toggle-group">
+          <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
+        </div>
+
+        <div class="section-title">👤 基本資料</div>
+        <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
+        <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話"></div>
+        
+        <div class="grid-2">
+            <div class="f-item"><label>分店</label>
+                <select v-model="newClient.branch" class="modern-select">
+                    <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+                </select>
+            </div>
+            <div class="f-item"><label>認識來源</label>
+                <select v-model="newClient.source" class="modern-select">
+                    <option value="廣告">廣告</option>
+                    <option value="傳單">傳單</option>
+                    <option value="朋友介紹">朋友介紹</option>
+                    <option value="IG">IG</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="f-item" v-if="newClient.source === '朋友介紹'" style="margin-top: 12px;">
+            <label>是哪位朋友介紹的？(計算代數)</label>
+            <select v-model="newClient.referred_by_id" class="modern-select">
+                <option :value="null">請選擇...</option>
+                <option v-for="c in allClientsOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+            </select>
+        </div>
+
+        <div class="section-title">📅 關鍵日期</div>
+        <div class="grid-2">
+          <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>
+          <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
+        </div>
+
+        <div class="section-title">💰 財務設定</div>
+        <div class="grid-2">
+          <div class="f-item">
+            <label>誰負責收錢？</label>
+            <select v-model="newClient.handled_by" class="modern-select">
+                <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
+            </select>
+          </div>
+          <div class="f-item">
+            <label>持有金額 ($)</label>
+            <input type="number" v-model="newClient.payment_received" class="modern-inp">
+          </div>
+        </div>
+
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <button class="btn-confirm" style="width:100%; margin-top:20px;" @click="handleAddClient">立即新增</button>
       </div>
     </div>
 
@@ -271,76 +306,65 @@ const chartOptions = {
 </template>
 
 <style scoped>
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
-.d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.title { font-weight: 900; font-size: 24px; color: #1e293b; }
-.filters { display: flex; gap: 8px; }
-.f-sel { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; font-weight: 700; background: white; outline: none; }
-.custom-date-box { background: #eef2ff; padding: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border: 1px solid #c7d2fe; font-weight: 800; color: #4f46e2; }
-.d-inp { border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; outline: none; font-size: 16px;}
+/* 顏色變數 */
+:host { --p: #6366f1; --pd: #4f46e2; --run: linear-gradient(135deg, #4f46e2, #9333ea); }
 
-.chart-wrapper { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; margin-bottom: 20px; margin-top: 10px; }
-.chart-header { font-weight: 900; color: #1e293b; font-size: 15px; margin-bottom: 15px; display: flex; align-items: center; }
-.canvas-container { position: relative; height: 220px; width: 100%; }
+.page { background: #f8fafc; min-height: 100vh; padding: 20px; padding-bottom: 120px; }
+.header-section { margin-bottom: 25px; }
+.page-title { font-weight: 900; font-size: 26px; color: #1e293b; margin: 0; }
+.subtitle { color: #64748b; font-size: 14px; font-weight: 600; }
 
-.section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
-.card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
+.search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
+.inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
 
-.p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
-.p-item:last-child { border-bottom: none; margin-bottom:0; padding-bottom:0; }
-.clickable { cursor: pointer; transition: background 0.2s; }
-.clickable:hover { background: #f8fafc; border-radius: 12px; padding: 10px; }
-.p-date { background: #fffbeb; color: #d97706; padding: 10px 12px; border-radius: 12px; text-align: center; }
-.p-date .m { font-size: 11px; font-weight: 800; text-transform: uppercase;}
-.p-date .d { font-size: 18px; font-weight: 900; line-height: 1.1; margin-top:2px; }
-.name { font-weight: 800; font-size: 16px; }
-.time { font-size: 12px; color: #d97706; background: #fff7ed; padding: 2px 8px; border-radius: 6px; margin-left: 8px; font-weight: 800;}
-.meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
-.empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
+.filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; }
+.f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer;}
+.f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
+.v-line { width: 1px; background: #e2e8f0; margin: 0 5px; }
 
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.b-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
-.b-card .num { font-size: 24px; font-weight: 900; color: #1e293b; }
-.b-card .loc { font-size: 12px; font-weight: 700; color: #64748b; margin-top: 5px; }
+.btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;}
 
-.marathon-card { background: linear-gradient(135deg, #4f46e2, #4338ca); color: white; padding: 25px; border-radius: 20px; margin-top: 20px; box-shadow: 0 10px 25px rgba(79,70,229,0.3); }
-.m-title { font-size: 13px; font-weight: 800; opacity: 0.9; }
-.m-val { font-size: 42px; font-weight: 900; margin: 10px 0; border-bottom: 2px solid rgba(255,255,255,0.2); padding-bottom: 15px; }
-.m-foot { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; opacity: 0.9; }
+.client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; cursor: pointer;}
+.client-card:active { transform: scale(0.97); }
+.c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
+.c-name { font-weight: 800; font-size: 17px; color: #1e293b; }
+.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
+.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
+.c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
+.handled-text { color: #6366f1; }
+.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; }
+.c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; }
 
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.cash-card { background: white; padding: 20px; border-radius: 16px; border: 2px solid #e2e8f0; }
-.border-0 { border-color: #3b82f6; background: #eff6ff;} 
-.border-1 { border-color: #ec4899; background: #fdf2f8;} 
-.c-name { font-weight: 900; font-size: 16px; color: #4f46e2; }
-.border-1 .c-name { color: #ec4899; }
-.c-total { font-size: 24px; font-weight: 900; margin: 10px 0; color: #1e293b; }
-.c-foot { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: #64748b; }
-
-.stat-card { background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 16px; text-align: center; }
-.s-val { font-size: 24px; font-weight: 900; color: #f59e0b; }
-.s-label { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 5px; }
-.s-sub { font-size: 11px; color: #64748b; font-weight: 700; margin-top: 5px; }
-
-.finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; }
-.f-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
-.f-val { font-size: 20px; font-weight: 900; margin-bottom: 5px; }
-.f-label { font-size: 12px; color: #64748b; font-weight: 700; }
-.text-green { color: #10b981; } .text-red { color: #ef4444; }
-.profit-box { background: #eef2ff; border: 1.5px solid #6366f1; padding: 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
-.p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }
-
-/* 🌟 核心修復：獨立彈窗 CSS 保證卡片置中彈出 */
+/* 🌟 置中彈窗樣式 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
-.edit-modal { background: white; width: 90%; max-width: 400px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
+.center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
+.scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
-.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; }
+.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center; }
 
-.form-item label { display: block; font-size: 13px; font-weight: 800; color: #475569; margin-bottom: 6px; }
-.mod-inp { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 10px; font-weight: 700; outline: none; color: #1e293b; font-size: 16px; appearance: none;}
-.mod-inp:focus { border-color: #4f46e2; }
-.btn-save { margin-top: 25px; width: 100%; padding: 16px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; transition: 0.2s;}
-.btn-save:active { transform: scale(0.96); }
+/* 彈窗內表單樣式 */
+.section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
+.modern-inp:focus, .modern-select:focus { border-color: #6366f1; background: white; }
+.f-item { margin-bottom: 12px; }
+.f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
+
+.toggle-group { display: flex; gap: 8px; background: #f1f5f9; padding: 5px; border-radius: 15px; }
+.t-btn { flex: 1; border: none; padding: 10px; border-radius: 11px; font-weight: 800; color: #64748b; background: transparent; cursor: pointer;}
+.t-btn.active { background: white; color: #6366f1; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+
+.row-flex { display: flex; gap: 10px; }
+.toggle-card { flex: 1; padding: 15px; border-radius: 15px; border: 2px solid #f1f5f9; text-align: center; font-weight: 800; font-size: 14px; cursor: pointer;}
+.toggle-card.active { border-color: #6366f1; background: #eef2ff; color: #6366f1; }
+.toggle-card.active:first-child { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; border: none; }
+
+.action-row { display: flex; gap: 10px; margin-top: 30px; }
+.btn-confirm { flex: 1; background: #6366f1; color: white; border: none; padding: 16px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px rgba(99,102,241,0.2); cursor: pointer;}
+.btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
+
+.main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
+
+.tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 </style>
