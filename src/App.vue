@@ -169,8 +169,25 @@ async function handleLogout() {
 /* 原本的系統樣式 */
 #app-main { height: 100vh; display: flex; flex-direction: column; }
 .header { background: rgba(255,255,255,0.9); backdrop-filter: blur(20px); padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; }
-.content { flex: 1; overflow-y: auto; padding-bottom: 120px; }
-.nav { background: rgba(255,255,255,0.95); backdrop-filter: blur(20px); border-top: 1px solid var(--border); display: flex; padding: 10px 4px 30px; position: fixed; bottom: 0; width: 100%; z-index: 100; }
+.nav { 
+  background: rgba(255,255,255,0.95); 
+  backdrop-filter: blur(20px); 
+  border-top: 1px solid var(--border); 
+  display: flex; 
+  /* 💡 UI 優化：加入 env(safe-area-inset-bottom) 自動避開 iPhone 底部橫條 */
+  padding: 10px 4px calc(10px + env(safe-area-inset-bottom)); 
+  position: fixed; 
+  bottom: 0; 
+  width: 100%; 
+  z-index: 100; 
+}
+
+.content { 
+  flex: 1; 
+  overflow-y: auto; 
+  /* 💡 UI 優化：確保內容不會被底部導航列蓋住 */
+  padding-bottom: calc(120px + env(safe-area-inset-bottom)); 
+}
 .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; color: var(--t3); font-size: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
 .nav-item.active { color: var(--p); transform: translateY(-2px); }
 .nav-item span:first-child { font-size: 24px; margin-bottom: 4px; }
