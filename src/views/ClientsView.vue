@@ -17,7 +17,7 @@ const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股�
 const defaultNewClient = { 
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
   is_vip: false, is_marathon: false, join_date: todayStr, 
-  package_count: 0, expiry_date: '', handled_by: staffList.value[0], payment_received: 0,
+  package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
   referred_by_id: null
 }
 
@@ -41,7 +41,8 @@ const filteredClients = computed(() => {
 
 // --- 功能函數 ---
 function openAddModal() {
-    newClient.value = { ...defaultNewClient }
+    // 確保打開時，預設收錢人有值
+    newClient.value = { ...defaultNewClient, handled_by: staffList.value[0] || 'kwan' }
     showAddModal.value = true
 }
 
@@ -52,6 +53,11 @@ async function handleAddClient() {
   if (dataToInsert.source !== '朋友介紹') {
       dataToInsert.referred_by_id = null
   }
+  
+  // 💡 核心修復：防止日期為空字串導致資料庫報錯
+  if (dataToInsert.expiry_date === '') {
+      dataToInsert.expiry_date = null
+  }
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -60,7 +66,19 @@ async function handleAddClient() {
 
 async function handleUpdateClient() {
   if (!editingClient.value.name) return alert('請填寫姓名')
-  const { error } = await supabase.from('clients').update(editingClient.value).eq('id', editingClient.value.id)
+  
+  const dataToUpdate = { ...editingClient.value }
+  
+  if (dataToUpdate.source !== '朋友介紹') {
+      dataToUpdate.referred_by_id = null
+  }
+  
+  // 💡 核心修復：防止修改時日期為空字串導致報錯
+  if (dataToUpdate.expiry_date === '') {
+      dataToUpdate.expiry_date = null
+  }
+
+  const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)
   else { showEditModal.value = false; store.syncAll(); alert('✅ 修改已儲存') }
 }
@@ -170,7 +188,7 @@ async function handleImport(event) {
       <div class="center-modal scrollable-modal">
         <div class="m-header">🔧 客戶詳細設定 <button class="close-x" @click="showEditModal=false">✕</button></div>
         
-        <div class="toggle-group">
+        <div class="toggle-group" style="margin-bottom: 20px;">
           <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
           <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
         </div>
@@ -238,7 +256,7 @@ async function handleImport(event) {
       <div class="center-modal scrollable-modal">
         <div class="m-header">➕ 登記新客戶 <button class="close-x" @click="showAddModal=false">✕</button></div>
         
-        <div class="toggle-group">
+        <div class="toggle-group" style="margin-bottom: 20px;">
           <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
           <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
         </div>
@@ -292,6 +310,12 @@ async function handleImport(event) {
           </div>
         </div>
 
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
         <button class="btn-confirm" style="width:100%; margin-top:20px;" @click="handleAddClient">立即新增</button>
       </div>
     </div>
@@ -329,18 +353,18 @@ async function handleImport(event) {
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; }
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; }
 
-/* 🌟 置中彈窗樣式 (取代 BaseModal) */
+/* 🌟 置中彈窗樣式 (取代 BaseModal，保證卡片在中間彈出) */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
-.scrollable-modal { max-height: 85vh; overflow-y: auto; }
+.scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
-.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; }
+.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center;}
 
 /* 彈窗內表單樣式 */
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px;}
+.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
 .modern-inp:focus, .modern-select:focus { border-color: #6366f1; background: white; }
 .f-item { margin-bottom: 12px; }
 .f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
