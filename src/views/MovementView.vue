@@ -14,10 +14,12 @@ const showDropdown = ref(false)
 
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
+// 💡 核心更新：新增了「介紹朋友贈堂」項目
 const packages = {
   'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 0 },
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
-  'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 }
+  'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
+  'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 }
 }
 
 const clientOptions = computed(() => {
@@ -33,15 +35,20 @@ function selectClient(c) {
   isNewCustomer.value = c.status === 'prospect'
 }
 
+// 💡 自動防呆計算
 const exCalc = computed(() => {
   let p = packages[selectedPkg.value].price
   let c = packages[selectedPkg.value].baseCost
   
-  if (isReferral.value) {
+  // 如果已經選了「介紹朋友贈堂」，就不需要再重複疊加轉介紹優惠
+  if (isReferral.value && selectedPkg.value !== 'referral_free') {
     c += 52
     if (selectedPkg.value === 'trial') p = 0
   }
-  if (isNewCustomer.value && selectedPkg.value !== 'trial') p -= 98
+  
+  if (isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free') {
+    p -= 98
+  }
   
   return { price: p, cost: c, profit: p - c }
 })
@@ -53,19 +60,35 @@ async function handleCheckout(staff) {
   const branch = selectedClient.value.branch || '觀塘'
   const pkgName = packages[selectedPkg.value].name.split(' ')[1] || packages[selectedPkg.value].name
 
+  // 設定分類，讓流水帳看起來更清楚
+  let categoryStr = '運動套票'
+  if (selectedPkg.value === 'trial') categoryStr = '試堂'
+  if (selectedPkg.value === 'referral_free') categoryStr = '贈堂'
+
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', category: selectedPkg.value === 'trial' ? '試堂' : '運動套票', amount: calc.price, cost: calc.cost, profit: calc.profit,
-    branch: branch, client_id: selectedClient.value.id, staff: staff, handled_by: staff,
-    note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' ? '(新客扣98)' : ''} ${isReferral.value ? '(轉介)' : ''}`
+    type: 'income', 
+    category: categoryStr, 
+    amount: calc.price, 
+    cost: calc.cost, 
+    profit: calc.profit,
+    branch: branch, 
+    client_id: selectedClient.value.id, 
+    staff: staff, 
+    handled_by: staff,
+    note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  if (selectedPkg.value !== 'trial') {
-    await supabase.from('clients').update({ status: 'active', pkg_count: (selectedClient.value.pkg_count || 0) + 1 }).eq('id', selectedClient.value.id)
+  // 買套票自動升級為正式客戶並增加次數 (贈堂或試堂不加套票次數)
+  if (selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free') {
+    await supabase.from('clients').update({ 
+      status: 'active', 
+      pkg_count: (selectedClient.value.pkg_count || 0) + 1 
+    }).eq('id', selectedClient.value.id)
   }
 
-  alert(`✅ 結帳成功！\n由 ${staff} 收取營業額 $${calc.price}`)
+  alert(`✅ 結帳成功！\n由 ${staff} 收取營業額 $${calc.price}\n(淨利潤: $${calc.profit})`)
   selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
   store.syncAll() 
 }
@@ -109,7 +132,7 @@ async function handleCheckout(staff) {
     <div class="compact-total-display">
       <div class="t-label">應收總額 (營業額)</div>
       <div class="t-val">$ {{ exCalc.price }}</div>
-      <div class="p-label">扣除成本後淨利潤: <span style="color:#10b981; font-weight:900;">$ {{ exCalc.profit }}</span></div>
+      <div class="p-label">扣除成本後淨利潤: <span style="color:#10b981; font-weight:900;" :class="{'text-red': exCalc.profit < 0}">$ {{ exCalc.profit }}</span></div>
     </div>
 
     <div class="payee-buttons" style="margin-top:15px;" v-if="staffList.length > 0">
@@ -148,11 +171,11 @@ async function handleCheckout(staff) {
 .toggle.on::after { transform: translateX(20px); }
 .divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 10px 0; }
 
-/* 💡 縮小版的結帳總計卡片 */
 .compact-total-display { background: #eef2ff; border: 2px solid #4f46e2; border-radius: 16px; padding: 15px 20px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
 .t-label { color: #64748b; font-weight: 800; font-size: 12px; }
 .t-val { font-size: 32px; font-weight: 900; color: #4f46e2; margin: 0; line-height: 1; }
 .p-label { font-size: 12px; font-weight: 800; color: #475569; }
+.text-red { color: #ef4444 !important; }
 
 .payee-buttons { display: flex; gap: 10px; }
 .payee-btn { flex: 1; padding: 15px; border-radius: 14px; border: none; font-weight: 900; color: white; font-size: 15px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
