@@ -11,7 +11,13 @@ const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
 const filterStatus = ref('active')
-const todayStr = new Date().toISOString().split('T')[0]
+// 💡 修復：計算正確的香港本地時區日期
+const getLocalHKDate = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().split('T')[0]
+}
+const todayStr = getLocalHKDate()
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
 
 const defaultNewClient = { 
