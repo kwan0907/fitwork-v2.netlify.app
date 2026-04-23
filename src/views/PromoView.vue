@@ -4,66 +4,141 @@ import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
-const searchClient = ref('')
-const selectedClient = ref(null)
 
-const clientOptions = computed(() => {
-  if (!searchClient.value || selectedClient.value) return []
-  const q = searchClient.value.toLowerCase()
-  return store.clients.filter(c => (c.name?.toLowerCase().includes(q) || c.phone?.includes(q))).slice(0, 5)
+// --- 🌟 1. 建立新紀錄的表單狀態 ---
+const form = ref({
+  type: '派傳單',
+  promo_date: new Date().toISOString().split('T')[0],
+  start_time: '14:00',
+  end_time: '18:00',
+  flyers_count: ''
 })
 
-const promos = [
-  { id: 1, title: 'IG 限動打卡', points: 10, icon: '📸' },
-  { id: 2, title: 'Google 五星評論', points: 50, icon: '⭐️' },
-  { id: 3, title: '帶朋友免費試堂', points: 100, icon: '🤝' }
-]
+// --- 🌟 2. 自動計算花費時間 ---
+const calculatedDuration = computed(() => {
+  if (!form.value.start_time || !form.value.end_time) return '0 小時 0 分鐘'
+  
+  const start = new Date(`2000-01-01T${form.value.start_time}`)
+  const end = new Date(`2000-01-01T${form.value.end_time}`)
+  
+  let diffMs = end - start
+  // 處理跨午夜的情況
+  if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000 
+  
+  const hrs = Math.floor(diffMs / (1000 * 60 * 60))
+  const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+  
+  return `${hrs} 小時 ${mins} 分鐘`
+})
 
-// 💡 核心修復：打卡寫入邏輯
-async function handleCheckIn(promo) {
-  if (!selectedClient.value) return alert('請先搜尋並選擇客戶！')
+// 提交新紀錄
+async function submitPromoRecord() {
+  if (!form.value.flyers_count) return alert('請輸入派發/接觸數量！')
 
-  // 寫入宣傳/打卡紀錄 (作為流水帳的一種)
-  const { error } = await supabase.from('transactions').insert({
-    type: 'income', // 雖然不一定是錢，但歸類為正向互動
-    category: '宣傳打卡',
-    amount: 0, 
-    staff: '系統',
-    branch: selectedClient.value.branch || '觀塘',
-    client_id: selectedClient.value.id,
-    note: `${selectedClient.value.name} 參與 [${promo.title}] (獲得 ${promo.points} 積分)`
+  const { error } = await supabase.from('promotions').insert({
+    type: form.value.type,
+    promo_date: form.value.promo_date,
+    start_time: form.value.start_time,
+    end_time: form.value.end_time,
+    duration: calculatedDuration.value,
+    flyers_count: parseInt(form.value.flyers_count),
+    inquiries: 0,
+    trials: 0,
+    conversions: 0
   })
 
-  if (error) alert('打卡失敗: ' + error.message)
-  else {
-    alert(`✅ 打卡成功！\n${selectedClient.value.name} 已記錄參與 ${promo.title}`)
-    searchClient.value = ''; selectedClient.value = null; store.syncAll()
-  }
+  if (error) return alert('新增失敗: ' + error.message)
+  
+  alert(`✅ ${form.value.type} 紀錄已建立！`)
+  form.value.flyers_count = ''
+  store.syncAll()
+}
+
+// --- 🌟 3. 歷史紀錄列表與更新成效 ---
+const promoList = computed(() => {
+  const list = store.promotions || []
+  // 依照日期由新到舊排序
+  return list.sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
+})
+
+async function updatePerformance(p) {
+  const { error } = await supabase.from('promotions').update({
+    inquiries: parseInt(p.inquiries || 0),
+    trials: parseInt(p.trials || 0),
+    conversions: parseInt(p.conversions || 0)
+  }).eq('id', p.id)
+
+  if (error) return alert('數據更新失敗: ' + error.message)
+  alert('✅ 推廣成效已成功更新！')
+  store.syncAll()
 }
 </script>
 
 <template>
-  <div class="page">
-    <h2 class="page-title">宣傳與打卡</h2>
+  <div class="page" style="padding-bottom: 120px;">
+    <h2 class="page-title">宣傳成效追蹤</h2>
 
-    <div class="glass-card">
-      <label style="font-weight:900; color:#475569; font-size:13px; display:block; margin-bottom:8px;">1. 搜尋打卡客戶</label>
-      <input class="modern-inp" v-model="searchClient" placeholder="🔍 輸入姓名或電話..." @focus="selectedClient = null">
-      <div v-if="clientOptions.length > 0" class="drop-menu">
-        <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectedClient = c; searchClient = c.name">{{ c.name }}</div>
+    <div class="card add-card">
+      <div class="card-header">📋 新增推廣活動</div>
+      
+      <div class="grid-2">
+        <div class="form-item"><label>活動類型</label>
+          <select v-model="form.type" class="mod-inp">
+            <option value="派傳單">📄 派傳單</option>
+            <option value="Road Show">🎪 Road Show</option>
+          </select>
+        </div>
+        <div class="form-item"><label>日期</label>
+          <input type="date" v-model="form.promo_date" class="mod-inp">
+        </div>
       </div>
-      <div v-if="selectedClient" class="selected-badge">✔ 已選擇: {{ selectedClient.name }}</div>
+
+      <div class="grid-3" style="margin-top:15px;">
+        <div class="form-item"><label>開始</label><input type="time" v-model="form.start_time" class="mod-inp"></div>
+        <div class="form-item"><label>結束</label><input type="time" v-model="form.end_time" class="mod-inp"></div>
+        <div class="form-item"><label>耗時</label><div class="dur-box">{{ calculatedDuration }}</div></div>
+      </div>
+
+      <div class="form-item" style="margin-top:15px;">
+        <label>派發傳單 / 接觸總數 (張/人)</label>
+        <input type="number" v-model="form.flyers_count" class="mod-inp" placeholder="輸入總張數...">
+      </div>
+
+      <button class="btn-main" @click="submitPromoRecord">💾 儲存並建立成效追蹤</button>
     </div>
 
-    <div style="margin-top:20px;">
-      <div v-for="p in promos" :key="p.id" class="promo-card">
-        <div class="p-icon">{{ p.icon }}</div>
-        <div style="flex:1;">
-          <div class="p-title">{{ p.title }}</div>
-          <div class="p-pts">獎勵: {{ p.points }} 積分</div>
-        </div>
-        <button class="btn-checkin" @click="handleCheckIn(p)">✔ 登記打卡</button>
+    <div class="section-title">📊 歷史推廣成效 (Funnel)</div>
+    <div v-if="promoList.length === 0" style="text-align:center; color:#94a3b8; padding: 30px;">目前尚無紀錄</div>
+    
+    <div v-for="p in promoList" :key="p.id" class="card result-card">
+      <div class="r-head">
+        <div class="r-title">{{ p.type === '派傳單' ? '📄' : '🎪' }} {{ p.type }}</div>
+        <div class="r-date">{{ p.promo_date }}</div>
       </div>
+      
+      <div class="r-meta">
+        <span>⏰ {{ p.start_time?.slice(0,5) }} - {{ p.end_time?.slice(0,5) }} ({{ p.duration }})</span>
+        <span class="stk-tag">派發: <b>{{ p.flyers_count }}</b></span>
+      </div>
+
+      <div class="funnel-divider"></div>
+
+      <div class="funnel-grid">
+        <div class="f-item">
+          <label>💬 查詢</label>
+          <input type="number" v-model="p.inquiries" class="f-inp">
+        </div>
+        <div class="f-item">
+          <label>🧪 試堂</label>
+          <input type="number" v-model="p.trials" class="f-inp">
+        </div>
+        <div class="f-item">
+          <label>👑 開卡</label>
+          <input type="number" v-model="p.conversions" class="f-inp highlight-inp">
+        </div>
+      </div>
+
+      <button class="btn-save-stats" @click="updatePerformance(p)">更新當前轉化數據</button>
     </div>
   </div>
 </template>
@@ -71,17 +146,57 @@ async function handleCheckIn(promo) {
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
-.glass-card { background: white; padding: 20px; border-radius: 20px; border: 1px solid #e2e8f0; position: relative; }
-.modern-inp { width: 100%; border: 2px solid #cbd5e1; padding: 12px; border-radius: 10px; font-weight: 700; outline: none; }
-.modern-inp:focus { border-color: #4f46e2; }
-.drop-menu { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 12px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-.drop-item { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 700; color: #333; }
-.selected-badge { background: #eef2ff; color: #4f46e2; padding: 8px 12px; border-radius: 8px; margin-top: 10px; font-weight: 800; font-size: 13px; }
+.card { background: white; border-radius: 20px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
+.add-card { border-top: 5px solid #4f46e2; }
+.card-header { font-weight: 900; font-size: 16px; color: #1e293b; margin-bottom: 15px; }
 
-.promo-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 15px; display: flex; align-items: center; gap: 15px; border: 1px solid #e2e8f0; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
-.p-icon { font-size: 32px; background: #f1f5f9; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; border-radius: 16px; }
-.p-title { font-weight: 900; font-size: 16px; color: #1e293b; }
-.p-pts { font-size: 12px; color: #10b981; font-weight: 800; margin-top: 4px; }
-.btn-checkin { background: #4f46e2; color: white; border: none; padding: 12px 16px; border-radius: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; }
-.btn-checkin:active { transform: scale(0.95); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+.form-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
+
+/* 🌟 防手機放大關鍵：font-size 必須 16px 以上 */
+.mod-inp { 
+  width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 12px; 
+  font-weight: 700; outline: none; color: #1e293b; font-size: 16px; 
+  appearance: none; background: #f8fafc;
+}
+.mod-inp:focus { border-color: #4f46e2; background: white; }
+
+.dur-box { 
+  background: #eef2ff; color: #4f46e2; padding: 12px; border-radius: 12px; 
+  font-weight: 900; font-size: 13px; text-align: center; border: 1px dashed #a5b4fc; 
+}
+
+.btn-main { 
+  width: 100%; padding: 16px; background: #4f46e2; color: white; border: none; 
+  border-radius: 14px; font-weight: 900; font-size: 16px; margin-top: 20px; 
+  cursor: pointer; transition: 0.2s; 
+}
+.btn-main:active { transform: scale(0.97); }
+
+.section-title { font-size: 15px; font-weight: 900; color: #475569; margin: 30px 0 15px; }
+
+.result-card { background: white; border-left: 5px solid #10b981; }
+.r-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.r-title { font-weight: 900; font-size: 17px; color: #1e293b; }
+.r-date { font-size: 12px; font-weight: 800; color: #64748b; background: #f1f5f9; padding: 4px 10px; border-radius: 6px; }
+.r-meta { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #475569; }
+.stk-tag { background: #fff7ed; color: #d97706; padding: 2px 8px; border-radius: 6px; }
+.funnel-divider { border-bottom: 1px dashed #e2e8f0; margin: 15px 0; }
+
+.funnel-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+.f-item label { display: block; font-size: 11px; font-weight: 800; color: #64748b; margin-bottom: 5px; text-align: center; }
+.f-inp { 
+  width: 100%; border: 1.5px solid #cbd5e1; padding: 10px; border-radius: 10px; 
+  font-weight: 900; font-size: 18px; text-align: center; outline: none; 
+  color: #1e293b; background: white;
+}
+.highlight-inp { border-color: #10b981; color: #10b981; background: #ecfdf5; }
+
+.btn-save-stats { 
+  width: 100%; padding: 12px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; 
+  border-radius: 10px; font-weight: 800; cursor: pointer; transition: 0.2s; 
+}
+.btn-save-stats:active { background: #e2e8f0; }
 </style>
