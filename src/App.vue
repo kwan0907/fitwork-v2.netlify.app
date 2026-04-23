@@ -1,10 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useMainStore } from './stores/mainStore'
-import { supabase } from './supabase' // 引入資料庫與驗證功能
+import { supabase } from './supabase'
 
 import DashboardView from './views/DashboardView.vue'
-import PromoView from './views/PromoView.vue' // 幫你補上宣傳頁的引入
+import PromoView from './views/PromoView.vue'
 import ClientsView from './views/ClientsView.vue'
 import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
@@ -19,17 +19,17 @@ const session = ref(null)
 const email = ref('')
 const password = ref('')
 const isLoggingIn = ref(false)
+const isRegistering = ref(false) // 控制顯示註冊或登入
+const rememberMe = ref(false)
 
 onMounted(() => {
-  // 1. 網頁載入時，檢查是否已經登入過
   supabase.auth.getSession().then(({ data }) => {
     session.value = data.session
     if (session.value) {
-      store.syncAll() // 有登入才抓資料
+      store.syncAll()
     }
   })
 
-  // 2. 監聽登入/登出狀態改變
   supabase.auth.onAuthStateChange((_event, _session) => {
     session.value = _session
     if (_session) {
@@ -38,25 +38,51 @@ onMounted(() => {
   })
 })
 
-// --- 登入功能 ---
-async function handleLogin() {
+// --- 登入/註冊功能 ---
+async function handleAuth() {
   if (!email.value || !password.value) {
     return alert('請完整輸入帳號與密碼')
   }
   
   isLoggingIn.value = true
-  const { error } = await supabase.auth.signInWithPassword({
-    email: email.value,
-    password: password.value,
-  })
+  let error = null
+
+  if (isRegistering.value) {
+    const result = await supabase.auth.signUp({
+      email: email.value,
+      password: password.value,
+    })
+    error = result.error
+    if (!error) {
+      alert('註冊成功！請檢查您的信箱以驗證帳號。')
+      isRegistering.value = false
+    }
+  } else {
+    const result = await supabase.auth.signInWithPassword({
+      email: email.value,
+      password: password.value,
+    })
+    error = result.error
+  }
+  
   isLoggingIn.value = false
 
   if (error) {
-    alert('登入失敗，請檢查帳號密碼：' + error.message)
+    alert((isRegistering.value ? '註冊失敗：' : '登入失敗：') + error.message)
   } else {
-    // 登入成功後清空輸入框
     email.value = ''
     password.value = ''
+  }
+}
+
+// --- 忘記密碼 ---
+async function handleForgotPassword() {
+  if (!email.value) return alert('請先輸入您的 Email 帳號')
+  const { error } = await supabase.auth.resetPasswordForEmail(email.value)
+  if (error) {
+    alert('發送重設密碼信件失敗: ' + error.message)
+  } else {
+    alert('已發送重設密碼信件，請檢查您的信箱！')
   }
 }
 
@@ -76,18 +102,30 @@ async function handleLogout() {
       <p class="login-subtitle">旗艦版店務管理系統</p>
 
       <div class="form-group">
-        <label>登入帳號 (Email)</label>
-        <input v-model="email" type="email" class="inp" placeholder="輸入您的帳號" @keyup.enter="handleLogin">
+        <label>Email 帳號</label>
+        <input v-model="email" type="email" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
       </div>
 
       <div class="form-group">
-        <label>登入密碼</label>
-        <input v-model="password" type="password" class="inp" placeholder="輸入您的密碼" @keyup.enter="handleLogin">
+        <label>密碼</label>
+        <input v-model="password" type="password" class="inp" placeholder="輸入您的密碼" @keyup.enter="handleAuth">
       </div>
 
-      <button class="btn-primary login-btn" @click="handleLogin" :disabled="isLoggingIn">
-        {{ isLoggingIn ? '驗證中...' : '安全登入' }}
+      <div class="login-options">
+        <label class="remember-me">
+          <input type="checkbox" v-model="rememberMe"> 記住我
+        </label>
+        <button v-if="!isRegistering" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
+      </div>
+
+      <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
+        {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
       </button>
+
+      <div class="auth-switch">
+        {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
+        <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
+      </div>
     </div>
   </div>
 
@@ -99,9 +137,7 @@ async function handleLogout() {
       </div>
       <div style="display:flex; gap:8px;">
         <button class="icon-btn" @click="store.syncAll()"><span>↻</span></button>
-        
         <button class="icon-btn" @click="store.view='settings'"><span style="font-size:16px;">⚙️</span></button>
-        
         <button class="icon-btn" @click="handleLogout"><span style="font-size:14px;">🚪</span></button>
       </div>
     </div>
@@ -164,5 +200,10 @@ async function handleLogout() {
 .login-subtitle { font-size: 14px; color: var(--t3); font-weight: 600; margin-bottom: 30px; }
 .form-group { margin-bottom: 20px; text-align: left; }
 .form-group label { display: block; font-size: 13px; font-weight: 700; color: var(--t2); margin-bottom: 8px; padding-left: 4px; }
+.login-options { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 13px; }
+.remember-me { color: var(--t3); display: flex; align-items: center; gap: 5px; }
+.forgot-btn { background: none; border: none; color: var(--p); font-weight: 700; cursor: pointer; }
 .login-btn { width: 100%; padding: 16px; font-size: 16px; border-radius: 14px; margin-top: 10px; box-shadow: 0 8px 20px rgba(79,70,229,0.3); }
+.auth-switch { margin-top: 20px; font-size: 13px; color: var(--t3); }
+.auth-switch span { color: var(--p); font-weight: 700; cursor: pointer; margin-left: 5px; }
 </style>
