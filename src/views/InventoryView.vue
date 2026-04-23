@@ -66,7 +66,6 @@ const selfUseTotalCost = computed(() => selfUseRecords.value.reduce((sum, t) => 
 
 // 🛡️ 絕對安全寫入邏輯：徹底移除對 `id` 的依賴！
 async function updateStock(itemName, newQty) {
-  // 1. 改找 quantity 而不是 id，因為你的資料庫沒有 id 欄位！
   const { data, error: selectError } = await supabase.from('stock')
     .select('quantity')
     .eq('prod_name', itemName)
@@ -79,7 +78,6 @@ async function updateStock(itemName, newQty) {
   }
 
   if (data) {
-    // 2. 如果存在，用名稱和分店作為條件進行更新
     const { error: updateError } = await supabase.from('stock')
       .update({ quantity: newQty })
       .eq('prod_name', itemName)
@@ -87,7 +85,6 @@ async function updateStock(itemName, newQty) {
       
     if (updateError) return { success: false, message: updateError.message }
   } else {
-    // 3. 如果不存在，直接新增
     const { error: insertError } = await supabase.from('stock')
       .insert({ prod_name: itemName, branch: selectedBranch.value, quantity: newQty })
       
@@ -99,7 +96,8 @@ async function updateStock(itemName, newQty) {
 
 // 💡 支援正負加減，且【沒有預設數字】
 async function handleRestock(item) {
-  const amountStr = prompt(`[加減庫存]\n請輸入「${item.name}」要變動的數量：\n(輸入正數為增加，輸入負數如 -5 為減少)`, "")
+  // 提示文字改為入貨，但依舊提醒可以輸入負數
+  const amountStr = prompt(`[入貨 / 扣除]\n請輸入「${item.name}」要變動的數量：\n(輸入正數為增加，輸入負數如 -5 為減少)`, "")
   if (!amountStr || isNaN(amountStr)) return
   
   const amount = parseInt(amountStr)
@@ -107,13 +105,12 @@ async function handleRestock(item) {
   
   const result = await updateStock(item.name, newQty)
   if (!result.success) alert('❌ 更新失敗: ' + result.message)
-  else { alert(`✅ 已成功${amount >= 0 ? '增加' : '扣除'}數量`); store.syncAll() }
+  else { alert(`✅ 已成功${amount >= 0 ? '入貨' : '扣除'}數量`); store.syncAll() }
 }
 
 // 💡 盤點覆蓋，【沒有預設數字】
 async function handleStocktake(item) {
   const newQty = prompt(`[盤點覆蓋]\n請輸入「${item.name}」現場的真實庫存總數：`, "")
-  // 如果輸入空白或按取消，就直接退出
   if (newQty === null || newQty === '' || isNaN(newQty)) return
   
   const result = await updateStock(item.name, parseInt(newQty))
@@ -177,7 +174,7 @@ async function handleSelfUse(item) {
         </div>
         <div class="inv-qty" :class="{warn: item.current_qty <= 5}">{{ item.current_qty }}</div>
         <div class="inv-actions">
-          <button class="act-btn" @click="handleRestock(item)">加減</button>
+          <button class="act-btn" @click="handleRestock(item)">入貨</button>
           <button class="act-btn" @click="handleStocktake(item)">盤點</button>
           <button class="act-btn btn-self" @click="handleSelfUse(item)">自用</button>
         </div>
