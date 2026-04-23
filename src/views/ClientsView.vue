@@ -2,7 +2,6 @@
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase' 
-import BaseModal from '../components/BaseModal.vue' 
 
 const store = useMainStore()
 
@@ -19,13 +18,12 @@ const defaultNewClient = {
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
   is_vip: false, is_marathon: false, join_date: todayStr, 
   package_count: 0, expiry_date: '', handled_by: staffList.value[0], payment_received: 0,
-  referred_by_id: null // 用於紀錄是誰介紹的
+  referred_by_id: null
 }
 
 const newClient = ref({ ...defaultNewClient })
 const editingClient = ref({})
 
-// 獲取所有客戶列表供選擇 (用於朋友介紹)
 const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
 })
@@ -50,7 +48,6 @@ function openAddModal() {
 async function handleAddClient() {
   if (!newClient.value.name) return alert('請填寫姓名')
   
-  // 清理來源數據
   const dataToInsert = { ...newClient.value }
   if (dataToInsert.source !== '朋友介紹') {
       dataToInsert.referred_by_id = null
@@ -80,7 +77,6 @@ function openEditModal(client) {
   showEditModal.value = true
 }
 
-// 核心功能：計算代數
 const getClientGen = (id) => {
   let g = 1; let c = store.clients.find(x => x.id === id); let count = 0
   while (c && c.referred_by_id && count < 15) { g++; c = store.clients.find(x => x.id === c.referred_by_id); count++ }
@@ -112,13 +108,11 @@ function triggerFileInput() {
 async function handleImport(event) {
     const file = event.target.files[0]
     if (!file) return
-    
-    // 這裡只是簡單示範讀取，實際需要解析 CSV
     const reader = new FileReader()
     reader.onload = async (e) => {
         const text = e.target.result
         console.log("讀取到檔案內容:", text)
-        alert("匯入功能正在開發中，準備好解析 CSV！\n(需要安裝 papa-parse 處理)")
+        alert("匯入功能準備好解析 CSV！")
     }
     reader.readAsText(file)
 }
@@ -172,8 +166,10 @@ async function handleImport(event) {
 
     <button class="main-fab" @click="openAddModal">+</button>
 
-    <BaseModal :show="showEditModal" title="🔧 客戶詳細設定" @close="showEditModal = false">
-      <div class="modal-form">
+    <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+      <div class="center-modal scrollable-modal">
+        <div class="m-header">🔧 客戶詳細設定 <button class="close-x" @click="showEditModal=false">✕</button></div>
+        
         <div class="toggle-group">
           <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
           <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
@@ -233,13 +229,15 @@ async function handleImport(event) {
 
         <div class="action-row">
           <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
-          <button class="btn-confirm" @click="handleUpdateClient">確認修改並同步</button>
+          <button class="btn-confirm" @click="handleUpdateClient">確認修改</button>
         </div>
       </div>
-    </BaseModal>
+    </div>
 
-    <BaseModal :show="showAddModal" title="➕ 登記新客戶" @close="showAddModal = false">
-      <div class="modal-form">
+    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
+      <div class="center-modal scrollable-modal">
+        <div class="m-header">➕ 登記新客戶 <button class="close-x" @click="showAddModal=false">✕</button></div>
+        
         <div class="toggle-group">
           <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
           <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
@@ -296,7 +294,8 @@ async function handleImport(event) {
 
         <button class="btn-confirm" style="width:100%; margin-top:20px;" @click="handleAddClient">立即新增</button>
       </div>
-    </BaseModal>
+    </div>
+
   </div>
 </template>
 
@@ -330,11 +329,21 @@ async function handleImport(event) {
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; }
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; }
 
-/* 彈窗內樣式 */
+/* 🌟 置中彈窗樣式 (取代 BaseModal) */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
+.center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
+.scrollable-modal { max-height: 85vh; overflow-y: auto; }
+@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
+.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; }
+
+/* 彈窗內表單樣式 */
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px;}
 .modern-inp:focus, .modern-select:focus { border-color: #6366f1; background: white; }
+.f-item { margin-bottom: 12px; }
+.f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
 
 .toggle-group { display: flex; gap: 8px; background: #f1f5f9; padding: 5px; border-radius: 15px; }
 .t-btn { flex: 1; border: none; padding: 10px; border-radius: 11px; font-weight: 800; color: #64748b; background: transparent; cursor: pointer;}
