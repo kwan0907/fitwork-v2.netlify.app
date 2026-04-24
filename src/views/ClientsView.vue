@@ -12,21 +12,24 @@ const clientSearch = ref('')
 const filterBranch = ref('')
 const filterStatus = ref('active')
 
-// 💡 修復：計算正確的香港本地時區日期
+// 💡 新增：排序狀態
+const sortBy = ref('default') 
+
+// 💡 計算正確的香港本地時區日期
 const getLocalHKDate = () => {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().split('T')[0]
 }
 const todayStr = getLocalHKDate()
-const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
+const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 const defaultNewClient = { 
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
   is_vip: false, is_marathon: false, join_date: todayStr, 
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
   referred_by_id: null, vip_tier: '銅級(88折)', 
-  trial_date: '' // 💡 完美補回：預設試堂日期
+  trial_date: '' 
 }
 
 const newClient = ref({ ...defaultNewClient })
@@ -36,20 +39,43 @@ const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
 })
 
-// --- 篩選邏輯 ---
+// --- 篩選與排序邏輯 ---
 const filteredClients = computed(() => {
-  let list = store.clients
+  // 拷貝一份陣列來進行排序，避免改到原始資料
+  let list = [...store.clients] 
+  
+  // 1. 執行過濾 (搜尋、分店、狀態)
   const q = clientSearch.value.toLowerCase()
   if (q) list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q)))
   if (filterBranch.value) list = list.filter(c => c.branch === filterBranch.value)
   if (filterStatus.value === 'active') list = list.filter(c => c.status !== 'prospect')
   else list = list.filter(c => c.status === 'prospect')
+
+  // 2. 💡 執行排序 (新增的智慧排序邏輯)
+  if (sortBy.value === 'name') {
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-HK'))
+  } else if (sortBy.value === 'phone') {
+    list.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''))
+  } else if (sortBy.value === 'expiry_asc') {
+    list.sort((a, b) => {
+      if (!a.expiry_date) return 1 // 沒日期的排到底部
+      if (!b.expiry_date) return -1
+      return new Date(a.expiry_date) - new Date(b.expiry_date)
+    })
+  } else if (sortBy.value === 'expiry_desc') {
+    list.sort((a, b) => {
+      if (!a.expiry_date) return 1
+      if (!b.expiry_date) return -1
+      return new Date(b.expiry_date) - new Date(a.expiry_date)
+    })
+  }
+
   return list
 })
 
 // --- 功能函數 ---
 function openAddModal() {
-    newClient.value = { ...defaultNewClient, handled_by: staffList.value[0] || 'kwan' }
+    newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
     showAddModal.value = true
 }
 
@@ -65,7 +91,6 @@ async function handleAddClient() {
       dataToInsert.expiry_date = null
   }
   
-  // 💡 確保試堂日期若為空，寫入資料庫時不會報錯
   if (dataToInsert.trial_date === '') {
       dataToInsert.trial_date = null
   }
@@ -88,7 +113,6 @@ async function handleUpdateClient() {
       dataToUpdate.expiry_date = null
   }
 
-  // 💡 確保試堂日期若為空，寫入資料庫時不會報錯
   if (dataToUpdate.trial_date === '') {
       dataToUpdate.trial_date = null
   }
@@ -108,7 +132,6 @@ async function handleDeleteClient() {
 function openEditModal(client) {
   editingClient.value = { ...client }
   
-  // 💡 確保編輯時能正確讀取並顯示 Supabase 的試堂時間
   if (editingClient.value.trial_date) {
     const d = new Date(editingClient.value.trial_date)
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -168,11 +191,23 @@ async function handleImport(event) {
     
     <div class="card search-box">
       <input class="inp-clean" v-model="clientSearch" placeholder="🔍 即時搜尋姓名、電話、負責人...">
+      
       <div class="filter-row">
         <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
         <div class="v-line"></div>
         <button v-for="b in ['觀塘','中環']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
+      </div>
+
+      <div class="sort-row">
+        <span class="sort-label">排序方式：</span>
+        <select v-model="sortBy" class="sort-select">
+          <option value="default">🕒 預設 (最新加入)</option>
+          <option value="name">🔤 姓名 (A-Z)</option>
+          <option value="phone">📞 電話號碼</option>
+          <option value="expiry_asc">⏳ 到期日 (由近到遠)</option>
+          <option value="expiry_desc">📅 到期日 (由遠到近)</option>
+        </select>
       </div>
     </div>
 
@@ -363,6 +398,12 @@ async function handleImport(event) {
 .f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer;}
 .f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
 .v-line { width: 1px; background: #e2e8f0; margin: 0 5px; }
+
+/* 💡 新增：排序樣式 */
+.sort-row { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0; }
+.sort-label { font-size: 13px; font-weight: 800; color: #64748b; }
+.sort-select { background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #1e293b; outline: none; cursor: pointer; }
+.sort-select:focus { border-color: #6366f1; }
 
 .btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;}
 
