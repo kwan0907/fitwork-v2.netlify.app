@@ -26,6 +26,9 @@ const isLoggingIn = ref(false)
 const isRegistering = ref(false)
 const rememberMe = ref(false)
 
+// 💡 新增：暫存迎新畫面輸入的名字
+const tempName = ref('')
+
 // --- 更新通知狀態 ---
 const showUpdateModal = ref(false)
 
@@ -54,6 +57,12 @@ onMounted(() => {
     }, 500)
   }
 })
+
+// 💡 新增功能：儲存專屬稱呼
+function saveName() {
+  if (!tempName.value.trim()) return alert('請輸入稱呼喔！')
+  store.setCurrentUser(tempName.value.trim())
+}
 
 // --- 系統通知功能 ---
 function closeUpdateModal() {
@@ -153,6 +162,17 @@ async function handleLogout() {
   </div>
 
   <div v-else id="app-main">
+    <div v-if="!store.currentUser" class="welcome-overlay">
+      <div class="welcome-modal">
+        <div class="w-icon">👋</div>
+        <h2 class="w-title">歡迎來到 FITWORK PRO</h2>
+        <p class="w-desc">為了方便稍後幫你自動結算與對帳，請告訴我你的專屬稱呼：</p>
+        
+        <input v-model="tempName" placeholder="例如：Anna" class="w-inp" @keyup.enter="saveName">
+        <button class="w-btn" @click="saveName">開始使用 🚀</button>
+      </div>
+    </div>
+
     <div class="header">
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-size:24px;">💪</span>
@@ -263,4 +283,16 @@ async function handleLogout() {
 .login-btn { width: 100%; padding: 16px; font-size: 16px; border-radius: 14px; margin-top: 10px; box-shadow: 0 8px 20px rgba(79,70,229,0.3); }
 .auth-switch { margin-top: 20px; font-size: 13px; color: var(--t3); }
 .auth-switch span { color: var(--p); font-weight: 700; cursor: pointer; margin-left: 5px; }
+
+/* 🌟 新增：迎新彈窗專屬 CSS */
+.welcome-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+.welcome-modal { background: white; padding: 35px 25px; border-radius: 28px; width: 85%; max-width: 360px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.3); animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+.w-icon { font-size: 50px; margin-bottom: 10px; }
+.w-title { font-size: 22px; font-weight: 900; color: #1e293b; margin-bottom: 10px; }
+.w-desc { font-size: 14px; font-weight: 700; color: #64748b; margin-bottom: 25px; line-height: 1.5; }
+.w-inp { width: 100%; padding: 15px; border-radius: 16px; border: 2px solid #e2e8f0; font-size: 18px; font-weight: 900; text-align: center; color: #4f46e2; outline: none; margin-bottom: 20px; transition: 0.2s; }
+.w-inp:focus { border-color: #4f46e2; background: #eef2ff; }
+.w-btn { width: 100%; padding: 16px; background: #4f46e2; color: white; border: none; border-radius: 16px; font-size: 18px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 20px rgba(79,70,229,0.3); }
+.w-btn:active { transform: scale(0.95); }
+@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 </style>

@@ -15,7 +15,10 @@ export const useMainStore = defineStore('main', () => {
   const stock = ref({}) // 庫存對應表：{ "產品名稱_分店": 數量 }
   const stockExpiry = ref({}) // 庫存更新時間
   const promotions = ref([]) // 宣傳活動
-  const settings = ref({ payees: ['kwan', 'Cat', '股東'] }) // 系統設定 (收款人名單)
+  const settings = ref(JSON.parse(localStorage.getItem('fitwork_settings')) || { payees: ['股東'] }) // 💡 讀取手機記憶
+
+  // 💡 [新增功能] 讀取手機裡記憶的名字，如果沒有就是空字串
+  const currentUser = ref(localStorage.getItem('fitwork_currentUser') || '') 
 
   // --- 同步資料邏輯 (Actions) ---
   async function syncAll() {
@@ -79,6 +82,18 @@ export const useMainStore = defineStore('main', () => {
     }
   }
 
+  // 💡 [新增功能] 設定並記住名字，還會自動加進收款人名單
+  function setCurrentUser(name) {
+    currentUser.value = name
+    localStorage.setItem('fitwork_currentUser', name) // 永久存在這台手機
+    
+    // 如果收款人名單還沒有他，自動幫他加上去
+    if (!settings.value.payees.includes(name)) {
+      settings.value.payees.push(name)
+      localStorage.setItem('fitwork_settings', JSON.stringify(settings.value))
+    }
+  }
+
   // 將變數與函式曝露給組件使用 (確保所有補上的變數都有 return 出去)
   return { 
     view, 
@@ -91,6 +106,8 @@ export const useMainStore = defineStore('main', () => {
     promotions, 
     settings, 
     displayTxnCount, 
-    syncAll 
+    syncAll,
+    currentUser, // 💡 新增匯出
+    setCurrentUser // 💡 新增匯出
   }
 })
