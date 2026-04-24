@@ -33,6 +33,11 @@ const isDateInRange = (dateStr) => {
   if (filterTime.value === 'all') return true
   if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
   if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  
+  // 💡 新增：精準切割上半月與下半月
+  if (filterTime.value === 'half_1') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 1 && d.getDate() <= 14
+  if (filterTime.value === 'half_2') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 15
+  
   if (filterTime.value === 'week') {
     const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
     return d >= weekAgo && d <= now;
@@ -67,17 +72,17 @@ const upcomingTrials = computed(() => {
     .slice(0, 5)
 })
 
-// 💡 升級版：財務結算大腦 (自動拆分上下半月、包含體驗卡)
+// 💡 升級版：財務結算大腦 (包含舖頭上下半月、體驗卡與庫存成本獨立計算)
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
   let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
-  let inventoryCost = 0; // 💡 新增：獨立計算庫存產品成本
+  let inventoryCost = 0; // 獨立計算庫存產品成本
 
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
     const amt = Number(t.amount) || 0;
     const noteStr = t.note || '';
-    const txDate = new Date(t.created_at).getDate(); // 取得交易日期
+    const txDate = new Date(t.created_at).getDate();
     
     if (t.type === 'income') { 
       revenue += amt; 
@@ -87,38 +92,28 @@ const financialStats = computed(() => {
       if (t.category === '運動套票' || t.category === '試堂' || t.category === '運動') {
         if (noteStr.includes('35點') || amt === 2550 || amt === 2452) owed = 800;
         else if (noteStr.includes('10點') || amt === 850 || amt === 752) owed = 250;
-        else if (noteStr.includes('體驗卡30人次')) owed = 750; // 💡 體驗卡直接加 $750 應付
+        else if (noteStr.includes('體驗卡30人次')) owed = 750;
         else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) owed = 25;
-      if (txDate <= 14) shopOwed1 += owed; else shopOwed2 += owed;
-    } 
-    else if (t.type === 'expense') { 
-      if (t.category === '支付30%') {
-        cost += amt;
-        shopPaid += amt; 
-      } else if (t.category === '自用消耗') {
-        inventoryCost += amt; // 💡 庫存自用算在這裡，不扣利潤，也不算進一般成本
-      } else {
-        cost += amt;
-        profit -= amt; 
       }
-      }
-  
       
       // 自動分流到上半月或下半月
       if (txDate <= 14) shopOwed1 += owed;
       else shopOwed2 += owed;
     } 
     else if (t.type === 'expense') { 
-      cost += amt; 
       if (t.category === '支付30%') {
+        cost += amt;
         shopPaid += amt; 
+      } else if (t.category === '自用消耗') {
+        inventoryCost += amt; // 庫存自用算在這裡，不扣利潤，也不算進一般成本
       } else {
+        cost += amt;
         profit -= amt; 
       }
     }
   })
   
-  // 💡 自動還款邏輯：先扣上半月的欠款，還有剩才扣下半月
+  // 自動還款邏輯：先扣上半月的欠款，還有剩才扣下半月
   let p1 = shopOwed1;
   let p2 = shopOwed2;
   let paid = shopPaid;
@@ -132,16 +127,18 @@ const financialStats = computed(() => {
   }
   
   return { 
-      revenue, cost, profit, 
+      revenue, cost, profit, inventoryCost, 
       shopPending: shopOwed1 + shopOwed2 - shopPaid,
       pending1: p1,
       pending2: p2
   };
 })
 
+// 💡 計算區間新增客戶與來源
 const clientStats = computed(() => {
   let newClientsTotal = 0;
-  const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, 'IG': 0, '其他': 0 };
+  // 已經加入「朋友」選項
+  const sourceCount = { '廣告': 0, '朋友介紹': 0, '朋友': 0, '傳單': 0, 'IG': 0, '其他': 0 };
   
   store.clients.forEach(c => {
     if (isDateInRange(c.join_date)) {
@@ -186,7 +183,7 @@ const cashSummary = computed(() => {
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (!t.handled_by && !t.staff) return
     let person = t.handled_by || t.staff
-    if (person.toLowerCase() === 'kwan') { person = 'kwan' }
+    if (person.toLowerCase() === 'kwan') person = 'kwan'
 
     if (!summary[person]) summary[person] = { in: 0, out: 0 }
     if (t.type === 'income') summary[person].in += Number(t.amount)
@@ -243,7 +240,8 @@ const trendChartData = computed(() => {
       const amt = Number(t.amount) || 0
       if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
       else if (t.type === 'expense') { 
-        if (t.category !== '支付30%' && t.category !== '自用消耗') dailyProf -= amt; // 💡 圖表也不扣減自用消耗
+        // 圖表利潤不扣減支付30% 與 自用消耗
+        if (t.category !== '支付30%' && t.category !== '自用消耗') dailyProf -= amt; 
       }
     })
     revData.push(dailyRev); profData.push(dailyProf)
@@ -274,8 +272,13 @@ const chartOptions = {
       <h2 class="title">數據中心 2.0</h2>
       <div class="filters">
         <select v-model="filterTime" class="f-sel">
-          <option value="today">今日</option><option value="week">本週</option><option value="month">本月</option>
-          <option value="custom">自訂區間</option><option value="all">全部</option>
+          <option value="today">今日</option>
+          <option value="week">本週</option>
+          <option value="month">本月(全月)</option>
+          <option value="half_1">本月上半 (1-14日)</option>
+          <option value="half_2">本月下半 (15-月底)</option>
+          <option value="custom">自訂區間</option>
+          <option value="all">全部</option>
         </select>
         <select v-model="filterBranch" class="f-sel">
           <option value="全部分店">全部分店</option><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
@@ -352,6 +355,7 @@ const chartOptions = {
         <div class="src-item"><div class="src-lbl">廣告</div><div class="src-val">{{ clientStats.sources['廣告'] }}</div></div>
         <div class="src-item"><div class="src-lbl">介紹</div><div class="src-val text-p">{{ clientStats.sources['朋友介紹'] }}</div></div>
         <div class="src-item"><div class="src-lbl">傳單</div><div class="src-val">{{ clientStats.sources['傳單'] }}</div></div>
+        <div class="src-item"><div class="src-lbl">朋友</div><div class="src-val">{{ clientStats.sources['朋友'] }}</div></div>
         <div class="src-item"><div class="src-lbl">IG</div><div class="src-val">{{ clientStats.sources['IG'] }}</div></div>
         <div class="src-item"><div class="src-lbl">其他</div><div class="src-val">{{ clientStats.sources['其他'] }}</div></div>
       </div>
@@ -435,7 +439,7 @@ const chartOptions = {
 .empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
 
 /* 🌟 新增客戶增長圖表格線 */
-.source-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.source-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; }
 .src-lbl { font-size: 11px; color: #64748b; font-weight: 800; margin-bottom: 4px; white-space: nowrap; }
 .src-val { font-size: 18px; font-weight: 900; color: #1e293b; }
@@ -466,7 +470,7 @@ const chartOptions = {
 .s-label { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 5px; }
 .s-sub { font-size: 11px; color: #64748b; font-weight: 700; margin-top: 5px; }
 
-.finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px; }
+.finance-grid { display: grid; gap: 12px; margin-bottom: 15px; }
 .f-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
 .f-val { font-size: 20px; font-weight: 900; margin-bottom: 5px; }
 .f-label { font-size: 12px; color: #64748b; font-weight: 700; }
@@ -475,14 +479,12 @@ const chartOptions = {
 .p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
 .p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }
 
-/* 💡 新增：預計需繳付舖頭的卡片樣式 */
 .shop-pending-box { background: #fffbeb; border: 1.5px solid #fcd34d; padding: 15px 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .sp-icon { font-size: 26px; }
 .sp-title { font-size: 14px; font-weight: 900; color: #b45309; }
 .sp-sub { font-size: 11px; font-weight: 700; color: #d97706; margin-top: 2px; }
 .sp-val { font-size: 24px; font-weight: 900; color: #b45309; }
 
-/* 🌟 核心修復：完全保留你原本的模態框與表單樣式 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .edit-modal { background: white; width: 90%; max-width: 400px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
