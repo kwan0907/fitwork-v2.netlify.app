@@ -193,7 +193,6 @@ async function handleImport(event) {
           </div>
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
-            <span v-if="c.handled_by" class="handled-text"> (由 {{ c.handled_by }} 持有)</span>
           </div>
         </div>
         <div class="c-side">
