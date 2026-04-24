@@ -17,7 +17,8 @@ const tierMapping = {
   '銀級(75折)': 'price_silver',
   '金級(65折)': 'price_gold',
   '直接58折': 'price_58',
-  '直接半折': 'price_50'
+  '直接半折': 'price_50',
+  '領班(半折)': 'price_50' // 💡 讓收銀系統知道領班對應的是半價
 }
 
 const searchProduct = ref('')
@@ -103,7 +104,8 @@ const decreaseQty = (item) => {
 
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
 const totalRevenue = computed(() => cart.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
-const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((Number(item.cost) || Number(item.price_50) || 0) * item.qty), 0))
+// 💡 核心修復：強制購物車成本只使用 price_50 (半折價)，無視其他可能有錯的資料
+const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((Number(item.price_50) || 0) * item.qty), 0))
 const netProfit = computed(() => totalRevenue.value - totalCost.value)
 
 async function finalizeCheckout(payeeName) {

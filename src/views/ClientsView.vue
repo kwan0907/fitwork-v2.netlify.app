@@ -24,7 +24,7 @@ const defaultNewClient = {
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
   is_vip: false, is_marathon: false, join_date: todayStr, 
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
-  referred_by_id: null
+  referred_by_id: null, vip_tier: '銅級(88折)' // 💡 新增 VIP 預設等級
 }
 
 const newClient = ref({ ...defaultNewClient })
@@ -199,19 +199,31 @@ async function handleImport(event) {
           <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
         </div>
 
-        <div class="section-title">💰 財務持有設定</div>
-        <div class="grid-2">
-          <div class="f-item">
-            <label>誰負責收錢？</label>
-            <select v-model="editingClient.handled_by" class="modern-select">
-                <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
-            </select>
-          </div>
-          <div class="f-item">
-            <label>持有金額 ($)</label>
-            <input type="number" v-model="editingClient.payment_received" class="modern-inp">
-          </div>
+        <div class="section-title">💰 財務設定</div>
+        <div class="f-item">
+          <label>誰負責收錢？</label>
+          <select v-model="newClient.handled_by" class="modern-select">
+              <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
+          </select>
         </div>
+
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+          <label>🎖️ 請選擇 VIP 等級</label>
+          <select v-model="newClient.vip_tier" class="modern-select">
+            <option value="銅級(88折)">🥉 銅級 (88折)</option>
+            <option value="銀級(75折)">🥈 銀級 (75折)</option>
+            <option value="金級(65折)">🥇 金級 (65折)</option>
+            <option value="直接58折">💎 直接58折</option>
+            <option value="領班(半折)">👑 領班 (半折)</option>
+          </select>
+        </div>
+      
 
         <div class="section-title">👤 基本資料</div>
         <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
