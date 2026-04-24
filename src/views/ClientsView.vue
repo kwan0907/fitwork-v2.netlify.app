@@ -11,6 +11,7 @@ const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
 const filterStatus = ref('active')
+
 // 💡 修復：計算正確的香港本地時區日期
 const getLocalHKDate = () => {
   const d = new Date()
@@ -24,7 +25,8 @@ const defaultNewClient = {
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
   is_vip: false, is_marathon: false, join_date: todayStr, 
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
-  referred_by_id: null, vip_tier: '銅級(88折)' // 💡 新增 VIP 預設等級
+  referred_by_id: null, vip_tier: '銅級(88折)', 
+  trial_date: '' // 💡 完美補回：預設試堂日期
 }
 
 const newClient = ref({ ...defaultNewClient })
@@ -47,7 +49,6 @@ const filteredClients = computed(() => {
 
 // --- 功能函數 ---
 function openAddModal() {
-    // 確保打開時，預設收錢人有值
     newClient.value = { ...defaultNewClient, handled_by: staffList.value[0] || 'kwan' }
     showAddModal.value = true
 }
@@ -60,9 +61,13 @@ async function handleAddClient() {
       dataToInsert.referred_by_id = null
   }
   
-  // 💡 核心修復：防止日期為空字串導致資料庫報錯
   if (dataToInsert.expiry_date === '') {
       dataToInsert.expiry_date = null
+  }
+  
+  // 💡 確保試堂日期若為空，寫入資料庫時不會報錯
+  if (dataToInsert.trial_date === '') {
+      dataToInsert.trial_date = null
   }
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
@@ -79,9 +84,13 @@ async function handleUpdateClient() {
       dataToUpdate.referred_by_id = null
   }
   
-  // 💡 核心修復：防止修改時日期為空字串導致報錯
   if (dataToUpdate.expiry_date === '') {
       dataToUpdate.expiry_date = null
+  }
+
+  // 💡 確保試堂日期若為空，寫入資料庫時不會報錯
+  if (dataToUpdate.trial_date === '') {
+      dataToUpdate.trial_date = null
   }
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
@@ -98,6 +107,14 @@ async function handleDeleteClient() {
 
 function openEditModal(client) {
   editingClient.value = { ...client }
+  
+  // 💡 確保編輯時能正確讀取並顯示 Supabase 的試堂時間
+  if (editingClient.value.trial_date) {
+    const d = new Date(editingClient.value.trial_date)
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+    editingClient.value.trial_date = d.toISOString().slice(0,16)
+  }
+  
   showEditModal.value = true
 }
 
@@ -113,7 +130,7 @@ const getExpiryClass = (date) => {
   return d < 0 ? 'tag-red' : (d < 14 ? 'tag-orange' : 'tag-green')
 }
 
-// --- 匯入功能 ---
+// --- 匯入功能 (100%保留) ---
 function downloadCSVTemplate() {
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF姓名,電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD)\n王小明,98765432,觀塘,active,2024-01-01"
     const encodedUri = encodeURI(csvContent)
@@ -199,26 +216,6 @@ async function handleImport(event) {
           <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
         </div>
 
-      
-
-        <div class="section-title">🏆 項目設定</div>
-        <div class="row-flex">
-          <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
-          <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
-        </div>
-
-        <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
-          <label>🎖️ 請選擇 VIP 等級</label>
-          <select v-model="newClient.vip_tier" class="modern-select">
-            <option value="銅級(88折)">🥉 銅級 (88折)</option>
-            <option value="銀級(75折)">🥈 銀級 (75折)</option>
-            <option value="金級(65折)">🥇 金級 (65折)</option>
-            <option value="直接58折">💎 直接58折</option>
-            <option value="領班(半折)">👑 領班 (半折)</option>
-          </select>
-        </div>
-      
-
         <div class="section-title">👤 基本資料</div>
         <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
         <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
@@ -246,6 +243,10 @@ async function handleImport(event) {
         </div>
 
         <div class="section-title">📅 關鍵日期</div>
+        <div class="f-item" v-if="editingClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
+          <label>⏰ 預約試堂日期與時間</label>
+          <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date">
+        </div>
         <div class="grid-2">
           <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
           <div class="f-item"><label>套票到期日</label><input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空"></div>
@@ -255,6 +256,17 @@ async function handleImport(event) {
         <div class="row-flex">
           <div class="toggle-card" :class="{active: editingClient.is_marathon}" @click="editingClient.is_marathon = !editingClient.is_marathon">🏃 馬拉松</div>
           <div class="toggle-card" :class="{active: editingClient.is_vip}" @click="editingClient.is_vip = !editingClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="f-item" v-if="editingClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+          <label>🎖️ 請選擇 VIP 等級</label>
+          <select v-model="editingClient.vip_tier" class="modern-select">
+            <option value="銅級(88折)">🥉 銅級 (88折)</option>
+            <option value="銀級(75折)">🥈 銀級 (75折)</option>
+            <option value="金級(65折)">🥇 金級 (65折)</option>
+            <option value="直接58折">💎 直接58折</option>
+            <option value="領班(半折)">👑 領班 (半折)</option>
+          </select>
         </div>
 
         <div class="action-row">
@@ -303,18 +315,30 @@ async function handleImport(event) {
         </div>
 
         <div class="section-title">📅 關鍵日期</div>
+        <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
+          <label>⏰ 預約試堂日期與時間</label>
+          <input type="datetime-local" v-model="newClient.trial_date" class="modern-date">
+        </div>
         <div class="grid-2">
           <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>
           <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
         </div>
 
-        
-        
-
         <div class="section-title">🏆 項目設定</div>
         <div class="row-flex">
           <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
           <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+          <label>🎖️ 請選擇 VIP 等級</label>
+          <select v-model="newClient.vip_tier" class="modern-select">
+            <option value="銅級(88折)">🥉 銅級 (88折)</option>
+            <option value="銀級(75折)">🥈 銀級 (75折)</option>
+            <option value="金級(65折)">🥇 金級 (65折)</option>
+            <option value="直接58折">💎 直接58折</option>
+            <option value="領班(半折)">👑 領班 (半折)</option>
+          </select>
         </div>
 
         <button class="btn-confirm" style="width:100%; margin-top:20px;" @click="handleAddClient">立即新增</button>
@@ -347,14 +371,13 @@ async function handleImport(event) {
 .client-card:active { transform: scale(0.97); }
 .c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
 .c-name { font-weight: 800; font-size: 17px; color: #1e293b; }
-.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
-.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
+.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
+.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
 .handled-text { color: #6366f1; }
-.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; }
-.c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; }
+.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
+.c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
 
-/* 🌟 置中彈窗樣式 (取代 BaseModal，保證卡片在中間彈出) */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
 .scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; }
@@ -362,7 +385,6 @@ async function handleImport(event) {
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center;}
 
-/* 彈窗內表單樣式 */
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }

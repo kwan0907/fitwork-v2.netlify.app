@@ -71,6 +71,7 @@ const upcomingTrials = computed(() => {
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
   let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
+  let inventoryCost = 0; // 💡 新增：獨立計算庫存產品成本
 
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
@@ -88,7 +89,20 @@ const financialStats = computed(() => {
         else if (noteStr.includes('10點') || amt === 850 || amt === 752) owed = 250;
         else if (noteStr.includes('體驗卡30人次')) owed = 750; // 💡 體驗卡直接加 $750 應付
         else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) owed = 25;
+      if (txDate <= 14) shopOwed1 += owed; else shopOwed2 += owed;
+    } 
+    else if (t.type === 'expense') { 
+      if (t.category === '支付30%') {
+        cost += amt;
+        shopPaid += amt; 
+      } else if (t.category === '自用消耗') {
+        inventoryCost += amt; // 💡 庫存自用算在這裡，不扣利潤，也不算進一般成本
+      } else {
+        cost += amt;
+        profit -= amt; 
       }
+      }
+  
       
       // 自動分流到上半月或下半月
       if (txDate <= 14) shopOwed1 += owed;
@@ -229,7 +243,7 @@ const trendChartData = computed(() => {
       const amt = Number(t.amount) || 0
       if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
       else if (t.type === 'expense') { 
-        if (t.category !== '支付30%') dailyProf -= amt; 
+        if (t.category !== '支付30%' && t.category !== '自用消耗') dailyProf -= amt; // 💡 圖表也不扣減自用消耗
       }
     })
     revData.push(dailyRev); profData.push(dailyProf)
@@ -290,9 +304,10 @@ const chartOptions = {
       <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
     </div>
 
-    <div class="finance-grid" style="margin-top: 20px;">
+    <div class="finance-grid" style="margin-top: 20px; grid-template-columns: 1fr 1fr 1fr;">
       <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
       <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
+      <div class="f-card"><div class="f-val" style="color: #f59e0b; font-weight: 900; font-size: 20px;">$ {{ financialStats.inventoryCost.toLocaleString() }}</div><div class="f-label">庫存產品成本</div></div>
     </div>
     
     <div class="profit-box"><div class="p-title">💎 區間實收淨利潤</div><div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div></div>
