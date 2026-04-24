@@ -26,7 +26,7 @@ const isLoggingIn = ref(false)
 const isRegistering = ref(false)
 const rememberMe = ref(false)
 
-// 💡 新增：暫存迎新畫面輸入的名字
+// 💡 暫存迎新畫面輸入的名字
 const tempName = ref('')
 
 // --- 更新通知狀態 ---
@@ -58,10 +58,10 @@ onMounted(() => {
   }
 })
 
-// 💡 新增功能：儲存專屬稱呼
+// 💡 儲存專屬稱呼 (支援多個名字拆分)
 function saveName() {
   if (!tempName.value.trim()) return alert('請輸入稱呼喔！')
-  store.setCurrentUser(tempName.value.trim())
+  store.setDeviceUsers(tempName.value.trim())
 }
 
 // --- 系統通知功能 ---
@@ -121,6 +121,10 @@ async function handleForgotPassword() {
 // --- 登出功能 ---
 async function handleLogout() {
   if(confirm('確定要登出系統嗎？')) {
+    // 💡 登出時順便清除本機的名字快取，讓下一個登入的人重新設定
+    localStorage.removeItem('fitwork_currentUser')
+    localStorage.removeItem('fitwork_deviceUsers')
+    store.currentUser = ''
     await supabase.auth.signOut()
   }
 }
@@ -166,9 +170,9 @@ async function handleLogout() {
       <div class="welcome-modal">
         <div class="w-icon">👋</div>
         <h2 class="w-title">歡迎來到 FITWORK PRO</h2>
-        <p class="w-desc">為了方便稍後幫你自動結算與對帳，請告訴我你的專屬稱呼：</p>
+        <p class="w-desc">請輸入你們的稱呼（若有兩人請用逗號隔開）：</p>
         
-        <input v-model="tempName" placeholder="例如：Anna" class="w-inp" @keyup.enter="saveName">
+        <input v-model="tempName" placeholder="例如：Kwan, Cat" class="w-inp" @keyup.enter="saveName">
         <button class="w-btn" @click="saveName">開始使用 🚀</button>
       </div>
     </div>
@@ -178,7 +182,13 @@ async function handleLogout() {
         <span style="font-size:24px;">💪</span>
         <span style="font-weight:900; font-size:18px; color:var(--p); letter-spacing:-1px;">FITWORK PRO</span>
       </div>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex; gap:8px; align-items:center;">
+        
+        <button v-if="store.deviceUsers && store.deviceUsers.length > 1" class="user-switch-btn" @click="store.switchUser()">
+          🔄 {{ store.currentUser }}
+        </button>
+        <button v-else-if="store.currentUser" class="icon-btn" style="width:auto; padding:0 10px; font-size:12px;">👤 {{ store.currentUser }}</button>
+
         <button class="icon-btn" @click="store.syncAll()"><span>↻</span></button>
         <button class="icon-btn" @click="store.view='settings'"><span style="font-size:16px;">⚙️</span></button>
         <button class="icon-btn" @click="handleLogout"><span style="font-size:14px;">🚪</span></button>
@@ -253,6 +263,10 @@ async function handleLogout() {
 .nav-item span:first-child { font-size: 24px; margin-bottom: 4px; }
 .icon-btn { background: var(--bg); border: none; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; font-weight: 900; display: flex; align-items: center; justify-content: center; }
 .icon-btn:active { transform: scale(0.95); }
+
+/* 💡 新增：切換使用者按鈕樣式 */
+.user-switch-btn { background: #eef2ff; color: #4f46e2; border: 2px solid #c7d2fe; padding: 0 12px; height: 36px; border-radius: 12px; font-weight: 900; font-size: 13px; cursor: pointer; transition: 0.2s; display:flex; align-items:center; gap:4px; }
+.user-switch-btn:active { transform: scale(0.95); }
 
 /* 登入畫面樣式 */
 .login-screen { 
