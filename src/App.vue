@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useMainStore } from './stores/mainStore'
 import { supabase } from './supabase'
 
+// 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
 import PromoView from './views/PromoView.vue'
 import ClientsView from './views/ClientsView.vue'
@@ -12,46 +13,25 @@ import MovementView from './views/MovementView.vue'
 import RetailView from './views/RetailView.vue'
 import SettingsView from './views/SettingsView.vue'
 
-// 💡 新增：引入 BaseModal 彈窗組件
+// 公用組件引入
 import BaseModal from './components/BaseModal.vue'
 
 const store = useMainStore()
 
-// ==========================================
-// 🚀 新增：系統更新通知邏輯
-// ==========================================
-const showUpdateModal = ref(false)
-
-// 當 App 載入時檢查是否看過通知
-onMounted(() => {
-  const hasSeen = localStorage.getItem('hasSeenUpdate_v1')
-  
-  if (!hasSeen) {
-    // 如果沒有看過，延遲 0.5 秒後彈出
-    setTimeout(() => {
-      showUpdateModal.value = true
-    }, 500)
-  }
-})
-
-// 關閉彈窗並寫入「已看過」標記
-function closeUpdateModal() {
-  localStorage.setItem('hasSeenUpdate_v1', 'true')
-  showUpdateModal.value = false
-}
-
-
-const store = useMainStore()
-
-// --- 登入系統狀態 ---
+// --- 系統狀態 ---
 const session = ref(null)
 const email = ref('')
 const password = ref('')
 const isLoggingIn = ref(false)
-const isRegistering = ref(false) // 控制顯示註冊或登入
+const isRegistering = ref(false)
 const rememberMe = ref(false)
 
+// --- 更新通知狀態 ---
+const showUpdateModal = ref(false)
+
+// 💡 優化：合拼所有初始化邏輯到同一個生命週期鉤子
 onMounted(() => {
+  // 1. 檢查 Supabase 登入狀態
   supabase.auth.getSession().then(({ data }) => {
     session.value = data.session
     if (session.value) {
@@ -65,7 +45,21 @@ onMounted(() => {
       store.syncAll()
     }
   })
+
+  // 2. 檢查更新通知 (標記改為 v2 確保能彈出)
+  const hasSeen = localStorage.getItem('hasSeenUpdate_v2')
+  if (!hasSeen) {
+    setTimeout(() => {
+      showUpdateModal.value = true
+    }, 500)
+  }
 })
+
+// --- 系統通知功能 ---
+function closeUpdateModal() {
+  localStorage.setItem('hasSeenUpdate_v2', 'true')
+  showUpdateModal.value = false
+}
 
 // --- 登入/註冊功能 ---
 async function handleAuth() {
@@ -104,7 +98,7 @@ async function handleAuth() {
   }
 }
 
-// --- 忘記密碼 ---
+// --- 忘記密碼功能 ---
 async function handleForgotPassword() {
   if (!email.value) return alert('請先輸入您的 Email 帳號')
   const { error } = await supabase.auth.resetPasswordForEmail(email.value)
@@ -192,34 +186,35 @@ async function handleLogout() {
       <div class="nav-item" :class="{active: store.view==='accounting'}" @click="store.view='accounting'"><span>📝</span><span>記帳</span></div>
     </div>
   </div>
+
   <BaseModal :show="showUpdateModal" title="🚀 系統更新通知" @close="closeUpdateModal">
-      <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
-        <p>大家好！我們的系統已經進行了全新升級：</p>
-        <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
-          <li>✅ <strong>更新了運動輸入設備</strong></li>
-          <li>✅ 優化了手機端介面，操作更順暢</li>
-          <li>✅ 解決了輸入時畫面會自動放大的問題</li>
-        </ul>
-        <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
-          (此訊息僅顯示一次)
-        </p>
-      </div>
-      <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
-        我知道了，開始使用！
-      </button>
-    </BaseModal>
+    <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
+      <p>大家好！我們的系統已經進行了全新升級：</p>
+      <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
+        <li>✅ <strong>更新了運動輸入設備</strong></li>
+        <li>✅ 優化了手機端介面，操作更順暢</li>
+        <li>✅ 解決了輸入時畫面會自動放大的問題</li>
+      </ul>
+      <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
+        (此訊息僅顯示一次)
+      </p>
+    </div>
+    <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
+      我知道了，開始使用！
+    </button>
+  </BaseModal>
 </template>
 
 <style>
-/* 原本的系統樣式 */
 #app-main { height: 100vh; display: flex; flex-direction: column; }
 .header { background: rgba(255,255,255,0.9); backdrop-filter: blur(20px); padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; }
+
+/* 💡 優化：自動避開 iPhone 底部橫條 */
 .nav { 
   background: rgba(255,255,255,0.95); 
   backdrop-filter: blur(20px); 
   border-top: 1px solid var(--border); 
   display: flex; 
-  /* 💡 UI 優化：加入 env(safe-area-inset-bottom) 自動避開 iPhone 底部橫條 */
   padding: 10px 4px calc(10px + env(safe-area-inset-bottom)); 
   position: fixed; 
   bottom: 0; 
@@ -230,16 +225,16 @@ async function handleLogout() {
 .content { 
   flex: 1; 
   overflow-y: auto; 
-  /* 💡 UI 優化：確保內容不會被底部導航列蓋住 */
   padding-bottom: calc(120px + env(safe-area-inset-bottom)); 
 }
+
 .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; color: var(--t3); font-size: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
 .nav-item.active { color: var(--p); transform: translateY(-2px); }
 .nav-item span:first-child { font-size: 24px; margin-bottom: 4px; }
 .icon-btn { background: var(--bg); border: none; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; font-weight: 900; display: flex; align-items: center; justify-content: center; }
 .icon-btn:active { transform: scale(0.95); }
 
-/* 全新登入畫面樣式 */
+/* 登入畫面樣式 */
 .login-screen { 
   height: 100vh; 
   display: flex; 

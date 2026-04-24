@@ -127,7 +127,14 @@ const cashSummary = computed(() => {
   const summary = {}
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (!t.handled_by && !t.staff) return
-    const person = t.handled_by || t.staff
+    
+    let person = t.handled_by || t.staff
+    
+    // 💡 核心修復：統一處理大小寫，將各種寫法的 Kwan 都強制歸類為 kwan
+    if (person.toLowerCase() === 'kwan') {
+      person = 'kwan'
+    }
+
     if (!summary[person]) summary[person] = { in: 0, out: 0 }
     if (t.type === 'income') summary[person].in += Number(t.amount)
     if (t.type === 'expense') summary[person].out += Number(t.amount)
