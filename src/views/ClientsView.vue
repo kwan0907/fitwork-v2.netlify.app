@@ -12,17 +12,16 @@ const clientSearch = ref('')
 const filterBranch = ref('')
 const filterStatus = ref('active')
 
-// 💡 新增：排序狀態
+// 💡 排序狀態
 const sortBy = ref('default') 
 
-// 💡 計算正確的香港本地時區日期
+// 計算正確的香港本地時區日期
 const getLocalHKDate = () => {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().split('T')[0]
 }
 const todayStr = getLocalHKDate()
-const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 const defaultNewClient = { 
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
@@ -41,24 +40,21 @@ const allClientsOptions = computed(() => {
 
 // --- 篩選與排序邏輯 ---
 const filteredClients = computed(() => {
-  // 拷貝一份陣列來進行排序，避免改到原始資料
   let list = [...store.clients] 
   
-  // 1. 執行過濾 (搜尋、分店、狀態)
   const q = clientSearch.value.toLowerCase()
   if (q) list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q)))
   if (filterBranch.value) list = list.filter(c => c.branch === filterBranch.value)
   if (filterStatus.value === 'active') list = list.filter(c => c.status !== 'prospect')
   else list = list.filter(c => c.status === 'prospect')
 
-  // 2. 💡 執行排序 (新增的智慧排序邏輯)
   if (sortBy.value === 'name') {
     list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-HK'))
   } else if (sortBy.value === 'phone') {
     list.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''))
   } else if (sortBy.value === 'expiry_asc') {
     list.sort((a, b) => {
-      if (!a.expiry_date) return 1 // 沒日期的排到底部
+      if (!a.expiry_date) return 1 
       if (!b.expiry_date) return -1
       return new Date(a.expiry_date) - new Date(b.expiry_date)
     })
@@ -83,17 +79,15 @@ async function handleAddClient() {
   if (!newClient.value.name) return alert('請填寫姓名')
   
   const dataToInsert = { ...newClient.value }
+  
   if (dataToInsert.source !== '朋友介紹') {
       dataToInsert.referred_by_id = null
   }
   
-  if (dataToInsert.expiry_date === '') {
-      dataToInsert.expiry_date = null
-  }
-  
-  if (dataToInsert.trial_date === '') {
-      dataToInsert.trial_date = null
-  }
+  // 💡 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
+  if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
+  if (!dataToInsert.trial_date) dataToInsert.trial_date = null
+  if (!dataToInsert.join_date) dataToInsert.join_date = null
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -109,13 +103,10 @@ async function handleUpdateClient() {
       dataToUpdate.referred_by_id = null
   }
   
-  if (dataToUpdate.expiry_date === '') {
-      dataToUpdate.expiry_date = null
-  }
-
-  if (dataToUpdate.trial_date === '') {
-      dataToUpdate.trial_date = null
-  }
+  // 💡 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
+  if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
+  if (!dataToUpdate.trial_date) dataToUpdate.trial_date = null
+  if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)
@@ -153,7 +144,7 @@ const getExpiryClass = (date) => {
   return d < 0 ? 'tag-red' : (d < 14 ? 'tag-orange' : 'tag-green')
 }
 
-// --- 匯入功能 (100%保留) ---
+// --- 匯入功能 ---
 function downloadCSVTemplate() {
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF姓名,電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD)\n王小明,98765432,觀塘,active,2024-01-01"
     const encodedUri = encodeURI(csvContent)
@@ -383,30 +374,22 @@ async function handleImport(event) {
 </template>
 
 <style scoped>
-/* 顏色變數 */
 :host { --p: #6366f1; --pd: #4f46e2; --run: linear-gradient(135deg, #4f46e2, #9333ea); }
-
 .page { background: #f8fafc; min-height: 100vh; padding: 20px; padding-bottom: 120px; }
 .header-section { margin-bottom: 25px; }
 .page-title { font-weight: 900; font-size: 26px; color: #1e293b; margin: 0; }
 .subtitle { color: #64748b; font-size: 14px; font-weight: 600; }
-
 .search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
 .inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
-
 .filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; }
 .f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer;}
 .f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
 .v-line { width: 1px; background: #e2e8f0; margin: 0 5px; }
-
-/* 💡 新增：排序樣式 */
 .sort-row { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0; }
 .sort-label { font-size: 13px; font-weight: 800; color: #64748b; }
 .sort-select { background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #1e293b; outline: none; cursor: pointer; }
 .sort-select:focus { border-color: #6366f1; }
-
 .btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;}
-
 .client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; cursor: pointer;}
 .client-card:active { transform: scale(0.97); }
 .c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
@@ -417,35 +400,28 @@ async function handleImport(event) {
 .handled-text { color: #6366f1; }
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
-
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
 .scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center;}
-
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
 .modern-inp:focus, .modern-select:focus { border-color: #6366f1; background: white; }
 .f-item { margin-bottom: 12px; }
 .f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
-
 .toggle-group { display: flex; gap: 8px; background: #f1f5f9; padding: 5px; border-radius: 15px; }
 .t-btn { flex: 1; border: none; padding: 10px; border-radius: 11px; font-weight: 800; color: #64748b; background: transparent; cursor: pointer;}
 .t-btn.active { background: white; color: #6366f1; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-
 .row-flex { display: flex; gap: 10px; }
 .toggle-card { flex: 1; padding: 15px; border-radius: 15px; border: 2px solid #f1f5f9; text-align: center; font-weight: 800; font-size: 14px; cursor: pointer;}
 .toggle-card.active { border-color: #6366f1; background: #eef2ff; color: #6366f1; }
 .toggle-card.active:first-child { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; border: none; }
-
 .action-row { display: flex; gap: 10px; margin-top: 30px; }
 .btn-confirm { flex: 1; background: #6366f1; color: white; border: none; padding: 16px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px rgba(99,102,241,0.2); cursor: pointer;}
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
-
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
-
 .tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 </style>

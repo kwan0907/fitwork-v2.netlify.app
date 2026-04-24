@@ -113,11 +113,40 @@ async function updatePerformance(p) {
   alert('✅ 推廣成效已成功更新！')
   store.syncAll()
 }
+
+// 💡 4. 新增：匯出 Excel / CSV 功能
+function exportToExcel() {
+  // 加上 BOM 標記，防止 Excel 開啟時中文亂碼
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+  csvContent += "活動類型,活動日期,開始時間,結束時間,耗時,派發數量,查詢數,試堂數,開卡數\n"
+
+  promoList.value.forEach(p => {
+    // 組合每一行的數據
+    const row = `"${p.type}","${p.promo_date}","${p.start_time || ''}","${p.end_time || ''}","${p.duration || ''}",${p.flyers_count || 0},${p.inquiries || 0},${p.trials || 0},${p.conversions || 0}`
+    csvContent += row + "\n"
+  })
+
+  const encodedUri = encodeURI(csvContent)
+  const link = document.createElement("a")
+  link.setAttribute("href", encodedUri)
+  
+  // 檔名加上今天日期
+  const dateStr = new Date().toISOString().slice(0, 10)
+  link.setAttribute("download", `宣傳成效報表_${dateStr}.csv`)
+  
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
 </script>
 
 <template>
   <div class="page" style="padding-bottom: 120px;">
-    <h2 class="page-title">宣傳成效追蹤</h2>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h2 class="page-title" style="margin-bottom: 0;">宣傳成效追蹤</h2>
+      <button class="btn-export" @click="exportToExcel">📥 匯出報表</button>
+    </div>
 
     <div class="card add-card">
       <div class="card-header">
@@ -204,6 +233,11 @@ async function updatePerformance(p) {
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
+
+/* 💡 新增：匯出按鈕樣式 */
+.btn-export { background: white; border: 2px solid #10b981; color: #10b981; padding: 8px 16px; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; }
+.btn-export:active { transform: scale(0.95); background: #f0fdf4; }
+
 .card { background: white; border-radius: 20px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
 .add-card { border-top: 5px solid #4f46e2; }
 .card-header { font-weight: 900; font-size: 16px; color: #1e293b; margin-bottom: 15px; }
@@ -221,7 +255,7 @@ async function updatePerformance(p) {
 }
 .mod-inp:focus { border-color: #4f46e2; background: white; }
 
-/* 💡 時間打卡專用排版 */
+/* 時間打卡專用排版 */
 .time-input-group { display: flex; gap: 6px; }
 .px-small { padding: 12px 8px; }
 .btn-now { 
