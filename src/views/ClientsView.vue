@@ -199,13 +199,7 @@ async function handleImport(event) {
           <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
         </div>
 
-        <div class="section-title">💰 財務設定</div>
-        <div class="f-item">
-          <label>誰負責收錢？</label>
-          <select v-model="newClient.handled_by" class="modern-select">
-              <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
-          </select>
-        </div>
+      
 
         <div class="section-title">🏆 項目設定</div>
         <div class="row-flex">
@@ -238,7 +232,7 @@ async function handleImport(event) {
                   <option value="傳單">傳單</option>
                   <option value="IG">IG</option>
                   <option value="朋友介紹">朋友介紹</option>
-                  <option value="其他">其他</option>
+                  <option value="朋友">朋友</option>
               </select>
             </div>
         </div>
@@ -314,19 +308,12 @@ async function handleImport(event) {
           <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
         </div>
 
-        <div class="section-title">💰 財務設定</div>
-        <div class="grid-2">
-          <div class="f-item">
-            <label>誰負責收錢？</label>
-            <select v-model="newClient.handled_by" class="modern-select">
-                <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
-            </select>
-          </div>
+        
           <div class="f-item">
             <label>持有金額 ($)</label>
             <input type="number" v-model="newClient.payment_received" class="modern-inp">
           </div>
-        </div>
+        
 
         <div class="section-title">🏆 項目設定</div>
         <div class="row-flex">
