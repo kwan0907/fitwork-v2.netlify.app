@@ -10,8 +10,7 @@ const showExpModal = ref(false)
 const editingTxn = ref(null)
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
 const incCategories = ['公司票', '其他收入']
-const expCategories = ['廣告費用', '觀塘租金', '中環租金', '馬拉松費用', '產品採購', '其他支出']
-
+const expCategories = ['廣告費用', '觀塘租金', '中環租金', '馬拉松費用', '產品採購', '支付30%', '其他支出']
 const expForm = ref({
   type: 'expense',
   amount: '',

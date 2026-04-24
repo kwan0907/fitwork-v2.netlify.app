@@ -67,15 +67,72 @@ const upcomingTrials = computed(() => {
     .slice(0, 5)
 })
 
+// 💡 升級版：財務結算大腦 (包含舖頭抽成計算)
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
+  let shopOwed = 0, shopPaid = 0; // 💡 新增：追蹤應付與已付舖頭的金額
+
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
     const amt = Number(t.amount) || 0;
-    if (t.type === 'income') { revenue += amt; profit += Number(t.profit ?? amt); } 
-    else if (t.type === 'expense') { cost += amt; profit -= amt; }
+    const noteStr = t.note || '';
+    
+    if (t.type === 'income') { 
+      revenue += amt; 
+      profit += Number(t.profit ?? amt); 
+      
+      // 💡 自動計算這筆收入要留多少錢給舖頭 (完美支援新客扣98的情況)
+      if (t.category === '運動套票' || t.category === '試堂' || t.category === '運動') {
+        if (noteStr.includes('35點') || amt === 2550 || amt === 2452) shopOwed += 800;
+        else if (noteStr.includes('10點') || amt === 850 || amt === 752) shopOwed += 250;
+        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) shopOwed += 25;
+      }
+    } 
+    else if (t.type === 'expense') { 
+      cost += amt; 
+      if (t.category === '支付30%') {
+        shopPaid += amt; // 紀錄已歸還給舖頭的錢
+      } else {
+        profit -= amt; // 💡 只有一般支出才扣減利潤，支付30%絕對不扣利潤！
+      }
+    }
   })
-  return { revenue, cost, profit };
+  // shopPending 就是尚未還給舖頭的錢
+  return { revenue, cost, profit, shopPending: shopOwed - shopPaid };
+})
+
+// 💡 升級版：趨勢圖表數據 (圖表線條也要排除支付30%)
+const trendChartData = computed(() => {
+  const labels = [], revData = [], profData = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+    
+    const dailyTxns = store.transactions.filter(t => {
+      const td = new Date(t.created_at)
+      const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
+      const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
+      return isSameDay && isBranchMatch
+    })
+
+    let dailyRev = 0, dailyProf = 0
+    dailyTxns.forEach(t => {
+      const amt = Number(t.amount) || 0
+      if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
+      else if (t.type === 'expense') { 
+        if (t.category !== '支付30%') dailyProf -= amt; // 圖表利潤同樣不扣減支付30%
+      }
+    })
+    revData.push(dailyRev); profData.push(dailyProf)
+  }
+  return {
+    labels,
+    datasets: [
+      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
+      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
+    ]
+  }
 })
 
 // 💡 新增：計算區間新增客戶與來源
@@ -254,7 +311,25 @@ const chartOptions = {
       <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
       <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
     </div>
+    <div class="finance-grid" style="margin-top: 20px;">
+      <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
+      <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
+    </div>
+    
     <div class="profit-box"><div class="p-title">💎 區間實收淨利潤</div><div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div></div>
+
+    <div class="shop-pending-box" v-if="financialStats.shopPending !== 0">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="sp-icon">🏠</div>
+        <div>
+          <div class="sp-title">預計需繳付舖頭 (30%)</div>
+          <div class="sp-sub">此區間累積的待繳金額</div>
+        </div>
+      </div>
+      <div class="sp-val" :class="{'text-green': financialStats.shopPending < 0}">
+        $ {{ financialStats.shopPending.toLocaleString() }}
+      </div>
+    </div>
 
     <div class="section-title" style="margin-top: 25px;">🌟 區間客戶增長與來源</div>
     <div class="card" style="margin-bottom: 20px; padding: 20px;">
