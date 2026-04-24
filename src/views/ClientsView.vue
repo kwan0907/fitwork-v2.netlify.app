@@ -171,7 +171,7 @@ async function handleImport(event) {
         <div class="c-main">
           <div class="c-name-row">
             <span class="c-name">{{ c.name }}</span>
-            <span v-if="c.is_vip" class="badge-vip">VIP</span>
+            <span v-if="c.is_vip" class="badge-vip">{{ c.vip_tier || 'VIP' }}</span>
             <span v-if="c.is_marathon" class="badge-run">RUN</span>
           </div>
           <div class="c-meta">
@@ -289,7 +289,7 @@ async function handleImport(event) {
                     <option value="傳單">傳單</option>
                     <option value="朋友介紹">朋友介紹</option>
                     <option value="IG">IG</option>
-                    <option value="其他">其他</option>
+                    <option value="朋友">朋友</option>
                 </select>
             </div>
         </div>
@@ -309,10 +309,6 @@ async function handleImport(event) {
         </div>
 
         
-          <div class="f-item">
-            <label>持有金額 ($)</label>
-            <input type="number" v-model="newClient.payment_received" class="modern-inp">
-          </div>
         
 
         <div class="section-title">🏆 項目設定</div>
