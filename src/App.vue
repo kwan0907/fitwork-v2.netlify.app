@@ -12,6 +12,35 @@ import MovementView from './views/MovementView.vue'
 import RetailView from './views/RetailView.vue'
 import SettingsView from './views/SettingsView.vue'
 
+// 💡 新增：引入 BaseModal 彈窗組件
+import BaseModal from './components/BaseModal.vue'
+
+const store = useMainStore()
+
+// ==========================================
+// 🚀 新增：系統更新通知邏輯
+// ==========================================
+const showUpdateModal = ref(false)
+
+// 當 App 載入時檢查是否看過通知
+onMounted(() => {
+  const hasSeen = localStorage.getItem('hasSeenUpdate_v1')
+  
+  if (!hasSeen) {
+    // 如果沒有看過，延遲 0.5 秒後彈出
+    setTimeout(() => {
+      showUpdateModal.value = true
+    }, 500)
+  }
+})
+
+// 關閉彈窗並寫入「已看過」標記
+function closeUpdateModal() {
+  localStorage.setItem('hasSeenUpdate_v1', 'true')
+  showUpdateModal.value = false
+}
+
+
 const store = useMainStore()
 
 // --- 登入系統狀態 ---
@@ -163,6 +192,22 @@ async function handleLogout() {
       <div class="nav-item" :class="{active: store.view==='accounting'}" @click="store.view='accounting'"><span>📝</span><span>記帳</span></div>
     </div>
   </div>
+  <BaseModal :show="showUpdateModal" title="🚀 系統更新通知" @close="closeUpdateModal">
+      <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
+        <p>大家好！我們的系統已經進行了全新升級：</p>
+        <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
+          <li>✅ <strong>更新了運動輸入設備</strong></li>
+          <li>✅ 優化了手機端介面，操作更順暢</li>
+          <li>✅ 解決了輸入時畫面會自動放大的問題</li>
+        </ul>
+        <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
+          (此訊息僅顯示一次)
+        </p>
+      </div>
+      <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
+        我知道了，開始使用！
+      </button>
+    </BaseModal>
 </template>
 
 <style>
