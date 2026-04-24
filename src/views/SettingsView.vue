@@ -15,9 +15,9 @@ onMounted(() => {
 
 async function saveSettings() {
   const arr = payeesInput.value.split(',').map(s => s.trim()).filter(s => s)
-  // 如果你有 settings 資料表可以存進去，這裡暫時將設定存在 localStore 或簡單處理
   store.settings = { ...store.settings, payees: arr }
-  alert('✅ 收款人設定已儲存！結帳時將會顯示這些名字。')
+  localStorage.setItem('fitwork_settings', JSON.stringify(store.settings)) // 💡 儲存到手機
+  alert('✅ 收款人設定已儲存！關閉 App 再打開也不會消失了。')
 }
 
 async function handleLogout() {
