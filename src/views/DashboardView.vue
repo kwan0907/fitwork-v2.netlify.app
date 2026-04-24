@@ -70,7 +70,7 @@ const upcomingTrials = computed(() => {
 // 💡 升級版：財務結算大腦 (包含舖頭抽成計算)
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
-  let shopOwed = 0, shopPaid = 0; // 💡 新增：追蹤應付與已付舖頭的金額
+  let shopOwed = 0, shopPaid = 0; 
 
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
@@ -81,7 +81,6 @@ const financialStats = computed(() => {
       revenue += amt; 
       profit += Number(t.profit ?? amt); 
       
-      // 💡 自動計算這筆收入要留多少錢給舖頭 (完美支援新客扣98的情況)
       if (t.category === '運動套票' || t.category === '試堂' || t.category === '運動') {
         if (noteStr.includes('35點') || amt === 2550 || amt === 2452) shopOwed += 800;
         else if (noteStr.includes('10點') || amt === 850 || amt === 752) shopOwed += 250;
@@ -91,57 +90,20 @@ const financialStats = computed(() => {
     else if (t.type === 'expense') { 
       cost += amt; 
       if (t.category === '支付30%') {
-        shopPaid += amt; // 紀錄已歸還給舖頭的錢
+        shopPaid += amt; 
       } else {
-        profit -= amt; // 💡 只有一般支出才扣減利潤，支付30%絕對不扣利潤！
+        profit -= amt; 
       }
     }
   })
-  // shopPending 就是尚未還給舖頭的錢
   return { revenue, cost, profit, shopPending: shopOwed - shopPaid };
 })
 
-// 💡 升級版：趨勢圖表數據 (圖表線條也要排除支付30%)
-const trendChartData = computed(() => {
-  const labels = [], revData = [], profData = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
-    
-    const dailyTxns = store.transactions.filter(t => {
-      const td = new Date(t.created_at)
-      const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
-      const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
-      return isSameDay && isBranchMatch
-    })
-
-    let dailyRev = 0, dailyProf = 0
-    dailyTxns.forEach(t => {
-      const amt = Number(t.amount) || 0
-      if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
-      else if (t.type === 'expense') { 
-        if (t.category !== '支付30%') dailyProf -= amt; // 圖表利潤同樣不扣減支付30%
-      }
-    })
-    revData.push(dailyRev); profData.push(dailyProf)
-  }
-  return {
-    labels,
-    datasets: [
-      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
-      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
-    ]
-  }
-})
-
-// 💡 新增：計算區間新增客戶與來源
 const clientStats = computed(() => {
   let newClientsTotal = 0;
   const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, 'IG': 0, '其他': 0 };
   
   store.clients.forEach(c => {
-    // 判斷客戶的加入日期是否在篩選的區間內
     if (isDateInRange(c.join_date)) {
         if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
             newClientsTotal++;
@@ -161,7 +123,6 @@ const clientStats = computed(() => {
   }
 })
 
-// 💡 修改：套票銷量/續卡 現在會跟著分店篩選器連動
 const packageStats = computed(() => {
   let pkg850 = 0, pkg2550 = 0
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
@@ -184,13 +145,8 @@ const cashSummary = computed(() => {
   const summary = {}
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (!t.handled_by && !t.staff) return
-    
     let person = t.handled_by || t.staff
-    
-    // 💡 核心修復：統一處理大小寫，將各種寫法的 Kwan 都強制歸類為 kwan
-    if (person.toLowerCase() === 'kwan') {
-      person = 'kwan'
-    }
+    if (person.toLowerCase() === 'kwan') { person = 'kwan' }
 
     if (!summary[person]) summary[person] = { in: 0, out: 0 }
     if (t.type === 'income') summary[person].in += Number(t.amount)
@@ -228,7 +184,6 @@ async function updateTrial() {
   else { alert('✅ 預約資料已更新'); showEditModal.value = false; store.syncAll() }
 }
 
-// 🌟 準備動態圖表數據
 const trendChartData = computed(() => {
   const labels = [], revData = [], profData = []
   for (let i = 6; i >= 0; i--) {
@@ -247,7 +202,9 @@ const trendChartData = computed(() => {
     dailyTxns.forEach(t => {
       const amt = Number(t.amount) || 0
       if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
-      else if (t.type === 'expense') { dailyProf -= amt; }
+      else if (t.type === 'expense') { 
+        if (t.category !== '支付30%') dailyProf -= amt; 
+      }
     })
     revData.push(dailyRev); profData.push(dailyProf)
   }
@@ -307,10 +264,6 @@ const chartOptions = {
       <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
     </div>
 
-    <div class="finance-grid" style="margin-top: 20px;">
-      <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
-      <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
-    </div>
     <div class="finance-grid" style="margin-top: 20px;">
       <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
       <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
@@ -474,7 +427,14 @@ const chartOptions = {
 .p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
 .p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }
 
-/* 🌟 核心修復：獨立彈窗 CSS 保證卡片置中彈出 */
+/* 💡 新增：預計需繳付舖頭的卡片樣式 */
+.shop-pending-box { background: #fffbeb; border: 1.5px solid #fcd34d; padding: 15px 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.sp-icon { font-size: 26px; }
+.sp-title { font-size: 14px; font-weight: 900; color: #b45309; }
+.sp-sub { font-size: 11px; font-weight: 700; color: #d97706; margin-top: 2px; }
+.sp-val { font-size: 24px; font-weight: 900; color: #b45309; }
+
+/* 🌟 核心修復：完全保留你原本的模態框與表單樣式 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .edit-modal { background: white; width: 90%; max-width: 400px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
