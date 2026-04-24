@@ -16,10 +16,14 @@ const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 // 💡 核心更新：新增了「介紹朋友贈堂」項目
 const packages = {
-  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 0 }, // Wait, user says $98 trial has $25 baseCost now? Let's check MovementView.vue
+  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 0 },
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
   'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
-  'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 }
+  'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
+  
+  // 💡 新增：體驗卡30人次。
+  // 設定 baseCost: 0 保證不會扣減淨利潤，但結算大腦會自動把它加進應付舖頭的黃色卡片！
+  'exp_30': { name: '🎟️ 體驗卡30人次', price: 750, baseCost: 0 } 
 }
 
 const clientOptions = computed(() => {

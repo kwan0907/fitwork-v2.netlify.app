@@ -67,25 +67,32 @@ const upcomingTrials = computed(() => {
     .slice(0, 5)
 })
 
-// 💡 升級版：財務結算大腦 (包含舖頭抽成計算)
+// 💡 升級版：財務結算大腦 (自動拆分上下半月、包含體驗卡)
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
-  let shopOwed = 0, shopPaid = 0; 
+  let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
 
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
     const amt = Number(t.amount) || 0;
     const noteStr = t.note || '';
+    const txDate = new Date(t.created_at).getDate(); // 取得交易日期
     
     if (t.type === 'income') { 
       revenue += amt; 
       profit += Number(t.profit ?? amt); 
       
+      let owed = 0;
       if (t.category === '運動套票' || t.category === '試堂' || t.category === '運動') {
-        if (noteStr.includes('35點') || amt === 2550 || amt === 2452) shopOwed += 800;
-        else if (noteStr.includes('10點') || amt === 850 || amt === 752) shopOwed += 250;
-        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) shopOwed += 25;
+        if (noteStr.includes('35點') || amt === 2550 || amt === 2452) owed = 800;
+        else if (noteStr.includes('10點') || amt === 850 || amt === 752) owed = 250;
+        else if (noteStr.includes('體驗卡30人次')) owed = 750; // 💡 體驗卡直接加 $750 應付
+        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) owed = 25;
       }
+      
+      // 自動分流到上半月或下半月
+      if (txDate <= 14) shopOwed1 += owed;
+      else shopOwed2 += owed;
     } 
     else if (t.type === 'expense') { 
       cost += amt; 
@@ -96,7 +103,26 @@ const financialStats = computed(() => {
       }
     }
   })
-  return { revenue, cost, profit, shopPending: shopOwed - shopPaid };
+  
+  // 💡 自動還款邏輯：先扣上半月的欠款，還有剩才扣下半月
+  let p1 = shopOwed1;
+  let p2 = shopOwed2;
+  let paid = shopPaid;
+  
+  if (paid >= p1) {
+      paid -= p1;
+      p1 = 0;
+      p2 -= paid;
+  } else {
+      p1 -= paid;
+  }
+  
+  return { 
+      revenue, cost, profit, 
+      shopPending: shopOwed1 + shopOwed2 - shopPaid,
+      pending1: p1,
+      pending2: p2
+  };
 })
 
 const clientStats = computed(() => {
@@ -276,7 +302,14 @@ const chartOptions = {
         <div class="sp-icon">🏠</div>
         <div>
           <div class="sp-title">預計需繳付舖頭 (30%)</div>
-          <div class="sp-sub">此區間累積的待繳金額</div>
+          <div class="sp-sub" style="margin-top:6px; line-height:1.4;">
+            <div style="display:flex; justify-content:space-between; width:135px;">
+              <span>上半月 (1-14):</span> <span style="color:#b45309; font-weight:900;">${{ financialStats.pending1.toLocaleString() }}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; width:135px;">
+              <span>下半月 (15-底):</span> <span style="color:#b45309; font-weight:900;">${{ financialStats.pending2.toLocaleString() }}</span>
+            </div>
+          </div>
         </div>
       </div>
       <div class="sp-val" :class="{'text-green': financialStats.shopPending < 0}">
