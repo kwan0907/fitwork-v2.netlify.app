@@ -23,7 +23,7 @@ const packages = {
   
   // 💡 新增：體驗卡30人次。
   // 設定 baseCost: 0 保證不會扣減淨利潤，但結算大腦會自動把它加進應付舖頭的黃色卡片！
-  'exp_30': { name: '🎟️ 體驗卡30人次', price: 750, baseCost: 0 } 
+  'exp_30': { name: '🎟️ 體驗卡30人次', price: 0, baseCost: 750 } 
 }
 
 const clientOptions = computed(() => {
