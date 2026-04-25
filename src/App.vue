@@ -6,7 +6,7 @@ import { supabase } from './supabase'
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
 import PromoView from './views/PromoView.vue'
-import HerbalifePromo from './views/HerbalifePromo.vue' // 💡 1. 引入剛剛做好的新組件
+import HerbalifePromo from './views/HerbalifePromo.vue' 
 import ClientsView from './views/ClientsView.vue'
 import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
@@ -33,9 +33,7 @@ const tempName = ref('')
 // --- 更新通知狀態 ---
 const showUpdateModal = ref(false)
 
-// 💡 優化：合拼所有初始化邏輯到同一個生命週期鉤子
 onMounted(() => {
-  // 1. 檢查 Supabase 登入狀態
   supabase.auth.getSession().then(({ data }) => {
     session.value = data.session
     if (session.value) {
@@ -50,7 +48,6 @@ onMounted(() => {
     }
   })
 
-  // 2. 檢查更新通知 (標記改為 v2 確保能彈出)
   const hasSeen = localStorage.getItem('hasSeenUpdate_v2')
   if (!hasSeen) {
     setTimeout(() => {
@@ -59,19 +56,16 @@ onMounted(() => {
   }
 })
 
-// 💡 儲存專屬稱呼 (支援多個名字拆分)
 function saveName() {
   if (!tempName.value.trim()) return alert('請輸入稱呼喔！')
   store.setDeviceUsers(tempName.value.trim())
 }
 
-// --- 系統通知功能 ---
 function closeUpdateModal() {
   localStorage.setItem('hasSeenUpdate_v2', 'true')
   showUpdateModal.value = false
 }
 
-// --- 登入/註冊功能 ---
 async function handleAuth() {
   if (!email.value || !password.value) {
     return alert('請完整輸入帳號與密碼')
@@ -108,7 +102,6 @@ async function handleAuth() {
   }
 }
 
-// --- 忘記密碼功能 ---
 async function handleForgotPassword() {
   if (!email.value) return alert('請先輸入您的 Email 帳號')
   const { error } = await supabase.auth.resetPasswordForEmail(email.value)
@@ -119,22 +112,18 @@ async function handleForgotPassword() {
   }
 }
 
-// --- 登出功能 ---
+// 💡 終極防護：防資料外洩的核爆級登出機制
 async function handleLogout() {
   if(confirm('確定要登出系統嗎？')) {
-    // 💡 1. 完全保留你的邏輯：登出時順便清除本機的名字快取，讓下一個登入的人重新設定
-    localStorage.removeItem('fitwork_currentUser')
-    localStorage.removeItem('fitwork_deviceUsers')
-    store.currentUser = ''
-    
-    // 💡 2. 加上清除推廣活動的暫存
-    localStorage.removeItem('herbalife_monthly_stats')
-    localStorage.removeItem('herbalife_custom_images')
-
-    // 💡 3. 登出資料庫
+    // 1. 登出資料庫
     await supabase.auth.signOut()
-
-    // 💡 4. 終極防護：強制刷新網頁，徹底殺死 Vue 記憶體，防止看到別人的資料！
+    
+    // 2. 🔥 核爆級清除：徹底清空瀏覽器所有的 LocalStorage 與 SessionStorage 
+    // (這會瞬間殺死 Pinia 快取與舊帳號所有殘留，保證資料絕對不外洩)
+    localStorage.clear()
+    sessionStorage.clear()
+    
+    // 3. 強制刷新網頁，回到最原始乾淨的狀態
     window.location.reload()
   }
 }
@@ -235,9 +224,9 @@ async function handleLogout() {
     <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
       <p>大家好！我們的系統已經進行了全新升級：</p>
       <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
-        <li>✅ <strong>新增了康寶萊全球獎賞追蹤功能</strong></li>
-        <li>✅ 優化了手機端導覽列排版</li>
-        <li>✅ 解決了部分舊資料無法顯示客戶名的問題</li>
+        <li>✅ <strong>全面升級多帳號隱私防護層</strong></li>
+        <li>✅ 修正切換帳號時畫面可能殘留舊資料的問題</li>
+        <li>✅ 大幅提升頁面滾動與拖曳流暢度</li>
       </ul>
       <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
         (此訊息僅顯示一次)
@@ -250,10 +239,22 @@ async function handleLogout() {
 </template>
 
 <style>
-#app-main { height: 100vh; display: flex; flex-direction: column; }
+/* 💡 終極防下拉回彈：徹底鎖死整個網頁的底層，杜絕彈跳干擾 */
+html, body {
+  overscroll-behavior-y: none;
+  overflow: hidden;
+  height: 100%;
+  margin: 0;
+}
+
+#app-main { 
+  height: 100vh; 
+  display: flex; 
+  flex-direction: column; 
+  background: #f8fafc; 
+}
 .header { background: rgba(255,255,255,0.9); backdrop-filter: blur(20px); padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; }
 
-/* 💡 優化：自動避開 iPhone 底部橫條，並適應 8 個按鈕 */
 .nav { 
   background: rgba(255,255,255,0.95); 
   backdrop-filter: blur(20px); 
@@ -266,13 +267,15 @@ async function handleLogout() {
   z-index: 100; 
 }
 
+/* 💡 讓捲動只發生在內容區塊，且保持原生順暢感 */
 .content { 
   flex: 1; 
   overflow-y: auto; 
   padding-bottom: calc(120px + env(safe-area-inset-bottom)); 
+  overscroll-behavior-y: contain; 
+  -webkit-overflow-scrolling: touch;
 }
 
-/* 💡 優化：按鈕更緊湊，字體微調 */
 .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; color: var(--t3); font-size: 9px; font-weight: 800; cursor: pointer; transition: 0.2s; }
 .nav-item.active { color: var(--p); transform: translateY(-2px); }
 .nav-item span:first-child { font-size: 20px; margin-bottom: 2px; }
@@ -280,11 +283,9 @@ async function handleLogout() {
 .icon-btn { background: var(--bg); border: none; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; font-weight: 900; display: flex; align-items: center; justify-content: center; }
 .icon-btn:active { transform: scale(0.95); }
 
-/* 💡 新增：切換使用者按鈕樣式 */
 .user-switch-btn { background: #eef2ff; color: #4f46e2; border: 2px solid #c7d2fe; padding: 0 12px; height: 36px; border-radius: 12px; font-weight: 900; font-size: 13px; cursor: pointer; transition: 0.2s; display:flex; align-items:center; gap:4px; }
 .user-switch-btn:active { transform: scale(0.95); }
 
-/* 登入畫面樣式 */
 .login-screen { 
   height: 100vh; 
   display: flex; 
@@ -314,7 +315,6 @@ async function handleLogout() {
 .auth-switch { margin-top: 20px; font-size: 13px; color: var(--t3); }
 .auth-switch span { color: var(--p); font-weight: 700; cursor: pointer; margin-left: 5px; }
 
-/* 🌟 新增：迎新彈窗專屬 CSS */
 .welcome-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 9999; display: flex; justify-content: center; align-items: center; }
 .welcome-modal { background: white; padding: 35px 25px; border-radius: 28px; width: 85%; max-width: 360px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.3); animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .w-icon { font-size: 50px; margin-bottom: 10px; }

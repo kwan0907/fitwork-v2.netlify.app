@@ -116,6 +116,7 @@ const loadCloudStats = async () => {
     currentUserEmail.value = session.user.email
   }
 
+  // 💡 修正：強制將所有預設值設定為絕對乾淨的空字串
   availableMonths.value.forEach(m => {
     if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
@@ -129,10 +130,11 @@ const loadCloudStats = async () => {
     if (statsData) {
       statsData.forEach(row => {
         if (monthlyStats.value[row.month]) {
-          monthlyStats.value[row.month].vp = row.vp || ''
-          monthlyStats.value[row.month].vip = row.recruits_vip || ''
-          monthlyStats.value[row.month].gold = row.recruits_gold || ''
-          monthlyStats.value[row.month].sup = row.recruits_sup || ''
+          // 💡 修正：確保從資料庫抓下來的值，如果為 0，就顯示為空字串，保持畫面乾淨
+          monthlyStats.value[row.month].vp = row.vp === 0 || row.vp === null ? '' : row.vp
+          monthlyStats.value[row.month].vip = row.recruits_vip === 0 || row.recruits_vip === null ? '' : row.recruits_vip
+          monthlyStats.value[row.month].gold = row.recruits_gold === 0 || row.recruits_gold === null ? '' : row.recruits_gold
+          monthlyStats.value[row.month].sup = row.recruits_sup === 0 || row.recruits_sup === null ? '' : row.recruits_sup
         }
       })
     }
@@ -643,6 +645,7 @@ function exportToExcel() {
 .img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
 .full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
 
+/* 💡 大幅提昇按鈕高度 (避開所有 Home Bar)，並徹底解決擠壓變形 */
 .zoom-controls { 
   position: absolute; 
   bottom: calc(50px + env(safe-area-inset-bottom)); 
