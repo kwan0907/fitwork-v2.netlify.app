@@ -34,7 +34,7 @@ const isDateInRange = (dateStr) => {
   if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
   if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
   
-  // 💡 新增：精準切割上半月與下半月
+  // 精準切割上半月與下半月
   if (filterTime.value === 'half_1') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 1 && d.getDate() <= 14
   if (filterTime.value === 'half_2') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 15
   
@@ -72,11 +72,11 @@ const upcomingTrials = computed(() => {
     .slice(0, 5)
 })
 
-// 💡 升級版：財務結算大腦 (包含舖頭上下半月、體驗卡與庫存成本獨立計算)
+// 💡 升級版：財務結算大腦 
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
   let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
-  let inventoryCost = 0; // 獨立計算庫存產品成本
+  let inventoryCost = 0; 
 
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
@@ -96,7 +96,6 @@ const financialStats = computed(() => {
         else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) owed = 25;
       }
       
-      // 自動分流到上半月或下半月
       if (txDate <= 14) shopOwed1 += owed;
       else shopOwed2 += owed;
     } 
@@ -105,7 +104,7 @@ const financialStats = computed(() => {
         cost += amt;
         shopPaid += amt; 
       } else if (t.category === '自用消耗') {
-        inventoryCost += amt; // 庫存自用算在這裡，不扣利潤，也不算進一般成本
+        inventoryCost += amt; 
       } else {
         cost += amt;
         profit -= amt; 
@@ -113,18 +112,11 @@ const financialStats = computed(() => {
     }
   })
   
-  // 自動還款邏輯：先扣上半月的欠款，還有剩才扣下半月
   let p1 = shopOwed1;
   let p2 = shopOwed2;
   let paid = shopPaid;
   
-  if (paid >= p1) {
-      paid -= p1;
-      p1 = 0;
-      p2 -= paid;
-  } else {
-      p1 -= paid;
-  }
+  if (paid >= p1) { paid -= p1; p1 = 0; p2 -= paid; } else { p1 -= paid; }
   
   return { 
       revenue, cost, profit, inventoryCost, 
@@ -134,30 +126,59 @@ const financialStats = computed(() => {
   };
 })
 
-// 💡 計算區間新增客戶與來源
+// 計算區間新增客戶與來源
 const clientStats = computed(() => {
   let newClientsTotal = 0;
-  // 已經加入「朋友」選項
-  const sourceCount = { '廣告': 0, '朋友介紹': 0, '朋友': 0, '傳單': 0, 'IG': 0, '其他': 0 };
+  const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
   
   store.clients.forEach(c => {
     if (isDateInRange(c.join_date)) {
         if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
             newClientsTotal++;
             const src = c.source || '其他';
-            if (sourceCount[src] !== undefined) {
-                sourceCount[src]++;
-            } else {
-                sourceCount['其他']++;
-            }
+            if (sourceCount[src] !== undefined) sourceCount[src]++;
+            else sourceCount['其他']++;
         }
     }
   })
   
-  return {
-    total: newClientsTotal,
-    sources: sourceCount
-  }
+  return { total: newClientsTotal, sources: sourceCount }
+})
+
+// 💡 全新：智慧試堂轉化漏斗統計大腦
+const trialFunnelStats = computed(() => {
+  let totalBooked = 0;
+  let completedTrials = 0;
+  let converted = 0;
+  let notConverted = 0;
+
+  const now = new Date();
+
+  store.clients.forEach(c => {
+    // 檢查試堂日期是否落在篩選區間內
+    if (c.trial_date && isDateInRange(c.trial_date)) {
+      if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
+
+      totalBooked++; // 總預約數 +1
+
+      const tDate = new Date(c.trial_date);
+      // 如果試堂時間已經過去了（代表確實有出席）
+      if (tDate <= now) {
+        completedTrials++;
+        
+        // 判斷是否轉化成功
+        if (c.status === 'active') {
+          converted++; // 成功開卡
+        } else {
+          notConverted++; // 僅試堂（未買）
+        }
+      }
+    }
+  });
+
+  const conversionRate = completedTrials > 0 ? ((converted / completedTrials) * 100).toFixed(1) : "0.0";
+
+  return { totalBooked, completedTrials, converted, notConverted, conversionRate };
 })
 
 const packageStats = computed(() => {
@@ -240,7 +261,6 @@ const trendChartData = computed(() => {
       const amt = Number(t.amount) || 0
       if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
       else if (t.type === 'expense') { 
-        // 圖表利潤不扣減支付30% 與 自用消耗
         if (t.category !== '支付30%' && t.category !== '自用消耗') dailyProf -= amt; 
       }
     })
@@ -335,6 +355,30 @@ const chartOptions = {
       </div>
     </div>
 
+    <div class="section-title" style="margin-top: 25px; color: #4f46e2;">🎯 區間試堂轉化漏斗 (Funnel)</div>
+    <div class="card" style="margin-bottom: 20px; padding: 20px; border: 2px solid #eef2ff;">
+      <div class="funnel-metrics">
+        <div class="fm-item">
+          <div class="fm-lbl">📅 總預約數</div>
+          <div class="fm-val">{{ trialFunnelStats.totalBooked }}</div>
+        </div>
+        <div class="fm-arrow">👉</div>
+        <div class="fm-item">
+          <div class="fm-lbl">🏃 已出席試堂</div>
+          <div class="fm-val text-blue">{{ trialFunnelStats.completedTrials }}</div>
+          <div class="fm-sub">僅試堂(未買): {{ trialFunnelStats.notConverted }}</div>
+        </div>
+        <div class="fm-arrow">👉</div>
+        <div class="fm-item">
+          <div class="fm-lbl">👑 成功開卡</div>
+          <div class="fm-val text-green">{{ trialFunnelStats.converted }}</div>
+        </div>
+        <div class="fm-rate-box">
+          <div class="fm-lbl text-white" style="margin-bottom: 2px;">開卡轉換率</div>
+          <div class="fm-val text-white" style="font-size: 22px;">{{ trialFunnelStats.conversionRate }}%</div>
+        </div>
+      </div>
+    </div>
     <div class="section-title" style="margin-top: 25px;">🌟 區間客戶增長與來源</div>
     <div class="card" style="margin-bottom: 20px; padding: 20px;">
       <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px;">
@@ -426,6 +470,24 @@ const chartOptions = {
 .section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
 .card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
 
+/* 🌟 漏斗專屬 CSS */
+.funnel-metrics { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.fm-item { text-align: center; flex: 1; }
+.fm-lbl { font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; }
+.fm-val { font-size: 26px; font-weight: 900; color: #1e293b; line-height: 1; }
+.fm-sub { font-size: 11px; font-weight: 800; color: #f59e0b; margin-top: 6px; background: #fffbeb; padding: 3px 6px; border-radius: 6px; display: inline-block;}
+.fm-arrow { font-size: 20px; color: #cbd5e1; }
+.fm-rate-box { background: linear-gradient(135deg, #10b981, #059669); padding: 15px; border-radius: 16px; text-align: center; min-width: 90px; box-shadow: 0 10px 20px rgba(16, 185, 129, 0.2);}
+.text-blue { color: #3b82f6; }
+.text-green { color: #10b981; }
+.text-white { color: white; }
+
+@media (max-width: 600px) {
+  .funnel-metrics { flex-direction: column; gap: 15px; }
+  .fm-arrow { transform: rotate(90deg); }
+  .fm-rate-box { width: 100%; margin-top: 10px; }
+}
+
 .p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
 .p-item:last-child { border-bottom: none; margin-bottom:0; padding-bottom:0; }
 .clickable { cursor: pointer; transition: background 0.2s; }
@@ -438,7 +500,6 @@ const chartOptions = {
 .meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
 .empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
 
-/* 🌟 新增客戶增長圖表格線 */
 .source-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; }
 .src-lbl { font-size: 11px; color: #64748b; font-weight: 800; margin-bottom: 4px; white-space: nowrap; }
