@@ -27,10 +27,11 @@ const isLoggingIn = ref(false)
 const isRegistering = ref(false)
 const rememberMe = ref(false)
 
-// 💡 暫存迎新畫面輸入的名字
-const tempName = ref('')
+// 💡 驗證碼專用狀態
+const isVerifying = ref(false)
+const verificationCode = ref('')
 
-// --- 更新通知狀態 ---
+const tempName = ref('')
 const showUpdateModal = ref(false)
 
 onMounted(() => {
@@ -66,37 +67,65 @@ function closeUpdateModal() {
   showUpdateModal.value = false
 }
 
+// 💡 更新：註冊成功後切換到驗證畫面
 async function handleAuth() {
   if (!email.value || !password.value) {
     return alert('請完整輸入帳號與密碼')
   }
   
   isLoggingIn.value = true
-  let error = null
+  let authError = null
 
   if (isRegistering.value) {
     const result = await supabase.auth.signUp({
       email: email.value,
       password: password.value,
     })
-    error = result.error
-    if (!error) {
-      alert('註冊成功！請檢查您的信箱以驗證帳號。')
-      isRegistering.value = false
+    authError = result.error
+    if (!authError) {
+      alert('系統已發送驗證碼到您的信箱！請輸入信件中的 6 位數驗證碼。')
+      isVerifying.value = true // 切換到驗證碼輸入介面
     }
   } else {
     const result = await supabase.auth.signInWithPassword({
       email: email.value,
       password: password.value,
     })
-    error = result.error
+    authError = result.error
   }
   
   isLoggingIn.value = false
 
-  if (error) {
-    alert((isRegistering.value ? '註冊失敗：' : '登入失敗：') + error.message)
+  if (authError) {
+    alert((isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message)
   } else {
+    // 登入成功時清空
+    if (!isRegistering.value) {
+      email.value = ''
+      password.value = ''
+    }
+  }
+}
+
+// 💡 新增：處理 6 位數驗證碼的邏輯
+async function handleVerify() {
+  if (!verificationCode.value) return alert('請輸入 6 位數驗證碼')
+  
+  isLoggingIn.value = true
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.value,
+    token: verificationCode.value,
+    type: 'signup' // 告訴系統這是註冊信箱的驗證
+  })
+  isLoggingIn.value = false
+
+  if (error) {
+    alert('驗證失敗：' + error.message)
+  } else {
+    alert('✅ 驗證成功！系統將為您自動登入。')
+    isVerifying.value = false
+    isRegistering.value = false
+    verificationCode.value = ''
     email.value = ''
     password.value = ''
   }
@@ -112,18 +141,11 @@ async function handleForgotPassword() {
   }
 }
 
-// 💡 終極防護：防資料外洩的核爆級登出機制
 async function handleLogout() {
   if(confirm('確定要登出系統嗎？')) {
-    // 1. 登出資料庫
     await supabase.auth.signOut()
-    
-    // 2. 🔥 核爆級清除：徹底清空瀏覽器所有的 LocalStorage 與 SessionStorage 
-    // (這會瞬間殺死 Pinia 快取與舊帳號所有殘留，保證資料絕對不外洩)
     localStorage.clear()
     sessionStorage.clear()
-    
-    // 3. 強制刷新網頁，回到最原始乾淨的狀態
     window.location.reload()
   }
 }
@@ -136,31 +158,61 @@ async function handleLogout() {
       <h1 class="login-title">FITWORK PRO</h1>
       <p class="login-subtitle">旗艦版店務管理系統</p>
 
-      <div class="form-group">
-        <label>Email 帳號</label>
-        <input v-model="email" type="email" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
+      <div v-if="isVerifying">
+        <p style="font-size: 13px; color: #64748b; margin-bottom: 20px; font-weight: 700; line-height: 1.5;">
+          已將 6 位數驗證碼發送至：<br><span style="color:#4f46e2; font-size: 15px;">{{ email }}</span>
+        </p>
+
+        <div class="form-group">
+          <label style="text-align: center;">請輸入信件中的驗證碼</label>
+          <input 
+            v-model="verificationCode" 
+            type="text" 
+            class="inp" 
+            placeholder="000000" 
+            maxlength="6"
+            @keyup.enter="handleVerify"
+            style="text-align: center; font-size: 24px; font-weight: 900; letter-spacing: 8px; padding: 15px;"
+          >
+        </div>
+
+        <button class="btn-primary login-btn" @click="handleVerify" :disabled="isLoggingIn">
+          {{ isLoggingIn ? '驗證中...' : '確認並登入' }}
+        </button>
+
+        <div class="auth-switch">
+          <span @click="isVerifying = false; isRegistering = false">取消並返回登入</span>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>密碼</label>
-        <input v-model="password" type="password" class="inp" placeholder="輸入您的密碼" @keyup.enter="handleAuth">
+      <div v-else>
+        <div class="form-group">
+          <label>Email 帳號</label>
+          <input v-model="email" type="email" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
+        </div>
+
+        <div class="form-group">
+          <label>密碼</label>
+          <input v-model="password" type="password" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth">
+        </div>
+
+        <div class="login-options">
+          <label class="remember-me">
+            <input type="checkbox" v-model="rememberMe"> 記住我
+          </label>
+          <button v-if="!isRegistering" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
+        </div>
+
+        <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
+          {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
+        </button>
+
+        <div class="auth-switch">
+          {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
+          <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
+        </div>
       </div>
 
-      <div class="login-options">
-        <label class="remember-me">
-          <input type="checkbox" v-model="rememberMe"> 記住我
-        </label>
-        <button v-if="!isRegistering" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
-      </div>
-
-      <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
-        {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
-      </button>
-
-      <div class="auth-switch">
-        {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
-        <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
-      </div>
     </div>
   </div>
 
@@ -209,9 +261,7 @@ async function handleLogout() {
     <div class="nav">
       <div class="nav-item" :class="{active: store.view==='dashboard'}" @click="store.view='dashboard'"><span>📊</span><span>總覽</span></div>
       <div class="nav-item" :class="{active: store.view==='promo'}" @click="store.view='promo'"><span>📢</span><span>宣傳</span></div>
-      
       <div class="nav-item" :class="{active: store.view==='herbalife'}" @click="store.view='herbalife'"><span>🏆</span><span>獎賞</span></div>
-      
       <div class="nav-item" :class="{active: store.view==='clients'}" @click="store.view='clients'"><span>👥</span><span>客戶</span></div>
       <div class="nav-item" :class="{active: store.view==='movement'}" @click="store.view='movement'"><span>🏋️</span><span>運動</span></div>
       <div class="nav-item" :class="{active: store.view==='retail'}" @click="store.view='retail'"><span>🛒</span><span>零售</span></div>
@@ -225,6 +275,7 @@ async function handleLogout() {
       <p>大家好！我們的系統已經進行了全新升級：</p>
       <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
         <li>✅ <strong>全面升級多帳號隱私防護層</strong></li>
+        <li>✅ 新增註冊 OTP 驗證碼安全機制</li>
         <li>✅ 修正切換帳號時畫面可能殘留舊資料的問題</li>
         <li>✅ 大幅提升頁面滾動與拖曳流暢度</li>
       </ul>
@@ -239,7 +290,7 @@ async function handleLogout() {
 </template>
 
 <style>
-/* 💡 終極防下拉回彈：徹底鎖死整個網頁的底層，杜絕彈跳干擾 */
+/* 💡 終極防下拉回彈 */
 html, body {
   overscroll-behavior-y: none;
   overflow: hidden;
@@ -267,7 +318,6 @@ html, body {
   z-index: 100; 
 }
 
-/* 💡 讓捲動只發生在內容區塊，且保持原生順暢感 */
 .content { 
   flex: 1; 
   overflow-y: auto; 
