@@ -9,11 +9,12 @@ const isAdmin = computed(() => currentUserEmail.value === 'yimwingkwan0907@gmail
 // 全螢幕看圖狀態
 const viewingImage = ref(null)
 
+// 💡 1. 產生從 2025 年完整開始，到未來幾年的所有月份
 const availableMonths = computed(() => {
   const months = []
-  let curr = new Date('2025-12-01')
+  let curr = new Date('2025-01-01') // 💡 從 2025 全年完整開始
   const end = new Date()
-  end.setFullYear(end.getFullYear() + 3) 
+  end.setFullYear(end.getFullYear() + 3) // 延伸至未來3年
   while (curr <= end) {
     const y = curr.getFullYear()
     const m = String(curr.getMonth() + 1).padStart(2, '0')
@@ -21,6 +22,17 @@ const availableMonths = computed(() => {
     curr.setMonth(curr.getMonth() + 1)
   }
   return months
+})
+
+// 💡 2. 萃取可用的年份，並設定當前選中的年份 (預設為今年)
+const availableYears = computed(() => {
+  return [...new Set(availableMonths.value.map(m => m.split('-')[0]))]
+})
+const selectedYear = ref(new Date().getFullYear().toString())
+
+// 💡 3. 只顯示「目前選中」年份的月份卡片，避免無限滑動
+const displayedMonths = computed(() => {
+  return availableMonths.value.filter(m => m.startsWith(selectedYear.value))
 })
 
 const monthlyStats = ref({})
@@ -95,18 +107,17 @@ const promos = ref([
 const loadCloudStats = async () => {
   isSyncing.value = true
   
-  // 1. 取得當前登入者 Email，判斷是否為管理員
   const { data: { session } } = await supabase.auth.getSession()
   if (session?.user?.email) {
     currentUserEmail.value = session.user.email
   }
 
-  // 2. 初始化月份
+  // 初始化所有的月份欄位
   availableMonths.value.forEach(m => {
     if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
 
-  // 3. 抓取雲端分數
+  // 抓取雲端成績
   const { data: statsData } = await supabase.from('herbalife_stats').select('*')
   if (statsData) {
     statsData.forEach(row => {
@@ -119,7 +130,7 @@ const loadCloudStats = async () => {
     })
   }
 
-  // 4. 抓取雲端自訂圖片
+  // 抓取雲端海報
   const { data: imgData } = await supabase.from('herbalife_images').select('*')
   if (imgData) {
     imgData.forEach(row => {
@@ -144,7 +155,7 @@ const saveMonthToCloud = async (month) => {
   })
 }
 
-// --- 💡 圖片處理引擎 ---
+// 💡 自動壓縮圖片引擎
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -153,7 +164,6 @@ const compressImage = (file) => {
       const img = new Image()
       img.src = event.target.result
       img.onload = () => {
-        // 等比例縮小，最寬 800px
         const canvas = document.createElement('canvas')
         let width = img.width
         let height = img.height
@@ -166,7 +176,6 @@ const compressImage = (file) => {
         canvas.height = height
         const ctx = canvas.getContext('2d')
         ctx.drawImage(img, 0, 0, width, height)
-        // 壓縮成 70% 畫質的 JPEG，大幅減少雲端空間佔用
         resolve(canvas.toDataURL('image/jpeg', 0.7))
       }
     }
@@ -181,24 +190,21 @@ const handleImageUpload = async (event, promo) => {
   const compressedBase64 = await compressImage(file)
   
   promo.customImage = compressedBase64
-  // 儲存至雲端
   const { error } = await supabase.from('herbalife_images').upsert({ promo_id: promo.id, image_data: compressedBase64 })
   if (error) alert('上傳失敗: ' + error.message)
   else alert('✅ 專屬海報已更新並同步至全團隊！')
 }
 
-// 💡 刪除圖片以節省資料庫空間
 const resetImage = async (promo) => {
   if(!confirm('確定要還原預設圖片嗎？這將刪除雲端的海報以節省空間。')) return
   promo.customImage = null
   await supabase.from('herbalife_images').delete().eq('promo_id', promo.id)
 }
 
-
 // --- 幫助函數 ---
 const formatMonthLabel = (mStr) => {
   const [y, m] = mStr.split('-')
-  return `${y.slice(2)}年 ${parseInt(m)}月`
+  return `${parseInt(m)} 月`
 }
 
 const isMonthInRange = (monthStr, startStr, endStr) => {
@@ -208,8 +214,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-
-// 💡 核心大腦：分數計算
+// 💡 核心計算大腦
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
@@ -282,13 +287,25 @@ function exportToExcel() {
         <span style="font-size: 24px;">☁️</span>
         <div style="flex:1;">
           <div class="mc-title">逐月成績控制台 <span v-if="isSyncing" style="font-size:11px; color:#10b981;">(🔄 同步中...)</span></div>
-          <div class="mc-desc">輸入後自動儲存至雲端，手機電腦無縫同步。</div>
+          <div class="mc-desc">請選擇年份，並填寫各月份考核成績。</div>
         </div>
         <button class="btn-sync" @click="loadCloudStats">🔄 重新整理</button>
       </div>
 
+      <div class="year-tabs">
+        <button 
+          v-for="year in availableYears" 
+          :key="year" 
+          class="year-btn" 
+          :class="{ 'active': selectedYear === year }"
+          @click="selectedYear = year"
+        >
+          {{ year }} 年
+        </button>
+      </div>
+
       <div class="months-scroll-container">
-        <div class="month-card" v-for="month in availableMonths" :key="month">
+        <div class="month-card" v-for="month in displayedMonths" :key="month">
           <div class="m-title">📅 {{ formatMonthLabel(month) }}</div>
           
           <div class="m-inp-group">
@@ -325,8 +342,8 @@ function exportToExcel() {
               
               <template v-if="isAdmin">
                 <input type="file" :id="'img-up-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p)">
-                <label :for="'img-up-'+p.id" class="btn-change-img">📷 換封面</label>
-                <button v-if="p.customImage" class="btn-reset-img" @click="resetImage(p)">✕ 還原</button>
+                <label :for="'img-up-'+p.id" class="btn-change-img">📷 換圖</label>
+                <button v-if="p.customImage" class="btn-reset-img" @click="resetImage(p)">✕ 刪除</button>
               </template>
             </div>
           </div>
@@ -350,7 +367,7 @@ function exportToExcel() {
               <div v-if="p.targetVp > 0" class="cr-stat">
                 <span class="cr-num">{{ p.calculatedVp.toLocaleString() }}</span>
                 <span class="cr-lbl">VP</span>
-                <div v-if="p.doubleVpMonth" class="double-tag">⚡️ 已含雙倍獎勵</div>
+                <div v-if="p.doubleVpMonth" class="double-tag">⚡️ 已含雙倍加乘</div>
               </div>
               
               <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP/PC</span></div>
@@ -404,12 +421,18 @@ function exportToExcel() {
 .btn-sync { background: rgba(255,255,255,0.1); border: 1px solid #475569; color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer;}
 .btn-sync:active { background: rgba(255,255,255,0.2); }
 
+/* 💡 新版：年份切換列 */
+.year-tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px; }
+.year-tabs::-webkit-scrollbar { display: none; }
+.year-btn { background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #cbd5e1; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap;}
+.year-btn.active { background: #10b981; border-color: #10b981; color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.25); }
+
 .months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth;}
 .months-scroll-container::-webkit-scrollbar { height: 6px; }
 .months-scroll-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
 
 .month-card { min-width: 140px; background: rgba(255,255,255,0.08); border: 1px solid #475569; border-radius: 16px; padding: 12px; }
-.m-title { font-size: 13px; font-weight: 900; color: #10b981; margin-bottom: 10px; text-align: center;}
+.m-title { font-size: 15px; font-weight: 900; color: #10b981; margin-bottom: 10px; text-align: center;}
 .m-inp-group { display: flex; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 4px 8px;}
 .m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 35px; white-space: nowrap;}
 .m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right;}
@@ -461,7 +484,6 @@ function exportToExcel() {
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 
-/* 🔍 全螢幕看圖 Modal 樣式 */
 .image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; display: flex; justify-content: center; align-items: center; cursor: pointer;}
 .full-size-img { max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); object-fit: contain; animation: popIn 0.3s ease-out;}
 .close-x { position: absolute; top: 25px; right: 25px; background: rgba(255,255,255,0.2); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);}
