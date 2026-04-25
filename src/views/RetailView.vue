@@ -197,13 +197,24 @@ async function finalizeCheckout(payeeName) {
       <div class="checkout-modal">
         <div class="m-header">🛒 結帳明細與總結 <button class="close-x" @click="showCheckoutModal=false">✕</button></div>
         
-        <div class="cart-items">
-          <!-- ✅ 修改後 -->
-<div v-for="item in cartWithPrices" :key="item.id" class="c-item">
-            <div style="flex:1;"><div class="c-name">{{ item.name }}</div><div class="c-sub">單價 ${{ item.active_price }}</div></div>
-            <div class="c-price">$ {{ item.active_price * item.qty }}</div>
-            <div class="qty-control"><button @click="decreaseQty(item)">-</button><span>{{ item.qty }}</span><button @click="addToCart(item)">+</button></div>
-          </div>
+        <!-- ✅ 改後完整版 -->
+<div class="cart-header-row">
+  <span class="cart-header-title">🛍️ 已選商品（{{ totalItems }} 件）</span>
+  <button class="clear-all-btn" @click="cart = []">🗑️ 清空</button>
+</div>
+
+<div class="cart-items">
+  <div v-for="item in cartWithPrices" :key="item.id" class="c-item">
+    <button class="c-delete" @click="cart = cart.filter(i => i.id !== item.id)">✕</button>
+    <div style="flex:1;"><div class="c-name">{{ item.name }}</div><div class="c-sub">單價 ${{ item.active_price }}</div></div>
+    <div class="c-price">$ {{ item.active_price * item.qty }}</div>
+    <div class="qty-control">
+      <button @click="decreaseQty(item)">−</button>
+      <span>{{ item.qty }}</span>
+      <button @click="addToCart(item)">＋</button>
+    </div>
+  </div>
+
         </div>
 
         <div class="summary-box">
@@ -213,9 +224,16 @@ async function finalizeCheckout(payeeName) {
           <div class="s-row" style="margin-top:10px;"><span style="color:#4f46e2; font-weight:900; font-size:16px;">🚀 實收淨利潤</span> <span style="color:#4f46e2; font-weight:900; font-size:26px;">$ {{ Math.round(netProfit) }}</span></div>
         </div>
 
-        <div class="payee-buttons">
-          <button v-for="(payee, index) in payees" :key="payee" class="payee-btn" :class="'style-' + (index % 2)" @click="finalizeCheckout(payee)">💰 {{ payee }} 結帳</button>
-        </div>
+        <!-- ✅ 改成 -->
+<div class="confirm-section">
+  <p class="confirm-label">💳 選擇收款人完成結帳</p>
+  <div class="payee-buttons">
+    <button v-for="(payee, index) in payees" :key="payee" class="payee-btn" :class="'style-' + (index % 2)" @click="finalizeCheckout(payee)">
+      ✅ {{ payee }} 收款
+    </button>
+  </div>
+  <button class="btn-back" @click="showCheckoutModal = false">← 返回繼續選購</button>
+</div>
       </div>
     </div>
   </div>
@@ -261,7 +279,8 @@ async function finalizeCheckout(payeeName) {
 .float-btn { font-size: 14px; font-weight: 800; color: #cbd5e1; }
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-end; justify-content: center; }
-.checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 28px 28px 0 0; padding: 30px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; }
+/* ✅ 改成 */
+.checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 28px 28px 0 0; padding: 30px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; max-height: 88vh; overflow-y: auto; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .m-header { font-weight: 900; font-size: 20px; margin-bottom: 20px; display: flex; justify-content: space-between; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 32px; height: 32px; border: none; font-size: 16px; font-weight: 900; color: #475569; cursor: pointer; }
@@ -284,4 +303,22 @@ async function finalizeCheckout(payeeName) {
 .payee-btn:active { transform: scale(0.96); }
 .style-0 { background: linear-gradient(135deg, #3b82f6, #2563eb); } 
 .style-1 { background: linear-gradient(135deg, #ec4899, #db2777); } 
+.style-0 { background: linear-gradient(135deg, #3b82f6, #2563eb); } 
+.style-1 { background: linear-gradient(135deg, #ec4899, #db2777); } 
+
+/* 購物車 Header */
+.cart-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.cart-header-title { font-weight: 900; font-size: 15px; color: #1e293b; }
+.clear-all-btn { background: #fee2e2; color: #ef4444; border: none; border-radius: 8px; padding: 6px 12px; font-weight: 800; font-size: 13px; cursor: pointer; }
+
+/* 刪除按鈕 */
+.c-delete { background: #f1f5f9; border: none; border-radius: 8px; width: 28px; height: 28px; color: #94a3b8; font-size: 13px; font-weight: 900; cursor: pointer; margin-right: 10px; flex-shrink: 0; }
+.c-delete:active { background: #fee2e2; color: #ef4444; }
+
+/* 確認結帳區 */
+.confirm-section { display: flex; flex-direction: column; gap: 12px; }
+.confirm-label { text-align: center; font-weight: 800; font-size: 14px; color: #64748b; margin: 0; padding: 0; }
+.btn-back { width: 100%; padding: 14px; border-radius: 14px; border: 2px solid #e2e8f0; background: white; color: #64748b; font-size: 15px; font-weight: 800; cursor: pointer; }
+.btn-back:active { background: #f8fafc; }
+
 </style>
