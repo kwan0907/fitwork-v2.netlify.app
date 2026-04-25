@@ -6,17 +6,16 @@ import { supabase } from '../supabase'
 const store = useMainStore()
 
 // --- 🌟 1. 建立新紀錄的表單狀態 ---
-// 移除預設時間，改為空值等待打卡
 const form = ref({
   type: '派傳單',
   promo_date: new Date().toISOString().split('T')[0],
   start_time: '',
   end_time: '',
   flyers_count: '',
-  note: '' // 💡 新增：備註欄位
+  note: '' 
 })
 
-// 💡 【超強升級】草稿讀取：關閉 APP 再打開，資料也不會不見！
+// 💡 草稿讀取
 onMounted(() => {
   const savedDraft = localStorage.getItem('fitwork_promo_draft')
   if (savedDraft) {
@@ -31,12 +30,12 @@ onMounted(() => {
   }
 })
 
-// 💡 【超強升級】自動存檔：任何欄位變動，都會即時存進手機的暫存區
+// 💡 自動存檔
 watch(form, (newVal) => {
   localStorage.setItem('fitwork_promo_draft', JSON.stringify(newVal))
 }, { deep: true })
 
-// 💡 【超強升級】一鍵填入當下時間
+// 💡 一鍵填入當下時間
 const setTimeNow = (field) => {
   const now = new Date()
   const hh = String(now.getHours()).padStart(2, '0')
@@ -52,7 +51,6 @@ const calculatedDuration = computed(() => {
   const end = new Date(`2000-01-01T${form.value.end_time}`)
   
   let diffMs = end - start
-  // 處理跨午夜的情況 (例如晚上 11 點派到凌晨 1 點)
   if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000 
   
   const hrs = Math.floor(diffMs / (1000 * 60 * 60))
@@ -74,7 +72,7 @@ async function submitPromoRecord() {
     end_time: form.value.end_time,
     duration: calculatedDuration.value,
     flyers_count: parseInt(form.value.flyers_count),
-    note: form.value.note, // 💡 新增：將備註存入資料庫
+    note: form.value.note, 
     inquiries: 0,
     trials: 0,
     conversions: 0
@@ -84,14 +82,13 @@ async function submitPromoRecord() {
   
   alert(`✅ ${form.value.type} 紀錄已成功建立！`)
   
-  // 💡 提交成功後：清空表單，並刪除手機裡的草稿暫存
   form.value = {
     type: '派傳單',
     promo_date: new Date().toISOString().split('T')[0],
     start_time: '',
     end_time: '',
     flyers_count: '',
-    note: '' // 💡 新增：清空備註
+    note: '' 
   }
   localStorage.removeItem('fitwork_promo_draft')
   
@@ -101,7 +98,6 @@ async function submitPromoRecord() {
 // --- 🌟 3. 歷史紀錄列表與更新成效 ---
 const promoList = computed(() => {
   const list = store.promotions || []
-  // 依照日期由新到舊排序
   return list.sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
 })
 
@@ -117,29 +113,62 @@ async function updatePerformance(p) {
   store.syncAll()
 }
 
-// 💡 4. 匯出 Excel / CSV 功能
+// 💡 4. 【完美進化版】匯出包含「統計報表」的 Excel/CSV
 function exportToExcel() {
-  // 加上 BOM 標記，防止 Excel 開啟時中文亂碼
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-  // 💡 表頭加入「備註」
+
+  // 📊 第一部分：智能計算總結數據
+  let totalMins = 0
+  let totalFlyers = 0
+  let totalInquiries = 0
+  let totalTrials = 0
+  let totalConversions = 0
+
+  promoList.value.forEach(p => {
+    // 智能拆解並計算時間
+    const durStr = p.duration || ''
+    const hrsMatch = durStr.match(/(\d+)\s*小時/)
+    const minsMatch = durStr.match(/(\d+)\s*分鐘/)
+    const h = hrsMatch ? parseInt(hrsMatch[1]) : 0
+    const m = minsMatch ? parseInt(minsMatch[1]) : 0
+    totalMins += (h * 60) + m
+
+    // 加總其他漏斗數據
+    totalFlyers += parseInt(p.flyers_count || 0)
+    totalInquiries += parseInt(p.inquiries || 0)
+    totalTrials += parseInt(p.trials || 0)
+    totalConversions += parseInt(p.conversions || 0)
+  })
+
+  // 把總分鐘數轉換回易讀格式
+  const finalHrs = Math.floor(totalMins / 60)
+  const finalMins = totalMins % 60
+  const totalDurationStr = `${finalHrs} 小時 ${finalMins} 分鐘`
+
+  // 📝 寫入頂部：【統計報表區塊】
+  csvContent += "📊 【宣傳總結統計報表】\n"
+  csvContent += "總耗時,總派發數量,總查詢數,總試堂數,總開卡數\n"
+  csvContent += `"${totalDurationStr}",${totalFlyers},${totalInquiries},${totalTrials},${totalConversions}\n\n`
+
+  // 📝 寫入底部：【詳細明細區塊】
+  csvContent += "📝 【詳細紀錄明細】\n"
   csvContent += "活動類型,活動日期,開始時間,結束時間,耗時,派發數量,查詢數,試堂數,開卡數,備註\n"
 
   promoList.value.forEach(p => {
-    // 💡 處理備註裡的換行或逗號，避免破壞 CSV 格式
+    // 保護備註欄位，防止斷行破壞表格結構
     const safeNote = String(p.note || '').replace(/"/g, '""').replace(/\n/g, ' ')
     
-    // 💡 組合每一行的數據，將備註也包進去
     const row = `"${p.type}","${p.promo_date}","${p.start_time || ''}","${p.end_time || ''}","${p.duration || ''}",${p.flyers_count || 0},${p.inquiries || 0},${p.trials || 0},${p.conversions || 0},"${safeNote}"`
     csvContent += row + "\n"
   })
 
+  // 執行下載
   const encodedUri = encodeURI(csvContent)
   const link = document.createElement("a")
   link.setAttribute("href", encodedUri)
   
-  // 檔名加上今天日期
   const dateStr = new Date().toISOString().slice(0, 10)
-  link.setAttribute("download", `宣傳成效報表_${dateStr}.csv`)
+  link.setAttribute("download", `宣傳成效總表_${dateStr}.csv`) // 副檔名維持 CSV，Excel與Numbers皆可完美讀取
   
   document.body.appendChild(link)
   link.click()
@@ -152,7 +181,7 @@ function exportToExcel() {
     
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
       <h2 class="page-title" style="margin-bottom: 0;">宣傳成效追蹤</h2>
-      <button class="btn-export" @click="exportToExcel">📥 匯出報表</button>
+      <button class="btn-export" @click="exportToExcel">📥 匯出統計報表</button>
     </div>
 
     <div class="card add-card">
@@ -271,7 +300,6 @@ function exportToExcel() {
 }
 .mod-inp:focus { border-color: #4f46e2; background: white; }
 
-/* 時間打卡專用排版 */
 .time-input-group { display: flex; gap: 6px; }
 .px-small { padding: 12px 8px; }
 .btn-now { 
@@ -302,7 +330,6 @@ function exportToExcel() {
 .r-meta { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #475569; }
 .stk-tag { background: #fff7ed; color: #d97706; padding: 2px 8px; border-radius: 6px; }
 
-/* 💡 新增：歷史紀錄備註的外觀設計 */
 .r-note { font-size: 13px; color: #64748b; font-weight: 600; margin-top: 12px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #cbd5e1; line-height: 1.4;}
 
 .funnel-divider { border-bottom: 1px dashed #e2e8f0; margin: 15px 0; }
