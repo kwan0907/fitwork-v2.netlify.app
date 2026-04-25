@@ -64,7 +64,7 @@ async function saveTransaction() {
     ...expForm.value, 
     amount: amt, 
     profit: expForm.value.type === 'income' ? amt : -amt,
-    handled_by: expForm.value.staff // 同步 V2 欄位
+    handled_by: expForm.value.staff 
   }
   
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
@@ -73,14 +73,17 @@ async function saveTransaction() {
   const now = new Date()
   txnDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds())
   const createdAt = txnDate.toISOString()
-  delete data.date // 移除暫存日期
+  delete data.date 
+
+  // 💡 BUG 修復：將 created_at 包含進去，確保「修改日期」能成功寫入資料庫
+  const updatePayload = { ...data, created_at: createdAt }
 
   let error
   if (editingTxn.value) {
-    const res = await supabase.from('transactions').update(data).eq('id', editingTxn.value)
+    const res = await supabase.from('transactions').update(updatePayload).eq('id', editingTxn.value)
     error = res.error
   } else {
-    const res = await supabase.from('transactions').insert({ ...data, created_at: createdAt })
+    const res = await supabase.from('transactions').insert(updatePayload)
     error = res.error
   }
 
@@ -118,7 +121,12 @@ async function handleDeleteTransaction(id) {
         <div v-for="t in group.items" :key="t.id" class="txn-item">
           <div style="flex:1;">
             <div class="t-cat">{{ t.category }}</div>
-            <div class="t-note">{{ t.note || '無備註' }} · <span class="t-staff">{{ t.staff || t.handled_by }}</span></div>
+            
+            <div class="t-note-box">
+              <div class="tag-row"><span class="icon-lbl">📝 備註(客戶):</span> {{ t.note || '無' }}</div>
+              <div class="tag-row"><span class="icon-lbl">👤 經手(收款):</span> <span class="t-staff">{{ t.staff || t.handled_by || '未記錄' }}</span></div>
+            </div>
+
             <div v-if="t.category==='廣告費用' && (t.ad_inquiries>0 || t.ad_phones>0)" class="t-ad">
               廣告回報: {{ t.ad_inquiries }} 查詢 / {{ t.ad_phones }} 電話
             </div>
@@ -168,8 +176,8 @@ async function handleDeleteTransaction(id) {
         <input class="modern-inp amt-inp" type="number" v-model="expForm.amount">
       </div>
       <div class="form-item" style="margin-top:15px;">
-        <label>備註</label>
-        <input class="modern-inp" v-model="expForm.note">
+        <label>📝 備註 (強烈建議填寫客戶名稱)</label>
+        <input class="modern-inp" v-model="expForm.note" placeholder="例如：售出 10點套票 - Candy">
       </div>
       <div class="form-item" style="margin-top:15px;">
         <label>經手人 (收款/付款人)</label>
@@ -191,10 +199,16 @@ async function handleDeleteTransaction(id) {
 
 .txn-item { display: flex; align-items: center; padding: 16px 0; border-bottom: 1px solid #f1f5f9; }
 .txn-item:last-child { border-bottom: none; }
-.t-cat { font-weight: 800; font-size: 15px; color: #1e293b; }
-.t-note { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
-.t-staff { font-weight: 800; color: #4f46e2; }
-.t-ad { font-size: 11px; color: #d97706; margin-top: 4px; font-weight: 700; background: #fff7ed; display: inline-block; padding: 2px 8px; border-radius: 6px; }
+.t-cat { font-weight: 900; font-size: 16px; color: #1e293b; margin-bottom: 6px;}
+
+/* 💡 優化：新版客戶與收款人排版 */
+.t-note-box { background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0; display: inline-block;}
+.tag-row { font-size: 12px; color: #475569; font-weight: 600; margin-bottom: 4px;}
+.tag-row:last-child { margin-bottom: 0; }
+.icon-lbl { color: #94a3b8; font-weight: 800; font-size: 11px; margin-right: 4px;}
+.t-staff { font-weight: 900; color: #4f46e2; }
+
+.t-ad { font-size: 11px; color: #d97706; margin-top: 6px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 4px 8px; border-radius: 6px; }
 .t-amt { font-weight: 900; font-size: 18px; }
 .t-amt.g { color: #10b981; }
 .t-amt.r { color: #ef4444; }
@@ -202,7 +216,6 @@ async function handleDeleteTransaction(id) {
 .icon-btn { background: #f1f5f9; border: none; font-size: 16px; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 .icon-btn:active { transform: scale(0.9); }
 
-/* 表單樣式 */
 .form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #475569; }
 .modern-inp, .modern-select { width: 100%; border: 2px solid #e2e8f0; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; background: #f8fafc;}
 .modern-inp:focus { border-color: #4f46e2; background: white;}

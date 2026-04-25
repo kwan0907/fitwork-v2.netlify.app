@@ -38,6 +38,21 @@ const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
 })
 
+// 💡 【全新功能】智能計算套票購買次數 (10點 / 35點)
+const getClientPackageStats = (clientName) => {
+  if (!clientName) return { pkg10: 0, pkg35: 0 }
+  let pkg10 = 0, pkg35 = 0
+  
+  store.transactions.forEach(t => {
+    // 只要這筆流水帳是「套票」或「運動」，而且備註裡面有客人的名字
+    if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(clientName)) {
+      if (t.amount === 850 || t.note.includes('10點') || t.note.includes('pkg_10')) pkg10++
+      if (t.amount === 2550 || t.amount === 2800 || t.note.includes('35點') || t.note.includes('pkg_35')) pkg35++
+    }
+  })
+  return { pkg10, pkg35 }
+}
+
 // --- 篩選與排序邏輯 ---
 const filteredClients = computed(() => {
   let list = [...store.clients] 
@@ -80,11 +95,12 @@ async function handleAddClient() {
   
   const dataToInsert = { ...newClient.value }
   
-  if (dataToInsert.source !== '朋友介紹') {
+  // 💡 升級邏輯：只要不是這兩個選項，就把介紹人清空
+  if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
       dataToInsert.referred_by_id = null
   }
   
-  // 💡 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
+  // 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.trial_date) dataToInsert.trial_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
@@ -99,11 +115,12 @@ async function handleUpdateClient() {
   
   const dataToUpdate = { ...editingClient.value }
   
-  if (dataToUpdate.source !== '朋友介紹') {
+  // 💡 升級邏輯：只要不是這兩個選項，就把介紹人清空
+  if (dataToUpdate.source !== '朋友介紹' && dataToUpdate.source !== '廣告+朋友介紹') {
       dataToUpdate.referred_by_id = null
   }
   
-  // 💡 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
+  // 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.trial_date) dataToUpdate.trial_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
@@ -220,6 +237,14 @@ async function handleImport(event) {
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
           </div>
+
+          <div class="c-packages" v-if="c.status !== 'prospect'">
+            🎟️ 買卡: 
+            <span class="pkg-tag t-10" v-if="getClientPackageStats(c.name).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg10 }}</b></span>
+            <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
+            <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0">尚未買卡</span>
+          </div>
+          
         </div>
         <div class="c-side">
           <div class="c-gen" v-if="c.status!=='prospect'">Gen {{ getClientGen(c.id) }}</div>
@@ -251,6 +276,7 @@ async function handleImport(event) {
               <label>來源</label>
               <select v-model="editingClient.source" class="modern-select">
                   <option value="廣告">廣告</option>
+                  <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
                   <option value="傳單">傳單</option>
                   <option value="IG">IG</option>
                   <option value="朋友介紹">朋友介紹</option>
@@ -259,7 +285,7 @@ async function handleImport(event) {
             </div>
         </div>
         
-        <div class="f-item" v-if="editingClient.source === '朋友介紹'" style="margin-top: 12px;">
+        <div class="f-item" v-if="editingClient.source === '朋友介紹' || editingClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
             <label>介紹人</label>
             <select v-model="editingClient.referred_by_id" class="modern-select">
                 <option :value="null">請選擇介紹人...</option>
@@ -323,6 +349,7 @@ async function handleImport(event) {
             <div class="f-item"><label>認識來源</label>
                 <select v-model="newClient.source" class="modern-select">
                     <option value="廣告">廣告</option>
+                    <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
                     <option value="傳單">傳單</option>
                     <option value="朋友介紹">朋友介紹</option>
                     <option value="IG">IG</option>
@@ -331,7 +358,7 @@ async function handleImport(event) {
             </div>
         </div>
 
-        <div class="f-item" v-if="newClient.source === '朋友介紹'" style="margin-top: 12px;">
+        <div class="f-item" v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
             <label>是哪位朋友介紹的？(計算代數)</label>
             <select v-model="newClient.referred_by_id" class="modern-select">
                 <option :value="null">請選擇...</option>
@@ -424,4 +451,11 @@ async function handleImport(event) {
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 .tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
+
+/* 💡 買卡次數排版 */
+.c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center;}
+.pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
+.t-10 { background: #3b82f6; }
+.t-35 { background: #ec4899; }
+.pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
 </style>
