@@ -6,15 +6,20 @@ import { supabase } from '../supabase'
 const currentUserEmail = ref('')
 const isAdmin = computed(() => currentUserEmail.value === 'yimwingkwan0907@gmail.com')
 
-// 全螢幕看圖狀態
+// 💡 全螢幕看圖狀態與縮放控制
 const viewingImage = ref(null)
+const imgScale = ref(1)
 
-// 💡 1. 產生從 2025 年完整開始，到未來幾年的所有月份
+const openImage = (imgStr) => {
+  viewingImage.value = imgStr
+  imgScale.value = 1 // 每次打開重置縮放比例
+}
+
 const availableMonths = computed(() => {
   const months = []
-  let curr = new Date('2025-01-01') // 💡 從 2025 全年完整開始
+  let curr = new Date('2025-01-01')
   const end = new Date()
-  end.setFullYear(end.getFullYear() + 3) // 延伸至未來3年
+  end.setFullYear(end.getFullYear() + 3) 
   while (curr <= end) {
     const y = curr.getFullYear()
     const m = String(curr.getMonth() + 1).padStart(2, '0')
@@ -24,13 +29,11 @@ const availableMonths = computed(() => {
   return months
 })
 
-// 💡 2. 萃取可用的年份，並設定當前選中的年份 (預設為今年)
 const availableYears = computed(() => {
   return [...new Set(availableMonths.value.map(m => m.split('-')[0]))]
 })
 const selectedYear = ref(new Date().getFullYear().toString())
 
-// 💡 3. 只顯示「目前選中」年份的月份卡片，避免無限滑動
 const displayedMonths = computed(() => {
   return availableMonths.value.filter(m => m.startsWith(selectedYear.value))
 })
@@ -42,21 +45,21 @@ const promos = ref([
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
     startMonth: '2025-12', endMonth: '2026-09',
-    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, 
+    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, // 💡 Double 分數核心邏輯在這
     defaultImage: 'https://images.unsplash.com/photo-1590559899731-a382839cecd5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    customImage: null,
+    customImages: [null, null], // 💡 支援 2 張圖
     targetVp: 30000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【非績優組】特別賞: 30,000點 / 第一重: 40,000點 / 第二重: 50,000點',
       '【績優組】特別賞: 40,000點 / 第一重: 60,000點 / 第二重: 80,000點',
-      '📌 12月加碼：最多可雙重計算 5,000 個人點數'
+      '📌 12月加碼：最多可雙重計算 5,000 個人點數 (系統將自動雙倍加乘)'
     ]
   },
   { 
     id: 2, name: '🏖️ 2027 馬爾代夫閒情浪漫遊', date: '2026/1/1 ~ 2026/12/31', 
     startMonth: '2026-01', endMonth: '2026-12',
     defaultImage: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    customImage: null,
+    customImages: [null, null],
     targetVp: 40000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【卓越組及以上限定】最低門檻累積 40,000 總銷售量點數',
@@ -68,7 +71,7 @@ const promos = ref([
     id: 3, name: '🎓 香港世界組大學訓練', date: '2026/1/1 ~ 2026/6/30', 
     startMonth: '2026-01', endMonth: '2026-06',
     defaultImage: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    customImage: null,
+    customImages: [null, null],
     targetVp: 25000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【條件A】累計達 25,000 總銷售量點數',
@@ -81,7 +84,7 @@ const promos = ref([
     id: 4, name: '🏆 2026 Herbalife Premier League', date: '2026/1/1 ~ 2026/12/31', 
     startMonth: '2026-01', endMonth: '2026-12',
     defaultImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    customImage: null,
+    customImages: [null, null],
     targetVp: 0, targetVip: 10, targetGold: 0, targetSup: 2, 
     details: [
       '【條件1】確保 10 名新推薦直銷商或優惠客戶 (系統追蹤 VIP/PC)',
@@ -93,7 +96,7 @@ const promos = ref([
     id: 5, name: '🦁 BLUE ZONE 團隊新加坡旅遊', date: '2026/4/1 ~ 2026/5/31', 
     startMonth: '2026-04', endMonth: '2026-05',
     defaultImage: 'https://images.unsplash.com/photo-1525625293386-3f8f99389edd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    customImage: null,
+    customImages: [null, null],
     targetVp: 5000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【基本賞】連續二個月 2,500 點 (非績優組限定)',
@@ -112,7 +115,6 @@ const loadCloudStats = async () => {
     currentUserEmail.value = session.user.email
   }
 
-  // 初始化所有的月份欄位
   availableMonths.value.forEach(m => {
     if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
@@ -130,12 +132,20 @@ const loadCloudStats = async () => {
     })
   }
 
-  // 抓取雲端海報
+  // 抓取雲端海報 (支援雙圖片 JSON 陣列)
   const { data: imgData } = await supabase.from('herbalife_images').select('*')
   if (imgData) {
     imgData.forEach(row => {
       const match = promos.value.find(p => p.id === row.promo_id)
-      if (match) match.customImage = row.image_data
+      if (match) {
+        try {
+          const arr = JSON.parse(row.image_data)
+          if (Array.isArray(arr)) match.customImages = arr
+          else match.customImages[0] = row.image_data
+        } catch (e) {
+          match.customImages[0] = row.image_data
+        }
+      }
     })
   }
   
@@ -155,7 +165,7 @@ const saveMonthToCloud = async (month) => {
   })
 }
 
-// 💡 自動壓縮圖片引擎
+// 自動壓縮圖片引擎
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -182,26 +192,32 @@ const compressImage = (file) => {
   })
 }
 
-const handleImageUpload = async (event, promo) => {
+// 💡 處理雙圖上傳 (index 0 或 1)
+const handleImageUpload = async (event, promo, index) => {
   const file = event.target.files[0]
   if (!file) return
   
   alert('🔄 圖片壓縮與同步中，請稍候...')
   const compressedBase64 = await compressImage(file)
   
-  promo.customImage = compressedBase64
-  const { error } = await supabase.from('herbalife_images').upsert({ promo_id: promo.id, image_data: compressedBase64 })
+  promo.customImages[index] = compressedBase64
+  const { error } = await supabase.from('herbalife_images').upsert({ 
+    promo_id: promo.id, 
+    image_data: JSON.stringify(promo.customImages) 
+  })
   if (error) alert('上傳失敗: ' + error.message)
-  else alert('✅ 專屬海報已更新並同步至全團隊！')
+  else alert(`✅ 圖 ${index + 1} 已更新並同步！`)
 }
 
-const resetImage = async (promo) => {
-  if(!confirm('確定要還原預設圖片嗎？這將刪除雲端的海報以節省空間。')) return
-  promo.customImage = null
-  await supabase.from('herbalife_images').delete().eq('promo_id', promo.id)
+const resetImage = async (promo, index) => {
+  if(!confirm(`確定要刪除 圖 ${index + 1} 嗎？這將刪除雲端紀錄以節省空間。`)) return
+  promo.customImages[index] = null
+  await supabase.from('herbalife_images').upsert({ 
+    promo_id: promo.id, 
+    image_data: JSON.stringify(promo.customImages) 
+  })
 }
 
-// --- 幫助函數 ---
 const formatMonthLabel = (mStr) => {
   const [y, m] = mStr.split('-')
   return `${parseInt(m)} 月`
@@ -214,7 +230,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 核心計算大腦
+// 💡 核心計算大腦 (包含自動 Double VP)
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
@@ -222,10 +238,13 @@ const promoStatus = computed(() => {
     for (const [month, stats] of Object.entries(monthlyStats.value)) {
       if (isMonthInRange(month, promo.startMonth, promo.endMonth)) {
         let monthVp = Number(stats.vp) || 0
+        
+        // 💡 自動計算 Double 分數
         if (promo.doubleVpMonth === month && monthVp > 0) {
           let extraBonus = Math.min(monthVp, promo.doubleVpMaxExtra)
           monthVp += extraBonus 
         }
+        
         calculatedVp += monthVp
         calculatedVip += Number(stats.vip) || 0
         calculatedGold += Number(stats.gold) || 0
@@ -333,20 +352,28 @@ function exportToExcel() {
     <div class="promo-grid">
       <div v-for="p in promoStatus" :key="p.id" class="promo-card" :class="{'qualified': p.isQualified}">
         
-        <div class="p-cover" :style="{ backgroundImage: `url(${p.customImage || p.defaultImage})` }">
-          <div class="p-cover-overlay">
-            <div class="p-date">🕒 {{ p.date }}</div>
-            
-            <div class="img-actions">
-              <button class="btn-view-img" @click="viewingImage = p.customImage || p.defaultImage">🔍 放大</button>
+        <div class="p-cover-wrap">
+          <div class="p-cover" :style="{ backgroundImage: `url(${p.customImages[0] || p.defaultImage})` }">
+            <div class="p-cover-overlay">
+              <div class="p-date">🕒 {{ p.date }}</div>
               
-              <template v-if="isAdmin">
-                <input type="file" :id="'img-up-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p)">
-                <label :for="'img-up-'+p.id" class="btn-change-img">📷 換圖</label>
-                <button v-if="p.customImage" class="btn-reset-img" @click="resetImage(p)">✕ 刪除</button>
-              </template>
+              <div class="img-actions">
+                <button class="btn-view-img" @click="openImage(p.customImages[0] || p.defaultImage)">🔍 圖1</button>
+                <button v-if="p.customImages[1]" class="btn-view-img" @click="openImage(p.customImages[1])">🔍 圖2</button>
+                
+                <template v-if="isAdmin">
+                  <input type="file" :id="'img-up-0-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p, 0)">
+                  <label :for="'img-up-0-'+p.id" class="btn-change-img">📷1</label>
+                  
+                  <input type="file" :id="'img-up-1-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p, 1)">
+                  <label :for="'img-up-1-'+p.id" class="btn-change-img">📷2</label>
+
+                  <button v-if="p.customImages[0] || p.customImages[1]" class="btn-reset-img" @click="resetImage(p, p.customImages[1] ? 1 : 0)">✕ 刪除</button>
+                </template>
+              </div>
             </div>
           </div>
+          <div v-if="p.customImages[1]" class="p-cover secondary-cover" :style="{ backgroundImage: `url(${p.customImages[1]})` }"></div>
         </div>
         
         <div class="p-content">
@@ -397,8 +424,18 @@ function exportToExcel() {
     </div>
 
     <div v-if="viewingImage" class="image-modal-overlay" @click.self="viewingImage = null">
-      <button class="close-x" @click="viewingImage = null">✕</button>
-      <img :src="viewingImage" class="full-size-img" />
+      
+      <div class="zoom-controls">
+        <button class="z-btn" @click.stop="imgScale += 0.4">➕ 放大</button>
+        <button class="z-btn" @click.stop="imgScale = Math.max(0.4, imgScale - 0.4)">➖ 縮小</button>
+        <button class="z-btn" @click.stop="imgScale = 1">↺ 還原</button>
+        <button class="z-btn c-btn" @click.stop="viewingImage = null">✕ 關閉</button>
+      </div>
+
+      <div class="img-scroll-container">
+        <img :src="viewingImage" class="full-size-img" :style="{ transform: `scale(${imgScale})` }" />
+      </div>
+
     </div>
 
   </div>
@@ -421,7 +458,6 @@ function exportToExcel() {
 .btn-sync { background: rgba(255,255,255,0.1); border: 1px solid #475569; color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer;}
 .btn-sync:active { background: rgba(255,255,255,0.2); }
 
-/* 💡 新版：年份切換列 */
 .year-tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px; }
 .year-tabs::-webkit-scrollbar { display: none; }
 .year-btn { background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #cbd5e1; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap;}
@@ -445,11 +481,15 @@ function exportToExcel() {
 .promo-card { background: white; border-radius: 20px; overflow: hidden; border: 2px solid #e2e8f0; position: relative; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
 .promo-card.qualified { border-color: #10b981; box-shadow: 0 10px 25px rgba(16, 185, 129, 0.15); transform: translateY(-3px); }
 
-.p-cover { height: 180px; background-size: cover; background-position: center; position: relative; }
-.p-cover-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.6)); display: flex; justify-content: space-between; align-items: flex-start; padding: 15px;}
+/* 💡 雙圖片切分佈局 */
+.p-cover-wrap { display: flex; height: 180px; }
+.p-cover { flex: 1; background-size: cover; background-position: center; position: relative; border-right: 1px solid rgba(255,255,255,0.3);}
+.secondary-cover { border-left: 1px solid rgba(0,0,0,0.2); }
+.p-cover-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.6)); display: flex; justify-content: space-between; align-items: flex-start; padding: 12px; z-index: 2;}
+
 .p-date { font-size: 11px; font-weight: 800; color: white; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 8px; height: fit-content;}
 
-.img-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;}
+.img-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end;}
 .btn-view-img { background: rgba(0,0,0,0.7); color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; border: none; cursor: pointer; backdrop-filter: blur(4px);}
 .btn-change-img { background: rgba(255,255,255,0.9); color: #4f46e2; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
 .btn-reset-img { background: rgba(239,68,68,0.9); color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; border: none; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
@@ -484,8 +524,12 @@ function exportToExcel() {
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 
-.image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; display: flex; justify-content: center; align-items: center; cursor: pointer;}
-.full-size-img { max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); object-fit: contain; animation: popIn 0.3s ease-out;}
-.close-x { position: absolute; top: 25px; right: 25px; background: rgba(255,255,255,0.2); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);}
-@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+/* 🔍 帶有縮放功能的全螢幕看圖 Modal */
+.image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 9999; display: flex; flex-direction: column;}
+.img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
+.full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
+.zoom-controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 10px; border-radius: 99px; z-index: 10000;}
+.z-btn { background: white; color: #1e293b; font-size: 12px; font-weight: 900; padding: 10px 14px; border-radius: 20px; border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3);}
+.z-btn:active { transform: scale(0.9); }
+.c-btn { background: #ef4444; color: white; }
 </style>
