@@ -122,11 +122,20 @@ async function handleForgotPassword() {
 // --- 登出功能 ---
 async function handleLogout() {
   if(confirm('確定要登出系統嗎？')) {
-    // 💡 登出時順便清除本機的名字快取，讓下一個登入的人重新設定
+    // 💡 1. 完全保留你的邏輯：登出時順便清除本機的名字快取，讓下一個登入的人重新設定
     localStorage.removeItem('fitwork_currentUser')
     localStorage.removeItem('fitwork_deviceUsers')
     store.currentUser = ''
+    
+    // 💡 2. 加上清除推廣活動的暫存
+    localStorage.removeItem('herbalife_monthly_stats')
+    localStorage.removeItem('herbalife_custom_images')
+
+    // 💡 3. 登出資料庫
     await supabase.auth.signOut()
+
+    // 💡 4. 終極防護：強制刷新網頁，徹底殺死 Vue 記憶體，防止看到別人的資料！
+    window.location.reload()
   }
 }
 </script>
@@ -199,7 +208,8 @@ async function handleLogout() {
     <div class="content">
       <DashboardView v-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
-      <HerbalifePromo v-else-if="store.view === 'herbalife'" /> <ClientsView v-else-if="store.view === 'clients'" />
+      <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
+      <ClientsView v-else-if="store.view === 'clients'" />
       <MovementView v-else-if="store.view === 'movement'" />
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
