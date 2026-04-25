@@ -519,7 +519,13 @@ function exportToExcel() {
 </template>
 
 <style scoped>
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
+/* 💡 徹底解決手機版「下拉拉動整個螢幕 (Rubber-banding)」的問題 */
+.page { 
+  padding: 20px; 
+  background: #f8fafc; 
+  min-height: 100vh; 
+  overscroll-behavior-y: none; 
+}
 .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .title { font-weight: 900; font-size: 24px; color: #1e293b; margin: 0; }
 
@@ -535,12 +541,13 @@ function exportToExcel() {
 .btn-sync { background: rgba(255,255,255,0.1); border: 1px solid #475569; color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer;}
 .btn-sync:active { background: rgba(255,255,255,0.2); }
 
-.year-tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px; }
+.year-tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .year-tabs::-webkit-scrollbar { display: none; }
 .year-btn { background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #cbd5e1; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap;}
 .year-btn.active { background: #10b981; border-color: #10b981; color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.25); }
 
-.months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth;}
+/* 💡 解決橫向捲動時的卡頓與回彈 */
+.months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .months-scroll-container::-webkit-scrollbar { height: 6px; }
 .months-scroll-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
 
@@ -610,14 +617,26 @@ function exportToExcel() {
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 
-.image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 9999; display: flex; flex-direction: column;}
+/* 💡 鎖死 Modal，防止背後網頁跟著滾動 */
+.image-modal-overlay { 
+  position: fixed; 
+  top: 0; 
+  left: 0; 
+  width: 100vw; 
+  height: 100vh; 
+  background: rgba(0,0,0,0.9); 
+  z-index: 9999; 
+  display: flex; 
+  flex-direction: column;
+  overscroll-behavior: none; 
+}
 .img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
 .full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
 
-/* 💡 解決手機版按鈕變垂直走位：加入 flex-wrap 與 white-space */
+/* 💡 大幅提昇按鈕高度 (避開所有 Home Bar)，並徹底解決擠壓變形 */
 .zoom-controls { 
   position: absolute; 
-  bottom: 40px; 
+  bottom: calc(50px + env(safe-area-inset-bottom)); 
   left: 50%; 
   transform: translateX(-50%); 
   display: flex; 
