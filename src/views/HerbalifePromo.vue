@@ -1,31 +1,39 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { supabase } from '../supabase'
 
-// 💡 1. 建立從 2025-12 到 2026-12 的逐月資料庫
-const availableMonths = [
-  '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05',
-  '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'
-]
+// 💡 1. 無限延伸的動態月份：自動生成 2025-12 到 未來 3 年的月份
+const availableMonths = computed(() => {
+  const months = []
+  let curr = new Date('2025-12-01')
+  const end = new Date()
+  end.setFullYear(end.getFullYear() + 3) // 未來 3 年
+  while (curr <= end) {
+    const y = curr.getFullYear()
+    const m = String(curr.getMonth() + 1).padStart(2, '0')
+    months.push(`${y}-${m}`)
+    curr.setMonth(curr.getMonth() + 1)
+  }
+  return months
+})
 
-const monthlyStats = ref(
-  availableMonths.reduce((acc, month) => {
-    acc[month] = { vp: '', recruits: '' }
-    return acc
-  }, {})
-)
+// 存放所有月份的進度資料
+const monthlyStats = ref({})
+const isSyncing = ref(false)
 
-// 💡 2. 精準還原海報細節，並加入「開始/結束月份」供系統過濾
+// 💡 2. 精準還原海報細節，加入「雙倍積分」與「細分人數」目標
 const promos = ref([
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
     startMonth: '2025-12', endMonth: '2026-09',
+    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, // 💡 雙倍 VP 邏輯設定在這裡！
     defaultImage: 'https://images.unsplash.com/photo-1590559899731-a382839cecd5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
-    targetVp: 30000, targetRecruits: 0,
+    targetVp: 30000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【非績優組】特別賞: 30,000點 / 第一重: 40,000點 / 第二重: 50,000點',
       '【績優組】特別賞: 40,000點 / 第一重: 60,000點 / 第二重: 80,000點',
-      '📌 12月加碼：最多可雙重計算 5,000 個人點數'
+      '📌 12月加碼：最多可雙重計算 5,000 個人點數 (系統將自動幫您加乘！)'
     ]
   },
   { 
@@ -33,7 +41,7 @@ const promos = ref([
     startMonth: '2026-01', endMonth: '2026-12',
     defaultImage: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
-    targetVp: 40000, targetRecruits: 0,
+    targetVp: 40000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【卓越組及以上限定】最低門檻累積 40,000 總銷售量點數',
       '【級別要求】第一級: 6萬點 / 第二級: 8萬點 / 第三級: 10萬點',
@@ -45,7 +53,7 @@ const promos = ref([
     startMonth: '2026-01', endMonth: '2026-06',
     defaultImage: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
-    targetVp: 25000, targetRecruits: 0,
+    targetVp: 25000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【條件A】累計達 25,000 總銷售量點數',
       '【條件B】連續四個月均達 2,500 點',
@@ -58,11 +66,11 @@ const promos = ref([
     startMonth: '2026-01', endMonth: '2026-12',
     defaultImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
-    targetVp: 0, targetRecruits: 10,
+    targetVp: 0, targetVip: 10, targetGold: 0, targetSup: 2, // 💡 細分目標人數
     details: [
-      '【條件1】確保 10 名新推薦直銷商或優惠客戶 (含至少 5 名新直銷商)',
+      '【條件1】確保 10 名新推薦直銷商或優惠客戶 (系統追蹤 VIP/PC)',
       '【條件2】每位需在登記月或下個月累計至少 250 VP',
-      '【條件3】擁有兩位頭線新領班'
+      '【條件3】擁有兩位頭線新領班 (系統追蹤 領班)'
     ]
   },
   { 
@@ -70,7 +78,7 @@ const promos = ref([
     startMonth: '2026-04', endMonth: '2026-05',
     defaultImage: 'https://images.unsplash.com/photo-1525625293386-3f8f99389edd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
-    targetVp: 5000, targetRecruits: 0,
+    targetVp: 5000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【基本賞】連續二個月 2,500 點 (非績優組限定)',
       '【升級賞】連續二個月 4,000 點 (補助12000)',
@@ -79,11 +87,29 @@ const promos = ref([
   },
 ])
 
-// 💡 讀取草稿與自訂圖片記憶
-onMounted(() => {
-  const savedStats = localStorage.getItem('herbalife_monthly_stats')
-  if (savedStats) try { monthlyStats.value = JSON.parse(savedStats) } catch (e) {}
+// 💡 3. 從 Supabase 雲端讀取資料 (跨裝置同步)
+const loadCloudStats = async () => {
+  isSyncing.value = true
+  
+  // 初始化所有月份欄位
+  availableMonths.value.forEach(m => {
+    if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
+  })
 
+  // 讀取資料庫
+  const { data, error } = await supabase.from('herbalife_stats').select('*')
+  if (!error && data) {
+    data.forEach(row => {
+      if (monthlyStats.value[row.month]) {
+        monthlyStats.value[row.month].vp = row.vp || ''
+        monthlyStats.value[row.month].vip = row.recruits_vip || ''
+        monthlyStats.value[row.month].gold = row.recruits_gold || ''
+        monthlyStats.value[row.month].sup = row.recruits_sup || ''
+      }
+    })
+  }
+
+  // 讀取本機自訂海報
   const savedImages = localStorage.getItem('herbalife_custom_images')
   if (savedImages) {
     try {
@@ -94,10 +120,25 @@ onMounted(() => {
       })
     } catch (e) {}
   }
-})
+  isSyncing.value = false
+}
 
-// 自動存檔：分數與自訂圖片
-watch(monthlyStats, (newVal) => { localStorage.setItem('herbalife_monthly_stats', JSON.stringify(newVal)) }, { deep: true })
+onMounted(() => { loadCloudStats() })
+
+// 💡 4. 儲存至雲端 (當你離開輸入框時自動儲存)
+const saveMonthToCloud = async (month) => {
+  const stats = monthlyStats.value[month]
+  const { error } = await supabase.from('herbalife_stats').upsert({
+    month: month,
+    vp: Number(stats.vp) || 0,
+    recruits_vip: Number(stats.vip) || 0,
+    recruits_gold: Number(stats.gold) || 0,
+    recruits_sup: Number(stats.sup) || 0
+  })
+  if (error) console.error("雲端同步失敗: ", error)
+}
+
+// 自動存檔自訂圖片 (海報存在本機，因為圖檔太大不適合存免費資料庫)
 watch(promos, (newVal) => {
   const imageStore = newVal.map(p => ({ id: p.id, customImage: p.customImage }))
   localStorage.setItem('herbalife_custom_images', JSON.stringify(imageStore))
@@ -116,61 +157,70 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 自訂圖片上傳邏輯
 const handleImageUpload = (event, promo) => {
   const file = event.target.files[0]
   if (!file) return
   if (file.size > 2 * 1024 * 1024) return alert('圖片檔案過大，請選擇小於 2MB 的圖片！')
-  
   const reader = new FileReader()
   reader.onload = (e) => { promo.customImage = e.target.result }
   reader.readAsDataURL(file)
 }
 
-// 💡 3. 核心大腦：針對每個活動的「專屬月份區間」去加總分數
+// 💡 5. 核心大腦：雙倍積分計算 + 人數精準分類
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0
-    let calculatedRecruits = 0
+    let calculatedVip = 0
+    let calculatedGold = 0
+    let calculatedSup = 0
 
-    // 只加總落在該活動考核期內的月份
+    // 只抓取該活動限定的月份
     for (const [month, stats] of Object.entries(monthlyStats.value)) {
       if (isMonthInRange(month, promo.startMonth, promo.endMonth)) {
-        calculatedVp += Number(stats.vp) || 0
-        calculatedRecruits += Number(stats.recruits) || 0
+        let monthVp = Number(stats.vp) || 0
+        
+        // 🔥 智能加乘：如果這個月有雙倍獎勵 (例如沖繩 12月)
+        if (promo.doubleVpMonth === month && monthVp > 0) {
+          let extraBonus = Math.min(monthVp, promo.doubleVpMaxExtra)
+          monthVp += extraBonus 
+        }
+
+        calculatedVp += monthVp
+        calculatedVip += Number(stats.vip) || 0
+        calculatedGold += Number(stats.gold) || 0
+        calculatedSup += Number(stats.sup) || 0
       }
     }
 
     const vpShort = Math.max(0, promo.targetVp - calculatedVp)
-    const recruitsShort = Math.max(0, promo.targetRecruits - calculatedRecruits)
-    const isQualified = vpShort === 0 && recruitsShort === 0 && (promo.targetVp > 0 || promo.targetRecruits > 0)
+    const vipShort = Math.max(0, promo.targetVip - calculatedVip)
+    const goldShort = Math.max(0, promo.targetGold - calculatedGold)
+    const supShort = Math.max(0, promo.targetSup - calculatedSup)
     
-    let progressPercent = 0
-    if (promo.targetVp > 0 && promo.targetRecruits > 0) {
-      const vpP = Math.min(100, (calculatedVp / promo.targetVp) * 100)
-      const recP = Math.min(100, (calculatedRecruits / promo.targetRecruits) * 100)
-      progressPercent = (vpP + recP) / 2
-    } else if (promo.targetVp > 0) {
-      progressPercent = Math.min(100, (calculatedVp / promo.targetVp) * 100)
-    } else if (promo.targetRecruits > 0) {
-      progressPercent = Math.min(100, (calculatedRecruits / promo.targetRecruits) * 100)
-    }
+    // 是否所有條件都滿足？
+    const isQualified = vpShort === 0 && vipShort === 0 && goldShort === 0 && supShort === 0 && 
+                        (promo.targetVp > 0 || promo.targetVip > 0 || promo.targetGold > 0 || promo.targetSup > 0)
+    
+    // 綜合進度百分比計算
+    let percents = []
+    if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
+    if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
+    if (promo.targetGold > 0) percents.push(Math.min(100, (calculatedGold / promo.targetGold) * 100))
+    if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
+    
+    const progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
 
-    return { ...promo, calculatedVp, calculatedRecruits, vpShort, recruitsShort, isQualified, progressPercent }
+    return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent }
   })
 })
 
-// 💡 4. 匯出完美 Excel 報表
 function exportToExcel() {
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-  csvContent += "活動名稱,考核期限,目標要求,該區間已累積(VP/人數),完成率(%),達標狀態\n"
+  csvContent += "活動名稱,考核期限,該區間已累積(VP),已累積(VIP),已累積(金級),已累積(領班),綜合完成率(%),達標狀態\n"
 
   promoStatus.value.forEach(p => {
-    let targetText = p.targetVp > 0 ? `${p.targetVp} VP` : `${p.targetRecruits} 人`
-    let currentText = p.targetVp > 0 ? `${p.calculatedVp} VP` : `${p.calculatedRecruits} 人`
-    let statusText = p.isQualified ? "🎉 已達標" : `尚差 ${p.targetVp > 0 ? p.vpShort + ' VP' : p.recruitsShort + ' 人'}`
-    
-    const row = `"${p.name}","${p.date}","${targetText}","${currentText}",${p.progressPercent.toFixed(1)}%,"${statusText}"`
+    let statusText = p.isQualified ? "🎉 已達標" : `尚差: ${p.vpShort>0?p.vpShort+'VP ':''}${p.vipShort>0?p.vipShort+'VIP ':''}${p.goldShort>0?p.goldShort+'金級 ':''}${p.supShort>0?p.supShort+'領班 ':''}`
+    const row = `"${p.name}","${p.date}",${p.calculatedVp},${p.calculatedVip},${p.calculatedGold},${p.calculatedSup},${p.progressPercent.toFixed(1)}%,"${statusText}"`
     csvContent += row + "\n"
   })
 
@@ -195,11 +245,12 @@ function exportToExcel() {
 
     <div class="master-control-card">
       <div class="mc-header">
-        <span style="font-size: 24px;">🎛️</span>
-        <div>
-          <div class="mc-title">逐月考核分數控制台</div>
-          <div class="mc-desc">輸入各月份分數，系統會「自動過濾」各活動所屬的月份並結算。</div>
+        <span style="font-size: 24px;">☁️</span>
+        <div style="flex:1;">
+          <div class="mc-title">逐月成績控制台 <span v-if="isSyncing" style="font-size:11px; color:#10b981;">(🔄 同步中...)</span></div>
+          <div class="mc-desc">輸入後自動儲存至雲端，手機電腦無縫同步。</div>
         </div>
+        <button class="btn-sync" @click="loadCloudStats">🔄 重新整理</button>
       </div>
 
       <div class="months-scroll-container">
@@ -208,11 +259,19 @@ function exportToExcel() {
           
           <div class="m-inp-group">
             <label>VP</label>
-            <input type="number" v-model="monthlyStats[month].vp" class="m-inp" placeholder="0">
+            <input type="number" v-model="monthlyStats[month].vp" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
-          <div class="m-inp-group" style="margin-top: 8px;">
-            <label>人數</label>
-            <input type="number" v-model="monthlyStats[month].recruits" class="m-inp" placeholder="0">
+          <div class="m-inp-group mt-2">
+            <label>VIP</label>
+            <input type="number" v-model="monthlyStats[month].vip" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+          </div>
+          <div class="m-inp-group mt-2">
+            <label>金級</label>
+            <input type="number" v-model="monthlyStats[month].gold" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+          </div>
+          <div class="m-inp-group mt-2">
+            <label>領班</label>
+            <input type="number" v-model="monthlyStats[month].sup" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
         </div>
       </div>
@@ -248,20 +307,34 @@ function exportToExcel() {
           <div class="funnel-divider"></div>
 
           <div class="p-calculated-result">
-            <div class="cr-title">💡 系統已抓取該考核區間累積：</div>
-            <div class="cr-value">
-              <span v-if="p.targetVp > 0">{{ p.calculatedVp.toLocaleString() }} VP</span>
-              <span v-if="p.targetVp > 0 && p.targetRecruits > 0"> ＋ </span>
-              <span v-if="p.targetRecruits > 0">{{ p.calculatedRecruits }} 人</span>
+            <div class="cr-title">💡 該考核區間，系統為您結算：</div>
+            <div class="cr-value-wrap">
+              <div v-if="p.targetVp > 0" class="cr-stat">
+                <span class="cr-num">{{ p.calculatedVp.toLocaleString() }}</span>
+                <span class="cr-lbl">VP</span>
+                <div v-if="p.doubleVpMonth" class="double-tag">⚡️ 已含雙倍獎勵</div>
+              </div>
+              
+              <div v-if="p.targetVip > 0" class="cr-stat">
+                <span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP</span>
+              </div>
+              <div v-if="p.targetGold > 0" class="cr-stat">
+                <span class="cr-num">{{ p.calculatedGold }}</span><span class="cr-lbl">金級</span>
+              </div>
+              <div v-if="p.targetSup > 0" class="cr-stat">
+                <span class="cr-num">{{ p.calculatedSup }}</span><span class="cr-lbl">領班</span>
+              </div>
             </div>
           </div>
 
           <div class="status-row">
             <div v-if="p.isQualified" class="status-badge success">🎉 恭喜！已達成最低目標！</div>
             <div v-else class="status-badge warning">
-              ⚠️ 距離達標尚差: 
+              ⚠️ 尚差: 
               <span v-if="p.vpShort > 0"> {{ p.vpShort.toLocaleString() }} VP </span>
-              <span v-if="p.recruitsShort > 0"> {{ p.recruitsShort }} 人</span>
+              <span v-if="p.vipShort > 0"> | {{ p.vipShort }} VIP </span>
+              <span v-if="p.goldShort > 0"> | {{ p.goldShort }} 金級 </span>
+              <span v-if="p.supShort > 0"> | {{ p.supShort }} 領班 </span>
             </div>
           </div>
 
@@ -269,10 +342,7 @@ function exportToExcel() {
             <div class="progress-bar-fill" :style="{ width: p.progressPercent + '%' }"></div>
           </div>
           <div class="p-req">
-            最低要求: {{ p.targetVp > 0 ? p.targetVp.toLocaleString() + ' VP' : '' }} 
-            <span v-if="p.targetVp > 0 && p.targetRecruits > 0"> / </span> 
-            {{ p.targetRecruits > 0 ? p.targetRecruits + ' 人' : '' }}
-            <span style="float: right; color:#4f46e2;">已完成 {{ p.progressPercent.toFixed(1) }}%</span>
+            綜合完成率：<span style="color:#4f46e2; font-weight:900;">{{ p.progressPercent.toFixed(1) }}%</span>
           </div>
 
         </div>
@@ -292,23 +362,26 @@ function exportToExcel() {
 
 .section-title { font-size: 14px; font-weight: 900; color: #64748b; margin: 25px 0 15px; text-transform: uppercase; letter-spacing: 1px;}
 
-/* 👑 新版：逐月中央控制台 */
+/* 👑 新版：雲端同步中央控制台 */
 .master-control-card { background: linear-gradient(135deg, #1e293b, #0f172a); border-radius: 24px; padding: 20px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); margin-bottom: 10px; color: white; border: 1px solid #334155;}
 .mc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; border-bottom: 1px dashed #334155; padding-bottom: 15px;}
 .mc-title { font-size: 16px; font-weight: 900; letter-spacing: 0.5px; }
 .mc-desc { font-size: 11px; font-weight: 600; color: #94a3b8; margin-top: 4px; line-height: 1.4;}
+.btn-sync { background: rgba(255,255,255,0.1); border: 1px solid #475569; color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer;}
+.btn-sync:active { background: rgba(255,255,255,0.2); }
 
 /* 左右滑動的月份卡片 */
 .months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth;}
 .months-scroll-container::-webkit-scrollbar { height: 6px; }
 .months-scroll-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
 
-.month-card { min-width: 130px; background: rgba(255,255,255,0.08); border: 1px solid #475569; border-radius: 16px; padding: 12px; }
+.month-card { min-width: 140px; background: rgba(255,255,255,0.08); border: 1px solid #475569; border-radius: 16px; padding: 12px; }
 .m-title { font-size: 13px; font-weight: 900; color: #10b981; margin-bottom: 10px; text-align: center;}
 .m-inp-group { display: flex; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 4px 8px;}
-.m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 35px; }
-.m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 16px; font-weight: 900; outline: none; text-align: right;}
+.m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 45px; white-space: nowrap;}
+.m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right;}
 .m-inp::placeholder { color: #64748b; font-weight: 600;}
+.mt-2 { margin-top: 6px; }
 
 /* 🎯 活動卡片樣式 */
 .promo-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
@@ -341,12 +414,16 @@ function exportToExcel() {
 .funnel-divider { border-bottom: 1px dashed #e2e8f0; margin: 15px 0; }
 
 /* 💡 新增：自動結算顯示結果 */
-.p-calculated-result { background: #eef2ff; border: 1px dashed #a5b4fc; border-radius: 12px; padding: 12px; margin-bottom: 15px; text-align: center;}
-.cr-title { font-size: 11px; font-weight: 800; color: #6366f1; margin-bottom: 4px;}
-.cr-value { font-size: 20px; font-weight: 900; color: #4f46e2;}
+.p-calculated-result { background: #eef2ff; border: 1px dashed #a5b4fc; border-radius: 12px; padding: 15px 12px; margin-bottom: 15px; text-align: center;}
+.cr-title { font-size: 11px; font-weight: 800; color: #6366f1; margin-bottom: 10px;}
+.cr-value-wrap { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+.cr-stat { display: flex; flex-direction: column; align-items: center; }
+.cr-num { font-size: 22px; font-weight: 900; color: #4f46e2; line-height: 1;}
+.cr-lbl { font-size: 11px; font-weight: 800; color: #64748b; margin-top: 4px;}
+.double-tag { background: #fdf2f8; color: #ec4899; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-top: 4px; border: 1px solid #fbcfe8;}
 
 .status-row { margin-bottom: 12px; }
-.status-badge { display: inline-block; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 900; width: 100%; text-align: center;}
+.status-badge { display: inline-block; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; width: 100%; text-align: center;}
 .success { background: #10b981; color: white; }
 .warning { background: #fffbeb; color: #b45309; border: 1px dashed #fcd34d; }
 
@@ -354,5 +431,5 @@ function exportToExcel() {
 .progress-bar-fill { background: #78C257; height: 100%; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 6px; }
 .qualified .progress-bar-fill { background: #10b981; }
 
-.p-req { font-size: 12px; color: #94a3b8; font-weight: 800; }
+.p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 </style>
