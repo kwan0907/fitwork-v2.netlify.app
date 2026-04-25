@@ -67,7 +67,7 @@ function closeUpdateModal() {
   showUpdateModal.value = false
 }
 
-// 💡 更新：註冊成功後切換到驗證畫面
+// 💡 智能升級：攔截「Email未驗證」錯誤，自動引導輸入驗證碼
 async function handleAuth() {
   if (!email.value || !password.value) {
     return alert('請完整輸入帳號與密碼')
@@ -84,7 +84,7 @@ async function handleAuth() {
     authError = result.error
     if (!authError) {
       alert('系統已發送驗證碼到您的信箱！請輸入信件中的 6 位數驗證碼。')
-      isVerifying.value = true // 切換到驗證碼輸入介面
+      isVerifying.value = true 
     }
   } else {
     const result = await supabase.auth.signInWithPassword({
@@ -92,23 +92,29 @@ async function handleAuth() {
       password: password.value,
     })
     authError = result.error
+    
+    // 💡 關鍵防呆：如果登入失敗是因為「信箱未驗證」，自動幫他打開驗證碼格子！
+    if (authError && authError.message.includes('Email not confirmed')) {
+      alert('您的信箱尚未驗證！請檢查您的信箱，並輸入 6 位數驗證碼。')
+      isVerifying.value = true
+      authError = null // 清除錯誤，因為我們已經幫他切換畫面了
+    }
   }
   
   isLoggingIn.value = false
 
   if (authError) {
     alert((isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message)
-  } else {
-    // 登入成功時清空
-    if (!isRegistering.value) {
-      email.value = ''
-      password.value = ''
-    }
+  } else if (!isVerifying.value) {
+    // 只有在真的登入成功且不需要驗證時，才清空密碼
+    email.value = ''
+    password.value = ''
   }
 }
 
-// 💡 新增：處理 6 位數驗證碼的邏輯
+// 處理 6 位數驗證碼的邏輯
 async function handleVerify() {
+  if (!email.value) return alert('請輸入要驗證的 Email 帳號')
   if (!verificationCode.value) return alert('請輸入 6 位數驗證碼')
   
   isLoggingIn.value = true
@@ -120,7 +126,7 @@ async function handleVerify() {
   isLoggingIn.value = false
 
   if (error) {
-    alert('驗證失敗：' + error.message)
+    alert('驗證失敗：' + error.message + ' (請確認驗證碼是否正確或已過期)')
   } else {
     alert('✅ 驗證成功！系統將為您自動登入。')
     isVerifying.value = false
@@ -159,15 +165,18 @@ async function handleLogout() {
       <p class="login-subtitle">旗艦版店務管理系統</p>
 
       <div v-if="isVerifying">
-        <p style="font-size: 13px; color: #64748b; margin-bottom: 20px; font-weight: 700; line-height: 1.5;">
-          已將 6 位數驗證碼發送至：<br><span style="color:#4f46e2; font-size: 15px;">{{ email }}</span>
-        </p>
+        
+        <div class="form-group">
+          <label>請確認您的 Email 帳號</label>
+          <input v-model="email" type="email" class="inp" placeholder="you@example.com">
+        </div>
 
         <div class="form-group">
-          <label style="text-align: center;">請輸入信件中的驗證碼</label>
+          <label style="text-align: center;">請輸入信件中的 6 碼驗證碼</label>
           <input 
             v-model="verificationCode" 
             type="text" 
+            inputmode="numeric"
             class="inp" 
             placeholder="000000" 
             maxlength="6"
@@ -181,7 +190,7 @@ async function handleLogout() {
         </button>
 
         <div class="auth-switch">
-          <span @click="isVerifying = false; isRegistering = false">取消並返回登入</span>
+          <span @click="isVerifying = false; isRegistering = false; verificationCode = ''">取消並返回登入</span>
         </div>
       </div>
 
@@ -211,6 +220,11 @@ async function handleLogout() {
           {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
           <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
         </div>
+
+        <div class="auth-switch" style="margin-top: 15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;" v-if="!isRegistering">
+          <span @click="isVerifying = true; isRegistering = false">👉 已經有 6 碼驗證碼？點此輸入</span>
+        </div>
+
       </div>
 
     </div>
@@ -275,8 +289,8 @@ async function handleLogout() {
       <p>大家好！我們的系統已經進行了全新升級：</p>
       <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
         <li>✅ <strong>全面升級多帳號隱私防護層</strong></li>
-        <li>✅ 新增註冊 OTP 驗證碼安全機制</li>
-        <li>✅ 修正切換帳號時畫面可能殘留舊資料的問題</li>
+        <li>✅ 智能防呆：自動攔截未驗證帳號並引導驗證</li>
+        <li>✅ 新增手動輸入驗證碼安全通道</li>
         <li>✅ 大幅提升頁面滾動與拖曳流暢度</li>
       </ul>
       <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
