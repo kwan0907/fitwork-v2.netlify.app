@@ -110,22 +110,25 @@ async function submitPromoRecord() {
 // --- 🌟 3. 歷史紀錄列表與資料統計 ---
 const promoList = computed(() => {
   const list = store.promotions || []
-  return list.sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
+  // 💡 修復即時刷新問題：拷貝一份陣列再排序，不再卡住 Vue 的大腦
+  return [...list].sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
 })
 
-// 💡 【全新】統計大腦：計算 Sum 與 轉換率
+// 💡 【完美修復版】統計大腦：計算 Sum 與 轉換率
 const promoSummary = computed(() => {
   let totalMins = 0, flyers = 0, inquiries = 0, trials = 0, conversions = 0
   
   promoList.value.forEach(p => {
+    // 時間拆解
     const hrsMatch = (p.duration || '').match(/(\d+)\s*小時/)
     const minsMatch = (p.duration || '').match(/(\d+)\s*分鐘/)
     totalMins += (hrsMatch ? parseInt(hrsMatch[1]) * 60 : 0) + (minsMatch ? parseInt(minsMatch[1]) : 0)
     
-    flyers += parseInt(p.flyers_count || 0)
-    inquiries += parseInt(p.inquiries || 0)
-    trials += parseInt(p.trials || 0)
-    conversions += parseInt(p.conversions || 0)
+    // 💡 安全的數字轉換，防止有空格或空值導致計算崩潰
+    flyers += Number(p.flyers_count) || 0
+    inquiries += Number(p.inquiries) || 0
+    trials += Number(p.trials) || 0
+    conversions += Number(p.conversions) || 0
   })
 
   const finalHrs = Math.floor(totalMins / 60)
@@ -133,10 +136,10 @@ const promoSummary = computed(() => {
   const durStr = `${finalHrs} 小時 ${finalMins} 分鐘`
 
   // 轉換率計算
-  const inquiryRate = flyers > 0 ? ((inquiries / flyers) * 100).toFixed(1) : 0
-  const trialRate = inquiries > 0 ? ((trials / inquiries) * 100).toFixed(1) : 0
-  const conversionRate = trials > 0 ? ((conversions / trials) * 100).toFixed(1) : 0
-  const overallRate = flyers > 0 ? ((conversions / flyers) * 100).toFixed(1) : 0
+  const inquiryRate = flyers > 0 ? ((inquiries / flyers) * 100).toFixed(1) : "0.0"
+  const trialRate = inquiries > 0 ? ((trials / inquiries) * 100).toFixed(1) : "0.0"
+  const conversionRate = trials > 0 ? ((conversions / trials) * 100).toFixed(1) : "0.0"
+  const overallRate = flyers > 0 ? ((conversions / flyers) * 100).toFixed(1) : "0.0"
 
   return { durStr, flyers, inquiries, trials, conversions, inquiryRate, trialRate, conversionRate, overallRate }
 })
@@ -230,14 +233,14 @@ function exportToExcel() {
     <div class="card summary-card" v-if="promoList.length > 0">
       <div class="s-title">📈 累積宣傳成效總結</div>
       <div class="s-grid">
-        <div class="s-stat"><div class="s-val">{{ promoSummary.durStr }}</div><div class="s-lbl">總耗時</div></div>
-        <div class="s-stat"><div class="s-val">{{ promoSummary.flyers.toLocaleString() }}</div><div class="s-lbl">總派發/接觸</div></div>
+        <div class="s-stat"><div class="s-val text-white">{{ promoSummary.durStr }}</div><div class="s-lbl">總耗時</div></div>
+        <div class="s-stat"><div class="s-val text-white">{{ promoSummary.flyers.toLocaleString() }}</div><div class="s-lbl">總派發/接觸</div></div>
         <div class="s-stat"><div class="s-val text-green">{{ promoSummary.conversions }}</div><div class="s-lbl">總開卡數</div></div>
       </div>
       <div class="s-rates">
-        <div class="rate-item">查詢率 <b>{{ promoSummary.inquiryRate }}%</b></div>
-        <div class="rate-item">試堂率 <b>{{ promoSummary.trialRate }}%</b></div>
-        <div class="rate-item text-green">成交率 <b>{{ promoSummary.conversionRate }}%</b></div>
+        <div class="rate-item">查詢率 <b class="text-white">{{ promoSummary.inquiryRate }}%</b></div>
+        <div class="rate-item">試堂率 <b class="text-white">{{ promoSummary.trialRate }}%</b></div>
+        <div class="rate-item text-green">成交率 <b class="text-white">{{ promoSummary.conversionRate }}%</b></div>
       </div>
     </div>
 
@@ -362,16 +365,17 @@ function exportToExcel() {
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
 
-/* 💡 總結卡片樣式 */
-.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border: none; padding: 25px 20px; margin-bottom: 25px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
+/* 💡 強制保護總結卡片的背景和文字顏色，徹底解決隱形文字問題！ */
+.card.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a) !important; color: white !important; border: none; padding: 25px 20px; margin-bottom: 25px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
+.text-white { color: white !important; }
 .s-title { font-size: 14px; font-weight: 800; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;}
 .s-grid { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px dashed #334155; padding-bottom: 15px; }
 .s-val { font-size: 20px; font-weight: 900; margin-bottom: 4px; }
 .s-lbl { font-size: 11px; font-weight: 700; color: #94a3b8; }
-.text-green { color: #10b981; }
+.text-green { color: #10b981 !important; }
 .s-rates { display: flex; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 12px; }
 .rate-item { font-size: 12px; font-weight: 700; color: #cbd5e1; display: flex; flex-direction: column; align-items: center; gap: 4px;}
-.rate-item b { font-size: 16px; color: white; }
+.rate-item b { font-size: 16px; }
 
 .btn-export { background: white; border: 2px solid #10b981; color: #10b981; padding: 8px 16px; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; }
 .btn-export:active { transform: scale(0.95); background: #f0fdf4; }
