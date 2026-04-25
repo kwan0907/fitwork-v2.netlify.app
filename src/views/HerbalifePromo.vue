@@ -6,13 +6,13 @@ import { supabase } from '../supabase'
 const currentUserEmail = ref('')
 const isAdmin = computed(() => currentUserEmail.value === 'yimwingkwan0907@gmail.com')
 
-// 💡 全螢幕看圖狀態與縮放控制
+// 全螢幕看圖狀態與縮放控制
 const viewingImage = ref(null)
 const imgScale = ref(1)
 
 const openImage = (imgStr) => {
   viewingImage.value = imgStr
-  imgScale.value = 1 // 每次打開重置縮放比例
+  imgScale.value = 1 
 }
 
 const availableMonths = computed(() => {
@@ -45,9 +45,9 @@ const promos = ref([
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
     startMonth: '2025-12', endMonth: '2026-09',
-    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, // 💡 Double 分數核心邏輯在這
+    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, 
     defaultImage: 'https://images.unsplash.com/photo-1590559899731-a382839cecd5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    customImages: [null, null], // 💡 支援 2 張圖
+    customImages: [null, null], 
     targetVp: 30000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【非績優組】特別賞: 30,000點 / 第一重: 40,000點 / 第二重: 50,000點',
@@ -119,7 +119,6 @@ const loadCloudStats = async () => {
     if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
 
-  // 抓取雲端成績
   const { data: statsData } = await supabase.from('herbalife_stats').select('*')
   if (statsData) {
     statsData.forEach(row => {
@@ -132,7 +131,6 @@ const loadCloudStats = async () => {
     })
   }
 
-  // 抓取雲端海報 (支援雙圖片 JSON 陣列)
   const { data: imgData } = await supabase.from('herbalife_images').select('*')
   if (imgData) {
     imgData.forEach(row => {
@@ -192,7 +190,6 @@ const compressImage = (file) => {
   })
 }
 
-// 💡 處理雙圖上傳 (index 0 或 1)
 const handleImageUpload = async (event, promo, index) => {
   const file = event.target.files[0]
   if (!file) return
@@ -230,19 +227,22 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 核心計算大腦 (包含自動 Double VP)
+// 💡 核心計算大腦 (包含自動 Double VP 與 新加坡嚴格判斷)
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
+    let totalDoubleBonus = 0 // 紀錄總共獲得的 Double Bonus
+    let specialStatusText = null // 用來客製化特定活動的顯示文字
 
     for (const [month, stats] of Object.entries(monthlyStats.value)) {
       if (isMonthInRange(month, promo.startMonth, promo.endMonth)) {
         let monthVp = Number(stats.vp) || 0
         
-        // 💡 自動計算 Double 分數
+        // 💡 計算 Double 分數
         if (promo.doubleVpMonth === month && monthVp > 0) {
           let extraBonus = Math.min(monthVp, promo.doubleVpMaxExtra)
           monthVp += extraBonus 
+          totalDoubleBonus += extraBonus
         }
         
         calculatedVp += monthVp
@@ -252,23 +252,67 @@ const promoStatus = computed(() => {
       }
     }
 
-    const vpShort = Math.max(0, promo.targetVp - calculatedVp)
-    const vipShort = Math.max(0, promo.targetVip - calculatedVip)
-    const goldShort = Math.max(0, promo.targetGold - calculatedGold)
-    const supShort = Math.max(0, promo.targetSup - calculatedSup)
+    let vpShort = Math.max(0, promo.targetVp - calculatedVp)
+    let vipShort = Math.max(0, promo.targetVip - calculatedVip)
+    let goldShort = Math.max(0, promo.targetGold - calculatedGold)
+    let supShort = Math.max(0, promo.targetSup - calculatedSup)
     
-    const isQualified = vpShort === 0 && vipShort === 0 && goldShort === 0 && supShort === 0 && 
+    let isQualified = vpShort === 0 && vipShort === 0 && goldShort === 0 && supShort === 0 && 
                         (promo.targetVp > 0 || promo.targetVip > 0 || promo.targetGold > 0 || promo.targetSup > 0)
     
-    let percents = []
-    if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
-    if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
-    if (promo.targetGold > 0) percents.push(Math.min(100, (calculatedGold / promo.targetGold) * 100))
-    if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
-    
-    const progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
+    let progressPercent = 0
 
-    return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent }
+    // 💡 專屬大腦：新加坡連續 2 個月判斷 (ID: 5)
+    if (promo.id === 5) {
+      let aprVp = Number(monthlyStats.value['2026-04']?.vp) || 0
+      let mayVp = Number(monthlyStats.value['2026-05']?.vp) || 0
+      
+      let isBaseMet = aprVp >= 2500 && mayVp >= 2500
+      let isUpgradeMet = aprVp >= 4000 && mayVp >= 4000
+      let isTopMet = aprVp >= 6000 && mayVp >= 6000
+
+      isQualified = isBaseMet
+      
+      if (isTopMet) specialStatusText = "🎉 達成最高賞 (6000點)！"
+      else if (isUpgradeMet) specialStatusText = "🎉 達成升級賞 (4000點)！"
+      else if (isBaseMet) specialStatusText = "🎉 達成基本賞 (2500點)！"
+      else specialStatusText = `⚠️ 需連續兩月達標 (4月: ${aprVp}, 5月: ${mayVp})`
+      
+      // 進度條：確保不會因為單月過高而提早滿，真實反映進度
+      progressPercent = Math.min(100, ((Math.min(aprVp, 2500) + Math.min(mayVp, 2500)) / 5000) * 100)
+    } 
+    // 💡 專屬大腦：世界組大學 4個月判定 (ID: 3)
+    else if (promo.id === 3) {
+      let m1 = Number(monthlyStats.value['2026-01']?.vp) || 0; let m2 = Number(monthlyStats.value['2026-02']?.vp) || 0
+      let m3 = Number(monthlyStats.value['2026-03']?.vp) || 0; let m4 = Number(monthlyStats.value['2026-04']?.vp) || 0
+      let m5 = Number(monthlyStats.value['2026-05']?.vp) || 0; let m6 = Number(monthlyStats.value['2026-06']?.vp) || 0
+      
+      let has4Consecutive = 
+          (m1>=2500 && m2>=2500 && m3>=2500 && m4>=2500) ||
+          (m2>=2500 && m3>=2500 && m4>=2500 && m5>=2500) ||
+          (m3>=2500 && m4>=2500 && m5>=2500 && m6>=2500)
+          
+      if (has4Consecutive) {
+          isQualified = true
+          vpShort = 0
+          specialStatusText = "🎉 達成連續四個月2500點條件！"
+          progressPercent = 100
+      } else {
+        // 若沒有連續 4 個月，則走預設的「累計」邏輯
+        progressPercent = Math.min(100, (calculatedVp / promo.targetVp) * 100)
+      }
+    }
+    // 一般邏輯進度條
+    else {
+      let percents = []
+      if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
+      if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
+      if (promo.targetGold > 0) percents.push(Math.min(100, (calculatedGold / promo.targetGold) * 100))
+      if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
+      progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
+    }
+
+    return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
   })
 })
 
@@ -277,7 +321,7 @@ function exportToExcel() {
   csvContent += "活動名稱,考核期限,該區間已累積(VP),已累積(VIP),已累積(金級),已累積(領班),綜合完成率(%),達標狀態\n"
 
   promoStatus.value.forEach(p => {
-    let statusText = p.isQualified ? "🎉 已達標" : `尚差: ${p.vpShort>0?p.vpShort+'VP ':''}${p.vipShort>0?p.vipShort+'VIP ':''}${p.goldShort>0?p.goldShort+'金級 ':''}${p.supShort>0?p.supShort+'領班 ':''}`
+    let statusText = p.specialStatusText || (p.isQualified ? "🎉 已達標" : `尚差: ${p.vpShort>0?p.vpShort+'VP ':''}${p.vipShort>0?p.vipShort+'VIP ':''}${p.goldShort>0?p.goldShort+'金級 ':''}${p.supShort>0?p.supShort+'領班 ':''}`)
     const row = `"${p.name}","${p.date}",${p.calculatedVp},${p.calculatedVip},${p.calculatedGold},${p.calculatedSup},${p.progressPercent.toFixed(1)}%,"${statusText}"`
     csvContent += row + "\n"
   })
@@ -368,7 +412,8 @@ function exportToExcel() {
                   <input type="file" :id="'img-up-1-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p, 1)">
                   <label :for="'img-up-1-'+p.id" class="btn-change-img">📷2</label>
 
-                  <button v-if="p.customImages[0] || p.customImages[1]" class="btn-reset-img" @click="resetImage(p, p.customImages[1] ? 1 : 0)">✕ 刪除</button>
+                  <button v-if="p.customImages[0]" class="btn-reset-img" @click="resetImage(p, 0)">✕刪圖1</button>
+                  <button v-if="p.customImages[1]" class="btn-reset-img" @click="resetImage(p, 1)">✕刪圖2</button>
                 </template>
               </div>
             </div>
@@ -391,10 +436,10 @@ function exportToExcel() {
           <div class="p-calculated-result">
             <div class="cr-title">💡 該考核區間，系統為您結算：</div>
             <div class="cr-value-wrap">
-              <div v-if="p.targetVp > 0" class="cr-stat">
+              <div v-if="p.targetVp > 0 || p.calculatedVp > 0" class="cr-stat">
                 <span class="cr-num">{{ p.calculatedVp.toLocaleString() }}</span>
                 <span class="cr-lbl">VP</span>
-                <div v-if="p.doubleVpMonth" class="double-tag">⚡️ 已含雙倍加乘</div>
+                <div v-if="p.totalDoubleBonus > 0" class="double-tag">⚡️ 已含雙倍加乘 (+{{ p.totalDoubleBonus.toLocaleString() }} VP)</div>
               </div>
               
               <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP/PC</span></div>
@@ -404,7 +449,10 @@ function exportToExcel() {
           </div>
 
           <div class="status-row">
-            <div v-if="p.isQualified" class="status-badge success">🎉 恭喜！已達成最低目標！</div>
+            <div v-if="p.specialStatusText" :class="['status-badge', p.isQualified ? 'success' : 'warning']">
+              {{ p.specialStatusText }}
+            </div>
+            <div v-else-if="p.isQualified" class="status-badge success">🎉 恭喜！已達成最低目標！</div>
             <div v-else class="status-badge warning">
               ⚠️ 尚差: 
               <span v-if="p.vpShort > 0"> {{ p.vpShort.toLocaleString() }} VP </span>
@@ -481,7 +529,6 @@ function exportToExcel() {
 .promo-card { background: white; border-radius: 20px; overflow: hidden; border: 2px solid #e2e8f0; position: relative; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
 .promo-card.qualified { border-color: #10b981; box-shadow: 0 10px 25px rgba(16, 185, 129, 0.15); transform: translateY(-3px); }
 
-/* 💡 雙圖片切分佈局 */
 .p-cover-wrap { display: flex; height: 180px; }
 .p-cover { flex: 1; background-size: cover; background-position: center; position: relative; border-right: 1px solid rgba(255,255,255,0.3);}
 .secondary-cover { border-left: 1px solid rgba(0,0,0,0.2); }
@@ -489,10 +536,19 @@ function exportToExcel() {
 
 .p-date { font-size: 11px; font-weight: 800; color: white; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 8px; height: fit-content;}
 
-.img-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end;}
-.btn-view-img { background: rgba(0,0,0,0.7); color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; border: none; cursor: pointer; backdrop-filter: blur(4px);}
-.btn-change-img { background: rgba(255,255,255,0.9); color: #4f46e2; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
-.btn-reset-img { background: rgba(239,68,68,0.9); color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; border: none; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
+/* 💡 解決手機版按鈕擠壓跑位 */
+.img-actions { 
+  display: flex; 
+  flex-direction: row; 
+  flex-wrap: wrap; 
+  gap: 6px; 
+  justify-content: flex-end; 
+  align-content: flex-start;
+  max-width: 65%; /* 預留空間給左側日期 */
+}
+.btn-view-img { background: rgba(0,0,0,0.7); color: white; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 8px; border: none; cursor: pointer; backdrop-filter: blur(4px);}
+.btn-change-img { background: rgba(255,255,255,0.9); color: #4f46e2; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
+.btn-reset-img { background: rgba(239,68,68,0.9); color: white; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 8px; border: none; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
 
 .p-content { padding: 20px; }
 .p-name { font-size: 18px; font-weight: 900; color: #1e293b; line-height: 1.3; margin-bottom: 15px; }
@@ -524,7 +580,6 @@ function exportToExcel() {
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 
-/* 🔍 帶有縮放功能的全螢幕看圖 Modal */
 .image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 9999; display: flex; flex-direction: column;}
 .img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
 .full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
