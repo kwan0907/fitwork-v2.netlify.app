@@ -41,7 +41,7 @@ const displayedMonths = computed(() => {
 const monthlyStats = ref({})
 const isSyncing = ref(false)
 
-// 💯 10000% 保留所有活動細節，絕對不刪減
+// 💯 10000% 保留所有活動條件、金額與圖片
 const promos = ref([
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
@@ -116,12 +116,11 @@ const loadCloudStats = async () => {
     currentUserEmail.value = session.user.email
   }
 
-  // 💡 修正：確保每一個月份在抓取前都是絕對空字串，防止出現 1 或 0
+  // 💡 修正：強制將所有預設值設定為絕對乾淨的空字串
   availableMonths.value.forEach(m => {
-    monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
+    if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
 
-  // 🔒 雙重保險：只抓取跟自己 Email 匹配的成績，隔離其他帳號
   if (currentUserEmail.value) {
     const { data: statsData } = await supabase
       .from('herbalife_stats')
@@ -131,11 +130,11 @@ const loadCloudStats = async () => {
     if (statsData) {
       statsData.forEach(row => {
         if (monthlyStats.value[row.month]) {
-          // 💡 修正：如果抓下來的值是 0，強制轉為空字串，徹底除蟲
-          monthlyStats.value[row.month].vp = (row.vp === 0 || row.vp === null) ? '' : row.vp
-          monthlyStats.value[row.month].vip = (row.recruits_vip === 0 || row.recruits_vip === null) ? '' : row.recruits_vip
-          monthlyStats.value[row.month].gold = (row.recruits_gold === 0 || row.recruits_gold === null) ? '' : row.recruits_gold
-          monthlyStats.value[row.month].sup = (row.recruits_sup === 0 || row.recruits_sup === null) ? '' : row.recruits_sup
+          // 💡 修正：確保從資料庫抓下來的值，如果為 0，就顯示為空字串，保持畫面乾淨
+          monthlyStats.value[row.month].vp = row.vp === 0 || row.vp === null ? '' : row.vp
+          monthlyStats.value[row.month].vip = row.recruits_vip === 0 || row.recruits_vip === null ? '' : row.recruits_vip
+          monthlyStats.value[row.month].gold = row.recruits_gold === 0 || row.recruits_gold === null ? '' : row.recruits_gold
+          monthlyStats.value[row.month].sup = row.recruits_sup === 0 || row.recruits_sup === null ? '' : row.recruits_sup
         }
       })
     }
@@ -238,7 +237,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 10000% 保留所有超級大腦計算邏輯
+// 💡 10000% 保留的超級計算大腦
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
@@ -272,7 +271,6 @@ const promoStatus = computed(() => {
     
     let progressPercent = 0
 
-    // 🇸🇬 新加坡連續 2 個月判斷 (ID: 5)
     if (promo.id === 5) {
       let aprVp = Number(monthlyStats.value['2026-04']?.vp) || 0
       let mayVp = Number(monthlyStats.value['2026-05']?.vp) || 0
@@ -290,7 +288,6 @@ const promoStatus = computed(() => {
       
       progressPercent = Math.min(100, ((Math.min(aprVp, 2500) + Math.min(mayVp, 2500)) / 5000) * 100)
     } 
-    // 🏆 超級聯賽 250VP 提示 (ID: 4)
     else if (promo.id === 4) {
       let percents = []
       if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
@@ -303,7 +300,6 @@ const promoStatus = computed(() => {
         specialStatusText = `⚠️ 尚差: ${vipShort > 0 ? vipShort + ' VIP/PC ' : ''}${supShort > 0 ? '| ' + supShort + ' 領班 ' : ''} (📌 提醒: 報名的 VIP 必須確保滿 250 VP)`
       }
     }
-    // 🎓 世界組大學 4個月判定 + VIP 資格激勵 (ID: 3)
     else if (promo.id === 3) {
       let m1 = Number(monthlyStats.value['2026-01']?.vp) || 0; let m2 = Number(monthlyStats.value['2026-02']?.vp) || 0
       let m3 = Number(monthlyStats.value['2026-03']?.vp) || 0; let m4 = Number(monthlyStats.value['2026-04']?.vp) || 0
@@ -342,7 +338,6 @@ const promoStatus = computed(() => {
           specialStatusText = `⚠️ 尚差: ${vpDiff.toLocaleString()} VP 或 需達成連續 4 個月 2500 VP`
       }
     }
-    // 一般邏輯進度條
     else {
       let percents = []
       if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
@@ -530,7 +525,7 @@ function exportToExcel() {
 </template>
 
 <style scoped>
-/* 💡 徹底解決手機版「下拉拉動整個螢幕」的干擾 */
+/* 💡 優化：徹底解決手機版「下拉拉動整個螢幕」的干擾 */
 .page { 
   padding: 20px; 
   background: #f8fafc; 
@@ -569,7 +564,7 @@ function exportToExcel() {
 .m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 35px; white-space: nowrap;}
 
 /* 💡 優化：隱藏數字輸入框上下箭頭，畫面更乾淨 */
-.m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right; -moz-appearance: textfield;}
+.m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right; -moz-appearance: textfield; appearance: textfield;}
 .m-inp::-webkit-outer-spin-button, .m-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .m-inp::placeholder { color: #64748b; font-weight: 600;}
 .mt-2 { margin-top: 6px; }
