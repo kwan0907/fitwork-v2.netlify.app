@@ -6,6 +6,7 @@ import { supabase } from './supabase'
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
 import PromoView from './views/PromoView.vue'
+import HerbalifePromo from './views/HerbalifePromo.vue' // 💡 1. 引入新組件
 import ClientsView from './views/ClientsView.vue'
 import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
@@ -32,9 +33,8 @@ const tempName = ref('')
 // --- 更新通知狀態 ---
 const showUpdateModal = ref(false)
 
-// 💡 優化：合拼所有初始化邏輯到同一個生命週期鉤子
+// 💡 初始化邏輯
 onMounted(() => {
-  // 1. 檢查 Supabase 登入狀態
   supabase.auth.getSession().then(({ data }) => {
     session.value = data.session
     if (session.value) {
@@ -49,7 +49,6 @@ onMounted(() => {
     }
   })
 
-  // 2. 檢查更新通知 (標記改為 v2 確保能彈出)
   const hasSeen = localStorage.getItem('hasSeenUpdate_v2')
   if (!hasSeen) {
     setTimeout(() => {
@@ -58,19 +57,16 @@ onMounted(() => {
   }
 })
 
-// 💡 儲存專屬稱呼 (支援多個名字拆分)
 function saveName() {
   if (!tempName.value.trim()) return alert('請輸入稱呼喔！')
   store.setDeviceUsers(tempName.value.trim())
 }
 
-// --- 系統通知功能 ---
 function closeUpdateModal() {
   localStorage.setItem('hasSeenUpdate_v2', 'true')
   showUpdateModal.value = false
 }
 
-// --- 登入/註冊功能 ---
 async function handleAuth() {
   if (!email.value || !password.value) {
     return alert('請完整輸入帳號與密碼')
@@ -107,7 +103,6 @@ async function handleAuth() {
   }
 }
 
-// --- 忘記密碼功能 ---
 async function handleForgotPassword() {
   if (!email.value) return alert('請先輸入您的 Email 帳號')
   const { error } = await supabase.auth.resetPasswordForEmail(email.value)
@@ -118,10 +113,8 @@ async function handleForgotPassword() {
   }
 }
 
-// --- 登出功能 ---
 async function handleLogout() {
   if(confirm('確定要登出系統嗎？')) {
-    // 💡 登出時順便清除本機的名字快取，讓下一個登入的人重新設定
     localStorage.removeItem('fitwork_currentUser')
     localStorage.removeItem('fitwork_deviceUsers')
     store.currentUser = ''
@@ -198,7 +191,7 @@ async function handleLogout() {
     <div class="content">
       <DashboardView v-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
-      <ClientsView v-else-if="store.view === 'clients'" />
+      <HerbalifePromo v-else-if="store.view === 'herbalife'" /> <ClientsView v-else-if="store.view === 'clients'" />
       <MovementView v-else-if="store.view === 'movement'" />
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
@@ -209,7 +202,7 @@ async function handleLogout() {
     <div class="nav">
       <div class="nav-item" :class="{active: store.view==='dashboard'}" @click="store.view='dashboard'"><span>📊</span><span>總覽</span></div>
       <div class="nav-item" :class="{active: store.view==='promo'}" @click="store.view='promo'"><span>📢</span><span>宣傳</span></div>
-      <div class="nav-item" :class="{active: store.view==='clients'}" @click="store.view='clients'"><span>👥</span><span>客戶</span></div>
+      <div class="nav-item" :class="{active: store.view==='herbalife'}" @click="store.view='herbalife'"><span>🏆</span><span>獎賞</span></div> <div class="nav-item" :class="{active: store.view==='clients'}" @click="store.view='clients'"><span>👥</span><span>客戶</span></div>
       <div class="nav-item" :class="{active: store.view==='movement'}" @click="store.view='movement'"><span>🏋️</span><span>運動</span></div>
       <div class="nav-item" :class="{active: store.view==='retail'}" @click="store.view='retail'"><span>🛒</span><span>零售</span></div>
       <div class="nav-item" :class="{active: store.view==='inventory'}" @click="store.view='inventory'"><span>📦</span><span>庫存</span></div>
@@ -221,9 +214,9 @@ async function handleLogout() {
     <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
       <p>大家好！我們的系統已經進行了全新升級：</p>
       <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
-        <li>✅ <strong>更新了運動輸入設備</strong></li>
-        <li>✅ 優化了手機端介面，操作更順暢</li>
-        <li>✅ 解決了輸入時畫面會自動放大的問題</li>
+        <li>✅ <strong>新增了康寶萊全球獎賞追蹤功能</strong></li>
+        <li>✅ 優化了手機端導覽列排版</li>
+        <li>✅ 解決了部分舊資料無法顯示客戶名的問題</li>
       </ul>
       <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
         (此訊息僅顯示一次)
@@ -239,13 +232,13 @@ async function handleLogout() {
 #app-main { height: 100vh; display: flex; flex-direction: column; }
 .header { background: rgba(255,255,255,0.9); backdrop-filter: blur(20px); padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; }
 
-/* 💡 優化：自動避開 iPhone 底部橫條 */
+/* 💡 優化：適應 8 個按鈕，縮小間距 */
 .nav { 
   background: rgba(255,255,255,0.95); 
   backdrop-filter: blur(20px); 
   border-top: 1px solid var(--border); 
   display: flex; 
-  padding: 10px 4px calc(10px + env(safe-area-inset-bottom)); 
+  padding: 8px 2px calc(8px + env(safe-area-inset-bottom)); 
   position: fixed; 
   bottom: 0; 
   width: 100%; 
@@ -258,17 +251,17 @@ async function handleLogout() {
   padding-bottom: calc(120px + env(safe-area-inset-bottom)); 
 }
 
-.nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; color: var(--t3); font-size: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+/* 💡 優化：按鈕更緊湊，字體微調 */
+.nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; color: var(--t3); font-size: 9px; font-weight: 800; cursor: pointer; transition: 0.2s; }
 .nav-item.active { color: var(--p); transform: translateY(-2px); }
-.nav-item span:first-child { font-size: 24px; margin-bottom: 4px; }
+.nav-item span:first-child { font-size: 20px; margin-bottom: 2px; }
+
 .icon-btn { background: var(--bg); border: none; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; font-weight: 900; display: flex; align-items: center; justify-content: center; }
 .icon-btn:active { transform: scale(0.95); }
 
-/* 💡 新增：切換使用者按鈕樣式 */
 .user-switch-btn { background: #eef2ff; color: #4f46e2; border: 2px solid #c7d2fe; padding: 0 12px; height: 36px; border-radius: 12px; font-weight: 900; font-size: 13px; cursor: pointer; transition: 0.2s; display:flex; align-items:center; gap:4px; }
 .user-switch-btn:active { transform: scale(0.95); }
 
-/* 登入畫面樣式 */
 .login-screen { 
   height: 100vh; 
   display: flex; 
@@ -298,7 +291,6 @@ async function handleLogout() {
 .auth-switch { margin-top: 20px; font-size: 13px; color: var(--t3); }
 .auth-switch span { color: var(--p); font-weight: 700; cursor: pointer; margin-left: 5px; }
 
-/* 🌟 新增：迎新彈窗專屬 CSS */
 .welcome-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 9999; display: flex; justify-content: center; align-items: center; }
 .welcome-modal { background: white; padding: 35px 25px; border-radius: 28px; width: 85%; max-width: 360px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.3); animation: popIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .w-icon { font-size: 50px; margin-bottom: 10px; }
