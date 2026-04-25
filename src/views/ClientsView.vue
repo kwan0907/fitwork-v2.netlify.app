@@ -38,19 +38,29 @@ const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
 })
 
-// 💡 【全新功能】智能計算套票購買次數 (10點 / 35點)
+// 💡 智能計算套票購買次數 (10點 / 35點)
 const getClientPackageStats = (clientName) => {
   if (!clientName) return { pkg10: 0, pkg35: 0 }
   let pkg10 = 0, pkg35 = 0
   
   store.transactions.forEach(t => {
-    // 只要這筆流水帳是「套票」或「運動」，而且備註裡面有客人的名字
     if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(clientName)) {
       if (t.amount === 850 || t.note.includes('10點') || t.note.includes('pkg_10')) pkg10++
       if (t.amount === 2550 || t.amount === 2800 || t.note.includes('35點') || t.note.includes('pkg_35')) pkg35++
     }
   })
   return { pkg10, pkg35 }
+}
+
+// 💡 【全新功能】自動格式化試堂時間顯示
+const formatTrialDate = (dateStr) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const h = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${m}月${day}日 ${h}:${min}`
 }
 
 // --- 篩選與排序邏輯 ---
@@ -95,12 +105,10 @@ async function handleAddClient() {
   
   const dataToInsert = { ...newClient.value }
   
-  // 💡 升級邏輯：只要不是這兩個選項，就把介紹人清空
   if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
       dataToInsert.referred_by_id = null
   }
   
-  // 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.trial_date) dataToInsert.trial_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
@@ -115,12 +123,10 @@ async function handleUpdateClient() {
   
   const dataToUpdate = { ...editingClient.value }
   
-  // 💡 升級邏輯：只要不是這兩個選項，就把介紹人清空
   if (dataToUpdate.source !== '朋友介紹' && dataToUpdate.source !== '廣告+朋友介紹') {
       dataToUpdate.referred_by_id = null
   }
   
-  // 終極安全網：如果日期是空的或無效的，強制轉為 null 避免資料庫報錯
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.trial_date) dataToUpdate.trial_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
@@ -236,6 +242,11 @@ async function handleImport(event) {
           </div>
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
+            
+            <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
+              ⏰ {{ formatTrialDate(c.trial_date) }}
+            </span>
+
           </div>
 
           <div class="c-packages" v-if="c.status !== 'prospect'">
@@ -424,7 +435,16 @@ async function handleImport(event) {
 .badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
-.handled-text { color: #6366f1; }
+
+/* 💡 試堂日期高亮標籤 */
+.trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; margin-left: 8px; font-size: 11px; }
+
+.c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center;}
+.pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
+.t-10 { background: #3b82f6; }
+.t-35 { background: #ec4899; }
+.pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
+
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
@@ -451,11 +471,4 @@ async function handleImport(event) {
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 .tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
-
-/* 💡 買卡次數排版 */
-.c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center;}
-.pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
-.t-10 { background: #3b82f6; }
-.t-35 { background: #ec4899; }
-.pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
 </style>
