@@ -2,12 +2,18 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../supabase'
 
-// 💡 1. 無限延伸的動態月份：自動生成 2025-12 到 未來 3 年的月份
+// 💡 管理員權限設定
+const currentUserEmail = ref('')
+const isAdmin = computed(() => currentUserEmail.value === 'yimwingkwan0907@gmail.com')
+
+// 全螢幕看圖狀態
+const viewingImage = ref(null)
+
 const availableMonths = computed(() => {
   const months = []
   let curr = new Date('2025-12-01')
   const end = new Date()
-  end.setFullYear(end.getFullYear() + 3) // 未來 3 年
+  end.setFullYear(end.getFullYear() + 3) 
   while (curr <= end) {
     const y = curr.getFullYear()
     const m = String(curr.getMonth() + 1).padStart(2, '0')
@@ -17,23 +23,21 @@ const availableMonths = computed(() => {
   return months
 })
 
-// 存放所有月份的進度資料
 const monthlyStats = ref({})
 const isSyncing = ref(false)
 
-// 💡 2. 精準還原海報細節，加入「雙倍積分」與「細分人數」目標
 const promos = ref([
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
     startMonth: '2025-12', endMonth: '2026-09',
-    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, // 💡 雙倍 VP 邏輯設定在這裡！
+    doubleVpMonth: '2025-12', doubleVpMaxExtra: 2500, 
     defaultImage: 'https://images.unsplash.com/photo-1590559899731-a382839cecd5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
     targetVp: 30000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
       '【非績優組】特別賞: 30,000點 / 第一重: 40,000點 / 第二重: 50,000點',
       '【績優組】特別賞: 40,000點 / 第一重: 60,000點 / 第二重: 80,000點',
-      '📌 12月加碼：最多可雙重計算 5,000 個人點數 (系統將自動幫您加乘！)'
+      '📌 12月加碼：最多可雙重計算 5,000 個人點數'
     ]
   },
   { 
@@ -66,7 +70,7 @@ const promos = ref([
     startMonth: '2026-01', endMonth: '2026-12',
     defaultImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImage: null,
-    targetVp: 0, targetVip: 10, targetGold: 0, targetSup: 2, // 💡 細分目標人數
+    targetVp: 0, targetVip: 10, targetGold: 0, targetSup: 2, 
     details: [
       '【條件1】確保 10 名新推薦直銷商或優惠客戶 (系統追蹤 VIP/PC)',
       '【條件2】每位需在登記月或下個月累計至少 250 VP',
@@ -87,19 +91,25 @@ const promos = ref([
   },
 ])
 
-// 💡 3. 從 Supabase 雲端讀取資料 (跨裝置同步)
+// --- 初始化載入資料 ---
 const loadCloudStats = async () => {
   isSyncing.value = true
   
-  // 初始化所有月份欄位
+  // 1. 取得當前登入者 Email，判斷是否為管理員
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session?.user?.email) {
+    currentUserEmail.value = session.user.email
+  }
+
+  // 2. 初始化月份
   availableMonths.value.forEach(m => {
     if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
 
-  // 讀取資料庫
-  const { data, error } = await supabase.from('herbalife_stats').select('*')
-  if (!error && data) {
-    data.forEach(row => {
+  // 3. 抓取雲端分數
+  const { data: statsData } = await supabase.from('herbalife_stats').select('*')
+  if (statsData) {
+    statsData.forEach(row => {
       if (monthlyStats.value[row.month]) {
         monthlyStats.value[row.month].vp = row.vp || ''
         monthlyStats.value[row.month].vip = row.recruits_vip || ''
@@ -109,40 +119,81 @@ const loadCloudStats = async () => {
     })
   }
 
-  // 讀取本機自訂海報
-  const savedImages = localStorage.getItem('herbalife_custom_images')
-  if (savedImages) {
-    try {
-      const parsedImages = JSON.parse(savedImages)
-      promos.value.forEach(p => {
-        const match = parsedImages.find(img => img.id === p.id)
-        if (match && match.customImage) p.customImage = match.customImage
-      })
-    } catch (e) {}
+  // 4. 抓取雲端自訂圖片
+  const { data: imgData } = await supabase.from('herbalife_images').select('*')
+  if (imgData) {
+    imgData.forEach(row => {
+      const match = promos.value.find(p => p.id === row.promo_id)
+      if (match) match.customImage = row.image_data
+    })
   }
+  
   isSyncing.value = false
 }
 
 onMounted(() => { loadCloudStats() })
 
-// 💡 4. 儲存至雲端 (當你離開輸入框時自動儲存)
 const saveMonthToCloud = async (month) => {
   const stats = monthlyStats.value[month]
-  const { error } = await supabase.from('herbalife_stats').upsert({
+  await supabase.from('herbalife_stats').upsert({
     month: month,
     vp: Number(stats.vp) || 0,
     recruits_vip: Number(stats.vip) || 0,
     recruits_gold: Number(stats.gold) || 0,
     recruits_sup: Number(stats.sup) || 0
   })
-  if (error) console.error("雲端同步失敗: ", error)
 }
 
-// 自動存檔自訂圖片 (海報存在本機，因為圖檔太大不適合存免費資料庫)
-watch(promos, (newVal) => {
-  const imageStore = newVal.map(p => ({ id: p.id, customImage: p.customImage }))
-  localStorage.setItem('herbalife_custom_images', JSON.stringify(imageStore))
-}, { deep: true })
+// --- 💡 圖片處理引擎 ---
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onload = (event) => {
+      const img = new Image()
+      img.src = event.target.result
+      img.onload = () => {
+        // 等比例縮小，最寬 800px
+        const canvas = document.createElement('canvas')
+        let width = img.width
+        let height = img.height
+        const maxWidth = 800
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
+        }
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+        // 壓縮成 70% 畫質的 JPEG，大幅減少雲端空間佔用
+        resolve(canvas.toDataURL('image/jpeg', 0.7))
+      }
+    }
+  })
+}
+
+const handleImageUpload = async (event, promo) => {
+  const file = event.target.files[0]
+  if (!file) return
+  
+  alert('🔄 圖片壓縮與同步中，請稍候...')
+  const compressedBase64 = await compressImage(file)
+  
+  promo.customImage = compressedBase64
+  // 儲存至雲端
+  const { error } = await supabase.from('herbalife_images').upsert({ promo_id: promo.id, image_data: compressedBase64 })
+  if (error) alert('上傳失敗: ' + error.message)
+  else alert('✅ 專屬海報已更新並同步至全團隊！')
+}
+
+// 💡 刪除圖片以節省資料庫空間
+const resetImage = async (promo) => {
+  if(!confirm('確定要還原預設圖片嗎？這將刪除雲端的海報以節省空間。')) return
+  promo.customImage = null
+  await supabase.from('herbalife_images').delete().eq('promo_id', promo.id)
+}
+
 
 // --- 幫助函數 ---
 const formatMonthLabel = (mStr) => {
@@ -157,34 +208,19 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-const handleImageUpload = (event, promo) => {
-  const file = event.target.files[0]
-  if (!file) return
-  if (file.size > 2 * 1024 * 1024) return alert('圖片檔案過大，請選擇小於 2MB 的圖片！')
-  const reader = new FileReader()
-  reader.onload = (e) => { promo.customImage = e.target.result }
-  reader.readAsDataURL(file)
-}
 
-// 💡 5. 核心大腦：雙倍積分計算 + 人數精準分類
+// 💡 核心大腦：分數計算
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
-    let calculatedVp = 0
-    let calculatedVip = 0
-    let calculatedGold = 0
-    let calculatedSup = 0
+    let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
 
-    // 只抓取該活動限定的月份
     for (const [month, stats] of Object.entries(monthlyStats.value)) {
       if (isMonthInRange(month, promo.startMonth, promo.endMonth)) {
         let monthVp = Number(stats.vp) || 0
-        
-        // 🔥 智能加乘：如果這個月有雙倍獎勵 (例如沖繩 12月)
         if (promo.doubleVpMonth === month && monthVp > 0) {
           let extraBonus = Math.min(monthVp, promo.doubleVpMaxExtra)
           monthVp += extraBonus 
         }
-
         calculatedVp += monthVp
         calculatedVip += Number(stats.vip) || 0
         calculatedGold += Number(stats.gold) || 0
@@ -197,11 +233,9 @@ const promoStatus = computed(() => {
     const goldShort = Math.max(0, promo.targetGold - calculatedGold)
     const supShort = Math.max(0, promo.targetSup - calculatedSup)
     
-    // 是否所有條件都滿足？
     const isQualified = vpShort === 0 && vipShort === 0 && goldShort === 0 && supShort === 0 && 
                         (promo.targetVp > 0 || promo.targetVip > 0 || promo.targetGold > 0 || promo.targetSup > 0)
     
-    // 綜合進度百分比計算
     let percents = []
     if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
     if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
@@ -287,9 +321,13 @@ function exportToExcel() {
             <div class="p-date">🕒 {{ p.date }}</div>
             
             <div class="img-actions">
-              <input type="file" :id="'img-up-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p)">
-              <label :for="'img-up-'+p.id" class="btn-change-img">📷 換封面</label>
-              <button v-if="p.customImage" class="btn-reset-img" @click="p.customImage = null">✕ 還原</button>
+              <button class="btn-view-img" @click="viewingImage = p.customImage || p.defaultImage">🔍 放大</button>
+              
+              <template v-if="isAdmin">
+                <input type="file" :id="'img-up-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p)">
+                <label :for="'img-up-'+p.id" class="btn-change-img">📷 換封面</label>
+                <button v-if="p.customImage" class="btn-reset-img" @click="resetImage(p)">✕ 還原</button>
+              </template>
             </div>
           </div>
         </div>
@@ -315,15 +353,9 @@ function exportToExcel() {
                 <div v-if="p.doubleVpMonth" class="double-tag">⚡️ 已含雙倍獎勵</div>
               </div>
               
-              <div v-if="p.targetVip > 0" class="cr-stat">
-                <span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP</span>
-              </div>
-              <div v-if="p.targetGold > 0" class="cr-stat">
-                <span class="cr-num">{{ p.calculatedGold }}</span><span class="cr-lbl">金級</span>
-              </div>
-              <div v-if="p.targetSup > 0" class="cr-stat">
-                <span class="cr-num">{{ p.calculatedSup }}</span><span class="cr-lbl">領班</span>
-              </div>
+              <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP/PC</span></div>
+              <div v-if="p.targetGold > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedGold }}</span><span class="cr-lbl">金級</span></div>
+              <div v-if="p.targetSup > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedSup }}</span><span class="cr-lbl">領班</span></div>
             </div>
           </div>
 
@@ -341,12 +373,15 @@ function exportToExcel() {
           <div class="progress-bar-bg">
             <div class="progress-bar-fill" :style="{ width: p.progressPercent + '%' }"></div>
           </div>
-          <div class="p-req">
-            綜合完成率：<span style="color:#4f46e2; font-weight:900;">{{ p.progressPercent.toFixed(1) }}%</span>
-          </div>
+          <div class="p-req">綜合完成率：<span style="color:#4f46e2; font-weight:900;">{{ p.progressPercent.toFixed(1) }}%</span></div>
 
         </div>
       </div>
+    </div>
+
+    <div v-if="viewingImage" class="image-modal-overlay" @click.self="viewingImage = null">
+      <button class="close-x" @click="viewingImage = null">✕</button>
+      <img :src="viewingImage" class="full-size-img" />
     </div>
 
   </div>
@@ -362,7 +397,6 @@ function exportToExcel() {
 
 .section-title { font-size: 14px; font-weight: 900; color: #64748b; margin: 25px 0 15px; text-transform: uppercase; letter-spacing: 1px;}
 
-/* 👑 新版：雲端同步中央控制台 */
 .master-control-card { background: linear-gradient(135deg, #1e293b, #0f172a); border-radius: 24px; padding: 20px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); margin-bottom: 10px; color: white; border: 1px solid #334155;}
 .mc-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; border-bottom: 1px dashed #334155; padding-bottom: 15px;}
 .mc-title { font-size: 16px; font-weight: 900; letter-spacing: 0.5px; }
@@ -370,7 +404,6 @@ function exportToExcel() {
 .btn-sync { background: rgba(255,255,255,0.1); border: 1px solid #475569; color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer;}
 .btn-sync:active { background: rgba(255,255,255,0.2); }
 
-/* 左右滑動的月份卡片 */
 .months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth;}
 .months-scroll-container::-webkit-scrollbar { height: 6px; }
 .months-scroll-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
@@ -378,33 +411,29 @@ function exportToExcel() {
 .month-card { min-width: 140px; background: rgba(255,255,255,0.08); border: 1px solid #475569; border-radius: 16px; padding: 12px; }
 .m-title { font-size: 13px; font-weight: 900; color: #10b981; margin-bottom: 10px; text-align: center;}
 .m-inp-group { display: flex; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 4px 8px;}
-.m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 45px; white-space: nowrap;}
+.m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 35px; white-space: nowrap;}
 .m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right;}
 .m-inp::placeholder { color: #64748b; font-weight: 600;}
 .mt-2 { margin-top: 6px; }
 
-/* 🎯 活動卡片樣式 */
 .promo-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
 @media (min-width: 768px) { .promo-grid { grid-template-columns: 1fr 1fr; } }
 
 .promo-card { background: white; border-radius: 20px; overflow: hidden; border: 2px solid #e2e8f0; position: relative; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
 .promo-card.qualified { border-color: #10b981; box-shadow: 0 10px 25px rgba(16, 185, 129, 0.15); transform: translateY(-3px); }
 
-/* 🖼️ 圖片封面 */
 .p-cover { height: 180px; background-size: cover; background-position: center; position: relative; }
 .p-cover-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.6)); display: flex; justify-content: space-between; align-items: flex-start; padding: 15px;}
 .p-date { font-size: 11px; font-weight: 800; color: white; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 8px; height: fit-content;}
 
-/* 📷 更換圖片按鈕 */
-.img-actions { display: flex; gap: 6px; }
-.btn-change-img { background: rgba(255,255,255,0.9); color: #4f46e2; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: 0.2s;}
-.btn-change-img:active { transform: scale(0.95); }
+.img-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;}
+.btn-view-img { background: rgba(0,0,0,0.7); color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; border: none; cursor: pointer; backdrop-filter: blur(4px);}
+.btn-change-img { background: rgba(255,255,255,0.9); color: #4f46e2; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
 .btn-reset-img { background: rgba(239,68,68,0.9); color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; border: none; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
 
 .p-content { padding: 20px; }
 .p-name { font-size: 18px; font-weight: 900; color: #1e293b; line-height: 1.3; margin-bottom: 15px; }
 
-/* 📋 詳細條件清單 */
 .p-details-box { background: #f8fafc; border-radius: 12px; padding: 12px 15px; border-left: 4px solid #6366f1; }
 .p-detail-title { font-size: 12px; font-weight: 900; color: #475569; margin-bottom: 6px; }
 .p-ul { margin: 0; padding-left: 20px; color: #64748b; font-size: 12px; font-weight: 600; line-height: 1.5; }
@@ -413,7 +442,6 @@ function exportToExcel() {
 
 .funnel-divider { border-bottom: 1px dashed #e2e8f0; margin: 15px 0; }
 
-/* 💡 新增：自動結算顯示結果 */
 .p-calculated-result { background: #eef2ff; border: 1px dashed #a5b4fc; border-radius: 12px; padding: 15px 12px; margin-bottom: 15px; text-align: center;}
 .cr-title { font-size: 11px; font-weight: 800; color: #6366f1; margin-bottom: 10px;}
 .cr-value-wrap { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
@@ -432,4 +460,10 @@ function exportToExcel() {
 .qualified .progress-bar-fill { background: #10b981; }
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
+
+/* 🔍 全螢幕看圖 Modal 樣式 */
+.image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); backdrop-filter: blur(5px); z-index: 9999; display: flex; justify-content: center; align-items: center; cursor: pointer;}
+.full-size-img { max-width: 95%; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); object-fit: contain; animation: popIn 0.3s ease-out;}
+.close-x { position: absolute; top: 25px; right: 25px; background: rgba(255,255,255,0.2); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);}
+@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 </style>
