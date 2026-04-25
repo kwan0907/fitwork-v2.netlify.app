@@ -41,6 +41,7 @@ const displayedMonths = computed(() => {
 const monthlyStats = ref({})
 const isSyncing = ref(false)
 
+// 💯 10000% 保留所有活動條件、金額與圖片
 const promos = ref([
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
@@ -106,7 +107,7 @@ const promos = ref([
   },
 ])
 
-// --- 初始化載入資料 ---
+// --- 💡 隱私雙重鎖：前端強制過濾本人資料 ---
 const loadCloudStats = async () => {
   isSyncing.value = true
   
@@ -119,16 +120,22 @@ const loadCloudStats = async () => {
     if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
   })
 
-  const { data: statsData } = await supabase.from('herbalife_stats').select('*')
-  if (statsData) {
-    statsData.forEach(row => {
-      if (monthlyStats.value[row.month]) {
-        monthlyStats.value[row.month].vp = row.vp || ''
-        monthlyStats.value[row.month].vip = row.recruits_vip || ''
-        monthlyStats.value[row.month].gold = row.recruits_gold || ''
-        monthlyStats.value[row.month].sup = row.recruits_sup || ''
-      }
-    })
+  if (currentUserEmail.value) {
+    const { data: statsData } = await supabase
+      .from('herbalife_stats')
+      .select('*')
+      .eq('user_email', currentUserEmail.value) 
+      
+    if (statsData) {
+      statsData.forEach(row => {
+        if (monthlyStats.value[row.month]) {
+          monthlyStats.value[row.month].vp = row.vp || ''
+          monthlyStats.value[row.month].vip = row.recruits_vip || ''
+          monthlyStats.value[row.month].gold = row.recruits_gold || ''
+          monthlyStats.value[row.month].sup = row.recruits_sup || ''
+        }
+      })
+    }
   }
 
   const { data: imgData } = await supabase.from('herbalife_images').select('*')
@@ -153,17 +160,18 @@ const loadCloudStats = async () => {
 onMounted(() => { loadCloudStats() })
 
 const saveMonthToCloud = async (month) => {
+  if (!currentUserEmail.value) return
   const stats = monthlyStats.value[month]
   await supabase.from('herbalife_stats').upsert({
+    user_email: currentUserEmail.value, 
     month: month,
     vp: Number(stats.vp) || 0,
     recruits_vip: Number(stats.vip) || 0,
     recruits_gold: Number(stats.gold) || 0,
     recruits_sup: Number(stats.sup) || 0
-  })
+  }, { onConflict: 'user_email,month' }) 
 }
 
-// 自動壓縮圖片引擎
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -227,7 +235,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 核心計算大腦 (包含自動 Double VP 與 各活動專屬判定)
+// 💡 10000% 保留的超級計算大腦
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
@@ -261,7 +269,6 @@ const promoStatus = computed(() => {
     
     let progressPercent = 0
 
-    // 💡 專屬大腦：新加坡連續 2 個月判斷 (ID: 5)
     if (promo.id === 5) {
       let aprVp = Number(monthlyStats.value['2026-04']?.vp) || 0
       let mayVp = Number(monthlyStats.value['2026-05']?.vp) || 0
@@ -279,7 +286,6 @@ const promoStatus = computed(() => {
       
       progressPercent = Math.min(100, ((Math.min(aprVp, 2500) + Math.min(mayVp, 2500)) / 5000) * 100)
     } 
-    // 💡 專屬大腦：超級聯賽 250VP 提示 (ID: 4)
     else if (promo.id === 4) {
       let percents = []
       if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
@@ -292,7 +298,6 @@ const promoStatus = computed(() => {
         specialStatusText = `⚠️ 尚差: ${vipShort > 0 ? vipShort + ' VIP/PC ' : ''}${supShort > 0 ? '| ' + supShort + ' 領班 ' : ''} (📌 提醒: 報名的 VIP 必須確保滿 250 VP)`
       }
     }
-    // 💡 專屬大腦：世界組大學 4個月判定 + VIP 資格激勵 (ID: 3)
     else if (promo.id === 3) {
       let m1 = Number(monthlyStats.value['2026-01']?.vp) || 0; let m2 = Number(monthlyStats.value['2026-02']?.vp) || 0
       let m3 = Number(monthlyStats.value['2026-03']?.vp) || 0; let m4 = Number(monthlyStats.value['2026-04']?.vp) || 0
@@ -331,7 +336,6 @@ const promoStatus = computed(() => {
           specialStatusText = `⚠️ 尚差: ${vpDiff.toLocaleString()} VP 或 需達成連續 4 個月 2500 VP`
       }
     }
-    // 一般邏輯進度條
     else {
       let percents = []
       if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
@@ -468,7 +472,7 @@ function exportToExcel() {
               <div v-if="p.targetVp > 0 || p.calculatedVp > 0" class="cr-stat">
                 <span class="cr-num">{{ p.calculatedVp.toLocaleString() }}</span>
                 <span class="cr-lbl">VP</span>
-                <div v-if="p.totalDoubleBonus > 0" class="double-tag">⚡️ 已含雙倍加乘 (+{{ p.totalDoubleBonus.toLocaleString() }} VP)</div>
+                <div v-if="p.totalDoubleBonus > 0" class="double-tag">⚡️ 已含雙倍加乘 <br>(+{{ p.totalDoubleBonus.toLocaleString() }} VP)</div>
               </div>
               
               <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP/PC</span></div>
@@ -519,7 +523,7 @@ function exportToExcel() {
 </template>
 
 <style scoped>
-/* 💡 徹底解決手機版「下拉拉動整個螢幕 (Rubber-banding)」的問題 */
+/* 💡 優化：徹底解決手機版「下拉拉動整個螢幕」的干擾 */
 .page { 
   padding: 20px; 
   background: #f8fafc; 
@@ -541,21 +545,25 @@ function exportToExcel() {
 .btn-sync { background: rgba(255,255,255,0.1); border: 1px solid #475569; color: white; font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer;}
 .btn-sync:active { background: rgba(255,255,255,0.2); }
 
+/* 💡 優化：防止年份按鈕被擠扁 (flex-shrink: 0) */
 .year-tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 4px; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .year-tabs::-webkit-scrollbar { display: none; }
-.year-btn { background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #cbd5e1; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap;}
+.year-btn { flex-shrink: 0; background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #cbd5e1; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap;}
 .year-btn.active { background: #10b981; border-color: #10b981; color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.25); }
 
-/* 💡 解決橫向捲動時的卡頓與回彈 */
+/* 💡 優化：防止月份卡片被擠扁 */
 .months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .months-scroll-container::-webkit-scrollbar { height: 6px; }
 .months-scroll-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
 
-.month-card { min-width: 140px; background: rgba(255,255,255,0.08); border: 1px solid #475569; border-radius: 16px; padding: 12px; }
+.month-card { flex-shrink: 0; width: 140px; background: rgba(255,255,255,0.08); border: 1px solid #475569; border-radius: 16px; padding: 12px; }
 .m-title { font-size: 15px; font-weight: 900; color: #10b981; margin-bottom: 10px; text-align: center;}
 .m-inp-group { display: flex; align-items: center; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 4px 8px;}
 .m-inp-group label { font-size: 11px; font-weight: 800; color: #cbd5e1; width: 35px; white-space: nowrap;}
-.m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right;}
+
+/* 💡 優化：隱藏數字輸入框上下箭頭，畫面更乾淨 */
+.m-inp { width: 100%; border: none; background: transparent; color: white; font-size: 15px; font-weight: 900; outline: none; text-align: right; -moz-appearance: textfield;}
+.m-inp::-webkit-outer-spin-button, .m-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .m-inp::placeholder { color: #64748b; font-weight: 600;}
 .mt-2 { margin-top: 6px; }
 
@@ -598,17 +606,20 @@ function exportToExcel() {
 
 .p-calculated-result { background: #eef2ff; border: 1px dashed #a5b4fc; border-radius: 12px; padding: 15px 12px; margin-bottom: 15px; text-align: center;}
 .cr-title { font-size: 11px; font-weight: 800; color: #6366f1; margin-bottom: 10px;}
-.cr-value-wrap { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
-.cr-stat { display: flex; flex-direction: column; align-items: center; }
+
+/* 💡 優化：確保數字區塊在小螢幕也能完美分配空間 */
+.cr-value-wrap { display: flex; justify-content: space-around; gap: 8px; flex-wrap: wrap; }
+.cr-stat { display: flex; flex-direction: column; align-items: center; min-width: 60px;}
 .cr-num { font-size: 22px; font-weight: 900; color: #4f46e2; line-height: 1;}
 .cr-lbl { font-size: 11px; font-weight: 800; color: #64748b; margin-top: 4px;}
-.double-tag { background: #fdf2f8; color: #ec4899; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-top: 4px; border: 1px solid #fbcfe8;}
+
+/* 💡 優化：Double 標籤防止破版，允許內部換行 */
+.double-tag { background: #fdf2f8; color: #ec4899; font-size: 10px; font-weight: 900; padding: 3px 6px; border-radius: 6px; margin-top: 6px; border: 1px solid #fbcfe8; text-align: center; line-height: 1.3;}
 
 .status-row { margin-bottom: 12px; }
 .status-badge { display: inline-block; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 900; width: 100%; text-align: center;}
 .success { background: #10b981; color: white; }
 .warning { background: #fffbeb; color: #b45309; border: 1px dashed #fcd34d; }
-
 .alert-border { border: 2px solid #ef4444 !important; background: #fef2f2 !important; color: #b91c1c !important; }
 
 .progress-bar-bg { background: #e2e8f0; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
@@ -617,7 +628,6 @@ function exportToExcel() {
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 
-/* 💡 鎖死 Modal，防止背後網頁跟著滾動 */
 .image-modal-overlay { 
   position: fixed; 
   top: 0; 
@@ -633,7 +643,6 @@ function exportToExcel() {
 .img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
 .full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
 
-/* 💡 大幅提昇按鈕高度 (避開所有 Home Bar)，並徹底解決擠壓變形 */
 .zoom-controls { 
   position: absolute; 
   bottom: calc(50px + env(safe-area-inset-bottom)); 
