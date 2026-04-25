@@ -12,7 +12,8 @@ const form = ref({
   promo_date: new Date().toISOString().split('T')[0],
   start_time: '',
   end_time: '',
-  flyers_count: ''
+  flyers_count: '',
+  note: '' // 💡 新增：備註欄位
 })
 
 // 💡 【超強升級】草稿讀取：關閉 APP 再打開，資料也不會不見！
@@ -73,6 +74,7 @@ async function submitPromoRecord() {
     end_time: form.value.end_time,
     duration: calculatedDuration.value,
     flyers_count: parseInt(form.value.flyers_count),
+    note: form.value.note, // 💡 新增：將備註存入資料庫
     inquiries: 0,
     trials: 0,
     conversions: 0
@@ -88,7 +90,8 @@ async function submitPromoRecord() {
     promo_date: new Date().toISOString().split('T')[0],
     start_time: '',
     end_time: '',
-    flyers_count: ''
+    flyers_count: '',
+    note: '' // 💡 新增：清空備註
   }
   localStorage.removeItem('fitwork_promo_draft')
   
@@ -114,15 +117,19 @@ async function updatePerformance(p) {
   store.syncAll()
 }
 
-// 💡 4. 新增：匯出 Excel / CSV 功能
+// 💡 4. 匯出 Excel / CSV 功能
 function exportToExcel() {
   // 加上 BOM 標記，防止 Excel 開啟時中文亂碼
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-  csvContent += "活動類型,活動日期,開始時間,結束時間,耗時,派發數量,查詢數,試堂數,開卡數\n"
+  // 💡 表頭加入「備註」
+  csvContent += "活動類型,活動日期,開始時間,結束時間,耗時,派發數量,查詢數,試堂數,開卡數,備註\n"
 
   promoList.value.forEach(p => {
-    // 組合每一行的數據
-    const row = `"${p.type}","${p.promo_date}","${p.start_time || ''}","${p.end_time || ''}","${p.duration || ''}",${p.flyers_count || 0},${p.inquiries || 0},${p.trials || 0},${p.conversions || 0}`
+    // 💡 處理備註裡的換行或逗號，避免破壞 CSV 格式
+    const safeNote = String(p.note || '').replace(/"/g, '""').replace(/\n/g, ' ')
+    
+    // 💡 組合每一行的數據，將備註也包進去
+    const row = `"${p.type}","${p.promo_date}","${p.start_time || ''}","${p.end_time || ''}","${p.duration || ''}",${p.flyers_count || 0},${p.inquiries || 0},${p.trials || 0},${p.conversions || 0},"${safeNote}"`
     csvContent += row + "\n"
   })
 
@@ -191,6 +198,11 @@ function exportToExcel() {
         </div>
       </div>
 
+      <div class="form-item" style="margin-top:15px;">
+        <label>📝 備註 (當天發生什麼事？)</label>
+        <textarea v-model="form.note" class="mod-inp" placeholder="例如：今天下大雨、人流較少..." rows="2" style="resize: vertical;"></textarea>
+      </div>
+
       <button class="btn-main" @click="submitPromoRecord">💾 完成並建立成效追蹤</button>
     </div>
 
@@ -206,6 +218,10 @@ function exportToExcel() {
       <div class="r-meta">
         <span>⏰ {{ p.start_time?.slice(0,5) }} - {{ p.end_time?.slice(0,5) }} ({{ p.duration }})</span>
         <span class="stk-tag">派發: <b>{{ p.flyers_count }}</b></span>
+      </div>
+
+      <div v-if="p.note" class="r-note">
+        📝 {{ p.note }}
       </div>
 
       <div class="funnel-divider"></div>
@@ -234,7 +250,7 @@ function exportToExcel() {
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
 
-/* 💡 新增：匯出按鈕樣式 */
+/* 匯出按鈕樣式 */
 .btn-export { background: white; border: 2px solid #10b981; color: #10b981; padding: 8px 16px; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; }
 .btn-export:active { transform: scale(0.95); background: #f0fdf4; }
 
@@ -285,6 +301,10 @@ function exportToExcel() {
 .r-date { font-size: 12px; font-weight: 800; color: #64748b; background: #f1f5f9; padding: 4px 10px; border-radius: 6px; }
 .r-meta { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #475569; }
 .stk-tag { background: #fff7ed; color: #d97706; padding: 2px 8px; border-radius: 6px; }
+
+/* 💡 新增：歷史紀錄備註的外觀設計 */
+.r-note { font-size: 13px; color: #64748b; font-weight: 600; margin-top: 12px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #cbd5e1; line-height: 1.4;}
+
 .funnel-divider { border-bottom: 1px dashed #e2e8f0; margin: 15px 0; }
 
 .funnel-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
