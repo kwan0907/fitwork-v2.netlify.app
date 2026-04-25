@@ -99,9 +99,9 @@ const promos = ref([
     customImages: [null, null],
     targetVp: 5000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
-      '【基本賞】連續二個月 2,500 點 (非績優組限定)',
-      '【升級賞】連續二個月 4,000 點 (補助12000)',
-      '【最高賞】連續二個月 6,000 點 (補助18000)'
+      '【基本賞】非績優組限定連續二個月 2,500 點 (補貼HKD2000)',
+      '【升級賞】連續二個月 4,000 點 (補助HKD3000)',
+      '【最高賞】連續二個月 6,000 點 (補助HKD4500)'
     ]
   },
 ])
@@ -227,7 +227,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 核心計算大腦
+// 💡 核心計算大腦 (包含自動 Double VP 與 各活動專屬判定)
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
@@ -272,13 +272,26 @@ const promoStatus = computed(() => {
 
       isQualified = isBaseMet
       
-      if (isTopMet) specialStatusText = "🎉 達成最高賞 (6000點)！"
-      else if (isUpgradeMet) specialStatusText = "🎉 達成升級賞 (4000點)！"
-      else if (isBaseMet) specialStatusText = "🎉 達成基本賞 (2500點)！"
+      if (isTopMet) specialStatusText = "🎉 達成最高賞 (補貼HKD4500)！"
+      else if (isUpgradeMet) specialStatusText = "🎉 達成升級賞 (補貼HKD3000)！"
+      else if (isBaseMet) specialStatusText = "🎉 達成基本賞 (補貼HKD2000)！"
       else specialStatusText = `⚠️ 需連續兩月達標 (4月: ${aprVp}, 5月: ${mayVp})`
       
       progressPercent = Math.min(100, ((Math.min(aprVp, 2500) + Math.min(mayVp, 2500)) / 5000) * 100)
     } 
+    // 💡 專屬大腦：超級聯賽 250VP 提示 (ID: 4)
+    else if (promo.id === 4) {
+      let percents = []
+      if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
+      if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
+      progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
+
+      if (isQualified) {
+        specialStatusText = "🎉 人數已達標！⚠️ 系統提醒：請務必自行核實這 10 位 VIP/PC【每位皆已達 250 VP】！"
+      } else {
+        specialStatusText = `⚠️ 尚差: ${vipShort > 0 ? vipShort + ' VIP/PC ' : ''}${supShort > 0 ? '| ' + supShort + ' 領班 ' : ''} (📌 提醒: 報名的 VIP 必須確保滿 250 VP)`
+      }
+    }
     // 💡 專屬大腦：世界組大學 4個月判定 + VIP 資格激勵 (ID: 3)
     else if (promo.id === 3) {
       let m1 = Number(monthlyStats.value['2026-01']?.vp) || 0; let m2 = Number(monthlyStats.value['2026-02']?.vp) || 0
@@ -297,7 +310,6 @@ const promoStatus = computed(() => {
           vpShort = 0
           progressPercent = 100
 
-          // 判斷 VIP：必須滿足 25000 VP 加上領班人數
           if (calculatedVp >= 25000) {
             if (calculatedSup >= 3) {
               specialStatusText = "💎 達成【白金級 VIP】(3位新領班)！太神啦！"
@@ -466,7 +478,7 @@ function exportToExcel() {
           </div>
 
           <div class="status-row">
-            <div v-if="p.specialStatusText" :class="['status-badge', p.isQualified ? 'success' : 'warning']">
+            <div v-if="p.specialStatusText" :class="['status-badge', p.isQualified ? 'success' : 'warning', p.id === 4 ? 'alert-border' : '']">
               {{ p.specialStatusText }}
             </div>
             <div v-else-if="p.isQualified" class="status-badge success">🎉 恭喜！已達成最低目標！</div>
@@ -590,6 +602,8 @@ function exportToExcel() {
 .success { background: #10b981; color: white; }
 .warning { background: #fffbeb; color: #b45309; border: 1px dashed #fcd34d; }
 
+.alert-border { border: 2px solid #ef4444 !important; background: #fef2f2 !important; color: #b91c1c !important; }
+
 .progress-bar-bg { background: #e2e8f0; height: 12px; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
 .progress-bar-fill { background: #78C257; height: 100%; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 6px; }
 .qualified .progress-bar-fill { background: #10b981; }
@@ -599,8 +613,37 @@ function exportToExcel() {
 .image-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 9999; display: flex; flex-direction: column;}
 .img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
 .full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
-.zoom-controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 10px; border-radius: 99px; z-index: 10000;}
-.z-btn { background: white; color: #1e293b; font-size: 12px; font-weight: 900; padding: 10px 14px; border-radius: 20px; border: none; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3);}
+
+/* 💡 解決手機版按鈕變垂直走位：加入 flex-wrap 與 white-space */
+.zoom-controls { 
+  position: absolute; 
+  bottom: 40px; 
+  left: 50%; 
+  transform: translateX(-50%); 
+  display: flex; 
+  flex-wrap: wrap; 
+  justify-content: center;
+  gap: 8px; 
+  background: rgba(255,255,255,0.2); 
+  backdrop-filter: blur(15px); 
+  padding: 10px 15px; 
+  border-radius: 20px; 
+  z-index: 10000;
+  width: max-content;
+  max-width: 90vw;
+}
+.z-btn { 
+  background: white; 
+  color: #1e293b; 
+  font-size: 13px; 
+  font-weight: 900; 
+  padding: 10px 14px; 
+  border-radius: 12px; 
+  border: none; 
+  cursor: pointer; 
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  white-space: nowrap; 
+}
 .z-btn:active { transform: scale(0.9); }
 .c-btn { background: #ef4444; color: white; }
 </style>
