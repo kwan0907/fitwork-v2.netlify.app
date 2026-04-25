@@ -74,9 +74,9 @@ const promos = ref([
     customImages: [null, null],
     targetVp: 25000, targetVip: 0, targetGold: 0, targetSup: 0,
     details: [
-      '【條件A】累計達 25,000 總銷售量點數',
-      '【條件B】連續四個月均達 2,500 點',
-      '【條件C】於爭取資格期限內成為新升世界組',
+      '【基本資格】累計達 25,000 點 或 連續四個月均達 2,500 點',
+      '【VIP 派對資格】必須累計達 25,000 點，並達成以下領班條件：',
+      '👑 白金級: 3位新領班 / 🥇 金級: 2位新領班 / 🥈 銀級: 1位新領班',
       '📌 會議日期：2026年9月12日'
     ]
   },
@@ -227,18 +227,17 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
   return m >= s && m <= e
 }
 
-// 💡 核心計算大腦 (包含自動 Double VP 與 新加坡嚴格判斷)
+// 💡 核心計算大腦
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
-    let totalDoubleBonus = 0 // 紀錄總共獲得的 Double Bonus
-    let specialStatusText = null // 用來客製化特定活動的顯示文字
+    let totalDoubleBonus = 0 
+    let specialStatusText = null 
 
     for (const [month, stats] of Object.entries(monthlyStats.value)) {
       if (isMonthInRange(month, promo.startMonth, promo.endMonth)) {
         let monthVp = Number(stats.vp) || 0
         
-        // 💡 計算 Double 分數
         if (promo.doubleVpMonth === month && monthVp > 0) {
           let extraBonus = Math.min(monthVp, promo.doubleVpMaxExtra)
           monthVp += extraBonus 
@@ -278,10 +277,9 @@ const promoStatus = computed(() => {
       else if (isBaseMet) specialStatusText = "🎉 達成基本賞 (2500點)！"
       else specialStatusText = `⚠️ 需連續兩月達標 (4月: ${aprVp}, 5月: ${mayVp})`
       
-      // 進度條：確保不會因為單月過高而提早滿，真實反映進度
       progressPercent = Math.min(100, ((Math.min(aprVp, 2500) + Math.min(mayVp, 2500)) / 5000) * 100)
     } 
-    // 💡 專屬大腦：世界組大學 4個月判定 (ID: 3)
+    // 💡 專屬大腦：世界組大學 4個月判定 + VIP 資格激勵 (ID: 3)
     else if (promo.id === 3) {
       let m1 = Number(monthlyStats.value['2026-01']?.vp) || 0; let m2 = Number(monthlyStats.value['2026-02']?.vp) || 0
       let m3 = Number(monthlyStats.value['2026-03']?.vp) || 0; let m4 = Number(monthlyStats.value['2026-04']?.vp) || 0
@@ -292,14 +290,33 @@ const promoStatus = computed(() => {
           (m2>=2500 && m3>=2500 && m4>=2500 && m5>=2500) ||
           (m3>=2500 && m4>=2500 && m5>=2500 && m6>=2500)
           
-      if (has4Consecutive) {
+      let isBasicMet = calculatedVp >= 25000 || has4Consecutive
+
+      if (isBasicMet) {
           isQualified = true
           vpShort = 0
-          specialStatusText = "🎉 達成連續四個月2500點條件！"
           progressPercent = 100
+
+          // 判斷 VIP：必須滿足 25000 VP 加上領班人數
+          if (calculatedVp >= 25000) {
+            if (calculatedSup >= 3) {
+              specialStatusText = "💎 達成【白金級 VIP】(3位新領班)！太神啦！"
+            } else if (calculatedSup === 2) {
+              specialStatusText = "🥇 達成【金級 VIP】！再 1 位新領班晉升白金級！"
+            } else if (calculatedSup === 1) {
+              specialStatusText = "🥈 達成【銀級 VIP】！再 1 位新領班晉升金級！"
+            } else {
+              specialStatusText = "🎉 達成基本資格！快爭取 VIP (尚差 1 位新領班)"
+            }
+          } else {
+             let vpDiff = 25000 - calculatedVp;
+             specialStatusText = `🎉 已達成4個月2500點！爭取 VIP 尚差 ${vpDiff.toLocaleString()} VP 及 1位新領班`
+          }
       } else {
-        // 若沒有連續 4 個月，則走預設的「累計」邏輯
-        progressPercent = Math.min(100, (calculatedVp / promo.targetVp) * 100)
+          isQualified = false
+          progressPercent = Math.min(100, (calculatedVp / 25000) * 100)
+          let vpDiff = 25000 - calculatedVp
+          specialStatusText = `⚠️ 尚差: ${vpDiff.toLocaleString()} VP 或 需達成連續 4 個月 2500 VP`
       }
     }
     // 一般邏輯進度條
@@ -536,7 +553,6 @@ function exportToExcel() {
 
 .p-date { font-size: 11px; font-weight: 800; color: white; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); padding: 4px 10px; border-radius: 8px; height: fit-content;}
 
-/* 💡 解決手機版按鈕擠壓跑位 */
 .img-actions { 
   display: flex; 
   flex-direction: row; 
@@ -544,7 +560,7 @@ function exportToExcel() {
   gap: 6px; 
   justify-content: flex-end; 
   align-content: flex-start;
-  max-width: 65%; /* 預留空間給左側日期 */
+  max-width: 65%; 
 }
 .btn-view-img { background: rgba(0,0,0,0.7); color: white; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 8px; border: none; cursor: pointer; backdrop-filter: blur(4px);}
 .btn-change-img { background: rgba(255,255,255,0.9); color: #4f46e2; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.2);}
