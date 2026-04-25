@@ -27,6 +27,15 @@ const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
 const showCheckoutModal = ref(false)
 
+// 💡 新增：購物車價格隨 selectedTier 動態重算
+const cartWithPrices = computed(() => {
+  const priceCol = tierMapping[selectedTier.value]
+  return cart.value.map(item => {
+    const finalPrice = Number(item[priceCol]) || Number(item.retail_price) || 0
+    return { ...item, active_price: finalPrice }
+  })
+})
+
 const payees = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 const clientOptions = computed(() => {
@@ -97,13 +106,17 @@ const addToCart = (product) => {
   if (existing) existing.qty++ 
   else cart.value.push({ ...product, qty: 1 })
 }
+// ✅ 修改後
 const decreaseQty = (item) => {
-  if (item.qty > 1) item.qty--
+  const found = cart.value.find(i => i.id === item.id)
+  if (!found) return
+  if (found.qty > 1) found.qty--
   else cart.value = cart.value.filter(i => i.id !== item.id)
 }
 
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
-const totalRevenue = computed(() => cart.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
+// ✅ 修改後
+const totalRevenue = computed(() => cartWithPrices.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
 // 💡 核心修復：強制購物車成本只使用 price_50 (半折價)，無視其他可能有錯的資料
 const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((Number(item.price_50) || 0) * item.qty), 0))
 const netProfit = computed(() => totalRevenue.value - totalCost.value)
@@ -185,7 +198,8 @@ async function finalizeCheckout(payeeName) {
         <div class="m-header">🛒 結帳明細與總結 <button class="close-x" @click="showCheckoutModal=false">✕</button></div>
         
         <div class="cart-items">
-          <div v-for="item in cart" :key="item.id" class="c-item">
+          <!-- ✅ 修改後 -->
+<div v-for="item in cartWithPrices" :key="item.id" class="c-item">
             <div style="flex:1;"><div class="c-name">{{ item.name }}</div><div class="c-sub">單價 ${{ item.active_price }}</div></div>
             <div class="c-price">$ {{ item.active_price * item.qty }}</div>
             <div class="qty-control"><button @click="decreaseQty(item)">-</button><span>{{ item.qty }}</span><button @click="addToCart(item)">+</button></div>
