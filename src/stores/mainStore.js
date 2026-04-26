@@ -34,14 +34,13 @@ export const useMainStore = defineStore('main', () => {
       }
 
       // 💡 2. 【核心修復：前端隱私雙重鎖】
-      // 強制加上 .eq('owner_email', userEmail) 確保只抓自己的客戶、交易、庫存
-      // (產品 products 與宣傳 promotions 通常為全店共用，所以不鎖 Email)
+      // 這裡的 promotions 已經補上 .eq('owner_email', userEmail) 了！
       const [c, p, t, s, pr] = await Promise.all([
         supabase.from('clients').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('name'),
         supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(3000),
         supabase.from('stock').select('*').eq('owner_email', userEmail),
-        supabase.from('promotions').select('*').order('created_at', { ascending: false })
+        supabase.from('promotions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }) 
       ])
 
       // 1. 處理客戶資料

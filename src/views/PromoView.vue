@@ -83,7 +83,14 @@ async function submitPromoRecord() {
   if (!form.value.end_time) return alert('請輸入或點擊設定「結束時間」！')
   if (!form.value.flyers_count) return alert('請輸入「派發數量」！')
 
+  // 💡 取得當前帳號的 Email
+  const { data: { session } } = await supabase.auth.getSession()
+  const userEmail = session?.user?.email
+  if (!userEmail) return alert('請先登入！')
+
+  // 💡 寫入時加上 owner_email
   const { error } = await supabase.from('promotions').insert({
+    owner_email: userEmail,
     type: form.value.type,
     promo_date: form.value.promo_date,
     start_time: form.value.start_time,
