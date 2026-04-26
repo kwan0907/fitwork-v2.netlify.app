@@ -233,13 +233,12 @@ function openTrialEdit(client) {
 }
 
 async function updateTrial() {
-  // 💡 優化：確保送出更新時，包含 branch (地點) 資料
   const { error } = await supabase.from('clients').update({
     name: editingClient.value.name, 
     phone: editingClient.value.phone,
     trial_date: editingClient.value.trial_date, 
     status: editingClient.value.status,
-    branch: editingClient.value.branch // 加入同步更新分店地點
+    branch: editingClient.value.branch 
   }).eq('id', editingClient.value.id)
 
   if (error) alert('更新失敗: ' + error.message)
@@ -496,10 +495,26 @@ const chartOptions = {
 .text-green { color: #10b981; }
 .text-white { color: white; }
 
+/* 💡 優化：手機版漏斗強制維持橫向，並支援左右滑動防破版 */
 @media (max-width: 600px) {
-  .funnel-metrics { flex-direction: column; gap: 15px; }
-  .fm-arrow { transform: rotate(90deg); }
-  .fm-rate-box { width: 100%; margin-top: 10px; }
+  .funnel-metrics { 
+    flex-direction: row; 
+    flex-wrap: nowrap; 
+    overflow-x: auto; 
+    padding-bottom: 10px; 
+    gap: 8px; 
+    justify-content: flex-start;
+  }
+  .funnel-metrics::-webkit-scrollbar { height: 4px; }
+  .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+  .fm-item { flex: 0 0 auto; min-width: 75px; }
+  .fm-lbl { font-size: 11px; margin-bottom: 2px; }
+  .fm-val { font-size: 20px; }
+  .fm-sub { font-size: 10px; padding: 2px 4px; }
+  .fm-arrow { transform: none; font-size: 14px; }
+  .fm-rate-box { width: auto; min-width: 85px; padding: 10px; margin-top: 0; flex: 0 0 auto;}
+  .fm-rate-box .fm-val { font-size: 18px !important; }
 }
 
 .p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
