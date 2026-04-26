@@ -307,7 +307,11 @@ async function handleImport(event) {
         <div class="section-title">📅 關鍵日期</div>
         <div class="f-item" v-if="editingClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
           <label>⏰ 預約試堂日期與時間</label>
-          <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date">
+          <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
+          <label>📍 預約試堂地點 (同步分店資料)</label>
+          <select v-model="editingClient.branch" class="modern-select">
+            <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+          </select>
         </div>
         <div class="grid-2">
           <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
@@ -380,7 +384,11 @@ async function handleImport(event) {
         <div class="section-title">📅 關鍵日期</div>
         <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
           <label>⏰ 預約試堂日期與時間</label>
-          <input type="datetime-local" v-model="newClient.trial_date" class="modern-date">
+          <input type="datetime-local" v-model="newClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
+          <label>📍 預約試堂地點 (同步分店資料)</label>
+          <select v-model="newClient.branch" class="modern-select">
+            <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+          </select>
         </div>
         <div class="grid-2">
           <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>

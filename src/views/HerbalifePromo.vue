@@ -161,17 +161,39 @@ const loadCloudStats = async () => {
 
 onMounted(() => { loadCloudStats() })
 
+// 💡 優化儲存機制：加入狀態防呆與失敗重試，徹底解決靜默失敗導致資料遺失的問題
 const saveMonthToCloud = async (month) => {
-  if (!currentUserEmail.value) return
+  // 防呆：如果沒有抓到Email，嘗試重新抓取，抓不到則阻擋並提示
+  if (!currentUserEmail.value) {
+    const { data } = await supabase.auth.getSession()
+    if (data?.session?.user?.email) {
+      currentUserEmail.value = data.session.user.email
+    } else {
+      alert('⚠️ 系統尚未讀取到您的登入狀態，無法儲存資料！請重新整理頁面。')
+      return
+    }
+  }
+  
   const stats = monthlyStats.value[month]
-  await supabase.from('herbalife_stats').upsert({
+  const payload = {
     user_email: currentUserEmail.value, 
     month: month,
     vp: Number(stats.vp) || 0,
     recruits_vip: Number(stats.vip) || 0,
     recruits_gold: Number(stats.gold) || 0,
     recruits_sup: Number(stats.sup) || 0
-  }, { onConflict: 'user_email,month' }) 
+  }
+
+  const { error } = await supabase.from('herbalife_stats').upsert(payload, { onConflict: 'user_email,month' }) 
+  
+  // 💡 自動修復：如果指定約束條件失敗，嘗試直接 Upsert（防止資料庫結構定義落差導致靜默報錯）
+  if (error) {
+    console.warn("Primary save failed, trying fallback...", error)
+    const { error: fallbackError } = await supabase.from('herbalife_stats').upsert(payload)
+    if (fallbackError) {
+      alert('⚠️ 儲存失敗，請檢查網路或聯繫管理員：\n' + fallbackError.message)
+    }
+  }
 }
 
 const compressImage = (file) => {
@@ -408,19 +430,19 @@ function exportToExcel() {
           
           <div class="m-inp-group">
             <label>VP</label>
-            <input type="number" v-model="monthlyStats[month].vp" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+            <input type="number" v-model="monthlyStats[month].vp" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
           <div class="m-inp-group mt-2">
             <label>VIP</label>
-            <input type="number" v-model="monthlyStats[month].vip" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+            <input type="number" v-model="monthlyStats[month].vip" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
           <div class="m-inp-group mt-2">
             <label>金級</label>
-            <input type="number" v-model="monthlyStats[month].gold" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+            <input type="number" v-model="monthlyStats[month].gold" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
           <div class="m-inp-group mt-2">
             <label>領班</label>
-            <input type="number" v-model="monthlyStats[month].sup" @blur="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+            <input type="number" v-model="monthlyStats[month].sup" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
         </div>
       </div>
