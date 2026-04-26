@@ -233,9 +233,13 @@ function openTrialEdit(client) {
 }
 
 async function updateTrial() {
+  // 💡 優化：確保送出更新時，包含 branch (地點) 資料
   const { error } = await supabase.from('clients').update({
-    name: editingClient.value.name, phone: editingClient.value.phone,
-    trial_date: editingClient.value.trial_date, status: editingClient.value.status
+    name: editingClient.value.name, 
+    phone: editingClient.value.phone,
+    trial_date: editingClient.value.trial_date, 
+    status: editingClient.value.status,
+    branch: editingClient.value.branch // 加入同步更新分店地點
   }).eq('id', editingClient.value.id)
 
   if (error) alert('更新失敗: ' + error.message)
@@ -440,6 +444,16 @@ const chartOptions = {
           <div class="form-item"><label>客戶姓名</label><input v-model="editingClient.name" class="mod-inp"></div>
           <div class="form-item" style="margin-top:12px;"><label>聯絡電話</label><input v-model="editingClient.phone" class="mod-inp"></div>
           <div class="form-item" style="margin-top:12px;"><label>預約日期與時間</label><input type="datetime-local" v-model="editingClient.trial_date" class="mod-inp"></div>
+          
+          <div class="form-item" style="margin-top:12px;">
+            <label>📍 預約試堂地點 (同步分店資料)</label>
+            <select v-model="editingClient.branch" class="mod-inp">
+              <option value="觀塘">觀塘</option>
+              <option value="中環">中環</option>
+              <option value="佐敦">佐敦</option>
+            </select>
+          </div>
+
           <div class="form-item" style="margin-top:12px;"><label>更改狀態</label>
             <select v-model="editingClient.status" class="mod-inp">
               <option value="prospect">👀 維持預約狀態</option>
