@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue' // 🟢 新增：引入 onMounted
+import { useRoute } from 'vue-router' // 🟢 新增：引入 useRoute 來接收網址參數
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
+const route = useRoute() // 🟢 新增：啟用 route
 
 const searchClient = ref('')
 const selectedClient = ref(null)
@@ -36,6 +38,23 @@ function selectClient(c) {
   showDropdown.value = false
   isNewCustomer.value = c.status === 'prospect'
 }
+
+// ==========================================
+// 🟢 新增：頁面載入時，自動抓取並填入客戶名字
+// ==========================================
+onMounted(() => {
+  if (route.query.clientName) {
+    const targetName = route.query.clientName
+    // 在客戶資料庫中尋找這位客戶
+    const foundClient = store.clients.find(c => c.name === targetName)
+    
+    if (foundClient) {
+      selectClient(foundClient) // 如果找到了，直接自動幫你選好！
+    } else {
+      searchClient.value = targetName // 如果剛好沒找到完全匹配的，至少幫你填在搜尋框裡
+    }
+  }
+})
 
 const exCalc = computed(() => {
   let p = packages[selectedPkg.value].price

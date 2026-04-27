@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router' // 🟢 新增：引入路由功能
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
+const route = useRoute() // 🟢 新增：啟用路由功能
 
 const searchClient = ref('')
 const selectedClient = ref(null)
@@ -33,8 +35,21 @@ const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
 const showCheckoutModal = ref(false)
 
-// 🚀 核心邏輯：自動載入歷史訂單
+// 🚀 核心邏輯：自動載入歷史訂單 與 🟢 快捷選單帶入客戶
 onMounted(() => {
+  // 🟢 新增：從網址參數接收客戶名字 (來自 ClientsView 快捷按鈕)
+  if (route.query.clientName) {
+    const targetName = route.query.clientName
+    const foundClient = store.clients.find(c => c.name === targetName)
+    
+    if (foundClient) {
+      selectClient(foundClient) // 如果找到了，自動選定並套用專屬 VIP 折扣
+    } else {
+      searchClient.value = targetName // 沒完全比對到也幫忙填入搜尋框
+    }
+  }
+
+  // 🚀 原有功能保留：自動載入歷史訂單 ( pendingRepeatOrder )
   if (store.pendingRepeatOrder) {
     const data = store.pendingRepeatOrder
     

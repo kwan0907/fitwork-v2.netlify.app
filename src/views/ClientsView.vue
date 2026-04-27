@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router' // 🟢 新增：引入路由功能
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase' 
 
 const store = useMainStore()
+const router = useRouter() // 🟢 新增：啟用路由功能
 
 // --- 狀態定義 ---
 const showAddModal = ref(false)
@@ -52,7 +54,7 @@ const getClientPackageStats = (clientName) => {
   return { pkg10, pkg35 }
 }
 
-// 💡 【全新功能】自動格式化試堂時間顯示
+// 💡 自動格式化試堂時間顯示
 const formatTrialDate = (dateStr) => {
   if (!dateStr) return ''
   const d = new Date(dateStr)
@@ -94,6 +96,34 @@ const filteredClients = computed(() => {
   return list
 })
 
+// ==========================================
+// 🟢 新增：快捷操作選單邏輯 (無刪減原本功能)
+// ==========================================
+const showActionModal = ref(false)
+const selectedClientForAction = ref(null)
+
+function openActionModal(client) {
+  selectedClientForAction.value = client
+  showActionModal.value = true
+}
+
+function handleActionEdit() {
+  showActionModal.value = false
+  openEditModal(selectedClientForAction.value) // 呼叫原本的修改功能，1000%保留！
+}
+
+function handleActionMovement() {
+  showActionModal.value = false
+  // 跳轉到運動頁面，並帶入客戶名字
+  router.push({ path: '/movement', query: { clientName: selectedClientForAction.value.name } })
+}
+
+function handleActionRetail() {
+  showActionModal.value = false
+  // 跳轉到零售頁面，並帶入客戶名字
+  router.push({ path: '/retail', query: { clientName: selectedClientForAction.value.name } })
+}
+
 // --- 功能函數 ---
 function openAddModal() {
     newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
@@ -103,7 +133,6 @@ function openAddModal() {
 async function handleAddClient() {
   if (!newClient.value.name) return alert('請填寫姓名')
   
-  // 💡 自動抓取登入者的 user_id 和 Email 綁定專屬權限 (加上 user_id 雙重保險)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
   
@@ -179,7 +208,7 @@ const getExpiryClass = (date) => {
 // 🚀 終極強化：客戶資料 CSV 真實批量匯入
 // ==========================================
 function downloadCSVTemplate() {
-    const BOM = "\uFEFF"; // 確保 Excel 打開不會亂碼
+    const BOM = "\uFEFF"; 
     const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD)\n";
     const sample1 = "王大明,98765432,觀塘,active,2024-01-01,廣告,\n";
     const sample2 = "陳小美,91234567,中環,prospect,,,朋友介紹,\n";
@@ -202,7 +231,6 @@ async function handleImport(event) {
     const file = event.target.files[0]
     if (!file) return
 
-    // 取得使用者資訊，確保安全綁定
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
@@ -215,12 +243,11 @@ async function handleImport(event) {
 
             const insertData = []
 
-            // 從第二行開始讀取 (跳過標題)
             for (let i = 1; i < lines.length; i++) {
                 const cols = lines[i].split(',')
                 
                 const name = cols[0]?.trim()
-                if (!name) continue // 姓名為必填，沒有就跳過
+                if (!name) continue 
 
                 const phone = cols[1]?.trim() || ''
                 const branch = cols[2]?.trim() || '觀塘'
@@ -238,7 +265,6 @@ async function handleImport(event) {
 
             if (insertData.length === 0) return alert('❌ 沒有找到有效的客戶資料！請檢查格式。')
 
-            // 批量寫入資料庫
             const { error } = await supabase.from('clients').insert(insertData)
             if (error) throw error
 
@@ -248,7 +274,6 @@ async function handleImport(event) {
             console.error('匯入失敗:', err)
             alert('❌ 匯入發生錯誤: ' + err.message)
         } finally {
-            // 清空 input 讓下次可以重新選同一個檔案
             event.target.value = ''
         }
     }
@@ -292,7 +317,7 @@ async function handleImport(event) {
     </div>
 
     <div class="list-container">
-      <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openEditModal(c)">
+      <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openActionModal(c)">
         <div class="c-avatar">{{ (c.name || '?').charAt(0) }}</div>
         <div class="c-main">
           <div class="c-name-row">
@@ -476,6 +501,41 @@ async function handleImport(event) {
       </div>
     </div>
 
+    <div v-if="showActionModal" class="modal-overlay" @click.self="showActionModal = false">
+      <div class="center-modal action-modal" style="max-width: 350px;">
+        <div class="m-header">
+          ⚡ 快捷操作：{{ selectedClientForAction?.name }}
+          <button class="close-x" @click="showActionModal = false">✕</button>
+        </div>
+        
+        <div class="action-menu-list">
+          <button class="action-big-btn btn-edit-style" @click="handleActionEdit">
+            <span class="emoji-icon">✏️</span>
+            <div class="text-left">
+              <strong>修改客戶資料</strong>
+              <small>檢視或更新檔案、VIP狀態</small>
+            </div>
+          </button>
+
+          <button class="action-big-btn btn-move-style" @click="handleActionMovement">
+            <span class="emoji-icon">🏋️</span>
+            <div class="text-left">
+              <strong>購買運動 / 扣堂</strong>
+              <small>前往運動 SOP 處理</small>
+            </div>
+          </button>
+
+          <button class="action-big-btn btn-retail-style" @click="handleActionRetail">
+            <span class="emoji-icon">🛍️</span>
+            <div class="text-left">
+              <strong>購買產品</strong>
+              <small>前往零售 SOP 處理</small>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -536,4 +596,27 @@ async function handleImport(event) {
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 .tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
+
+/* 🟢 新增：快捷操作選單專用樣式 */
+.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.action-big-btn { 
+  display: flex; align-items: center; gap: 15px; 
+  width: 100%; padding: 18px; border-radius: 20px; 
+  border: none; cursor: pointer; transition: 0.2s all;
+  background: #f8fafc; text-align: left;
+}
+.action-big-btn:active { transform: scale(0.96); }
+.action-big-btn .emoji-icon { font-size: 28px; background: white; padding: 10px; border-radius: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+.action-big-btn .text-left { display: flex; flex-direction: column; gap: 4px; }
+.action-big-btn strong { font-size: 16px; color: #1e293b; font-weight: 800; }
+.action-big-btn small { font-size: 12px; color: #64748b; font-weight: 600; }
+
+/* 個別按鈕的 Hover/Active 色彩強化 */
+.btn-edit-style:hover { background: #e0f2fe; }
+.btn-edit-style:hover strong { color: #0284c7; }
+.btn-move-style:hover { background: #ede9fe; }
+.btn-move-style:hover strong { color: #6366f1; }
+.btn-retail-style:hover { background: #fce7f3; }
+.btn-retail-style:hover strong { color: #db2777; }
 </style>
