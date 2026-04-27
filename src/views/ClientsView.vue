@@ -103,12 +103,15 @@ function openAddModal() {
 async function handleAddClient() {
   if (!newClient.value.name) return alert('請填寫姓名')
   
-  // 💡 自動抓取登入者的 Email 綁定專屬權限
-  const { data: authData } = await supabase.auth.getSession()
-  const userEmail = authData?.session?.user?.email
-  if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+  // 💡 自動抓取登入者的 user_id 和 Email 綁定專屬權限 (加上 user_id 雙重保險)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
   
-  const dataToInsert = { ...newClient.value, own_email: userEmail } // ✅ 寫入私人 Email
+  const dataToInsert = { 
+    ...newClient.value, 
+    own_email: user.email,
+    user_id: user.id 
+  }
   
   if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
       dataToInsert.referred_by_id = null
@@ -172,16 +175,23 @@ const getExpiryClass = (date) => {
   return d < 0 ? 'tag-red' : (d < 14 ? 'tag-orange' : 'tag-green')
 }
 
-// --- 匯入功能 ---
+// ==========================================
+// 🚀 終極強化：客戶資料 CSV 真實批量匯入
+// ==========================================
 function downloadCSVTemplate() {
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF姓名,電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD)\n王小明,98765432,觀塘,active,2024-01-01"
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement("a")
-    link.setAttribute("href", encodedUri)
-    link.setAttribute("download", "fitwork_clients_template.csv")
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    const BOM = "\uFEFF"; // 確保 Excel 打開不會亂碼
+    const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD)\n";
+    const sample1 = "王大明,98765432,觀塘,active,2024-01-01,廣告,\n";
+    const sample2 = "陳小美,91234567,中環,prospect,,,朋友介紹,\n";
+    
+    const csvContent = "data:text/csv;charset=utf-8," + BOM + header + sample1 + sample2;
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "fitwork_clients_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function triggerFileInput() {
@@ -191,11 +201,56 @@ function triggerFileInput() {
 async function handleImport(event) {
     const file = event.target.files[0]
     if (!file) return
+
+    // 取得使用者資訊，確保安全綁定
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+
     const reader = new FileReader()
     reader.onload = async (e) => {
-        const text = e.target.result
-        console.log("讀取到檔案內容:", text)
-        alert("匯入功能準備好解析 CSV！")
+        try {
+            const text = e.target.result
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+            if (lines.length <= 1) return alert('❌ CSV 檔案沒有資料列！')
+
+            const insertData = []
+
+            // 從第二行開始讀取 (跳過標題)
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',')
+                
+                const name = cols[0]?.trim()
+                if (!name) continue // 姓名為必填，沒有就跳過
+
+                const phone = cols[1]?.trim() || ''
+                const branch = cols[2]?.trim() || '觀塘'
+                const status = cols[3]?.trim() === 'prospect' ? 'prospect' : 'active'
+                const join_date = cols[4]?.trim() || null
+                const source = cols[5]?.trim() || '其他'
+                const expiry_date = cols[6]?.trim() || null
+
+                insertData.push({
+                    name, phone, branch, status, join_date, source, expiry_date,
+                    own_email: user.email,
+                    user_id: user.id
+                })
+            }
+
+            if (insertData.length === 0) return alert('❌ 沒有找到有效的客戶資料！請檢查格式。')
+
+            // 批量寫入資料庫
+            const { error } = await supabase.from('clients').insert(insertData)
+            if (error) throw error
+
+            alert(`✅ 成功匯入 ${insertData.length} 筆客戶資料！`)
+            store.syncAll() 
+        } catch (err) {
+            console.error('匯入失敗:', err)
+            alert('❌ 匯入發生錯誤: ' + err.message)
+        } finally {
+            // 清空 input 讓下次可以重新選同一個檔案
+            event.target.value = ''
+        }
     }
     reader.readAsText(file)
 }
@@ -232,7 +287,7 @@ async function handleImport(event) {
 
     <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;">
         <button class="btn-outline" @click="downloadCSVTemplate">📥 下載匯入格式</button>
-        <button class="btn-outline" @click="triggerFileInput">📤 匯入客戶名單</button>
+        <button class="btn-outline" style="border-color:#4f46e2; color:#4f46e2; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
         <input type="file" id="csvFileInput" accept=".csv" style="display: none;" @change="handleImport">
     </div>
 
@@ -440,7 +495,8 @@ async function handleImport(event) {
 .sort-label { font-size: 13px; font-weight: 800; color: #64748b; }
 .sort-select { background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #1e293b; outline: none; cursor: pointer; }
 .sort-select:focus { border-color: #6366f1; }
-.btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer;}
+.btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s;}
+.btn-outline:active { transform: scale(0.95); }
 .client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; cursor: pointer;}
 .client-card:active { transform: scale(0.97); }
 .c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
