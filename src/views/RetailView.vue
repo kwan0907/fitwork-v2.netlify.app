@@ -11,7 +11,6 @@ const selectedBranch = ref('觀塘店')
 const selectedTier = ref('無折扣')
 const showDropdown = ref(false)
 
-// 💡 結帳日期狀態，預設為當天
 const checkoutDate = ref(new Date().toISOString().split('T')[0])
 
 const tierMapping = {
@@ -120,16 +119,18 @@ const netProfit = computed(() => totalRevenue.value - totalCost.value)
 async function finalizeCheckout(payeeName) {
   if (!selectedClient.value) return alert('請在上方先選擇紀錄對象！')
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
-  
-  // 💡 關鍵：統一分店名稱格式，確保庫存更新能對應到正確的 branch (去除'店'字)
   const branchKey = selectedBranch.value.replace('店','')
+
+  // 💡 自動抓取登入者的 Email 綁定專屬權限
+  const { data: authData } = await supabase.auth.getSession()
+  const userEmail = authData?.session?.user?.email
+  if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
   const [yyyy, mm, dd] = checkoutDate.value.split('-')
   const now = new Date()
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
-  // 1. 寫入交易紀錄
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
@@ -141,39 +142,37 @@ async function finalizeCheckout(payeeName) {
     handled_by: payeeName, 
     staff: payeeName,
     created_at: fullIsoCreatedAt,
+    own_email: userEmail, // ✅ 寫入專屬 Email
     note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 2. 💡 修正並優化庫存扣減邏輯
   let stockUpdateFailed = false;
   for (const item of cart.value) {
     const currentQty = item.current_stock || 0
     const newQty = currentQty - item.qty
     
-    // 使用精確的名稱與分店進行 Upsert
     const { error: stockError } = await supabase
       .from('stock')
       .upsert(
-        { prod_name: item.name, branch: branchKey, quantity: newQty }, 
-        { onConflict: 'prod_name,branch' }
+        { prod_name: item.name, branch: branchKey, quantity: newQty, own_email: userEmail }, // ✅ 綁定專屬庫存
+        { onConflict: 'prod_name,branch,own_email' }
       )
       
     if (stockError) {
-      console.error(`庫存更新失敗 (${item.name}):`, stockError)
+      console.error(`專屬庫存更新失敗 (${item.name}):`, stockError)
       stockUpdateFailed = true;
     }
   }
 
   if (stockUpdateFailed) {
-      alert(`⚠️ 結帳成功，但部分商品庫存扣減失敗！請手動至「庫存管理」確認。\n日期: ${checkoutDate.value}\n收現金 $${totalRevenue.value}`)
+      alert(`⚠️ 結帳成功，但部分私人庫存扣減失敗！請手動至「庫存管理」確認。\n日期: ${checkoutDate.value}\n收現金 $${totalRevenue.value}`)
   } else {
-      alert(`✅ 結帳成功！(庫存已自動扣除)\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
+      alert(`✅ 結帳成功！(您的私人庫存已自動扣除)\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
   }
   
   cart.value = []; selectedClient.value = null; searchClient.value = ''; showCheckoutModal.value = false; 
-  // 重新同步確保畫面數字更新
   await store.syncAll() 
 }
 </script>

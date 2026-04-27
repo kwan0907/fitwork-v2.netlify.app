@@ -3,22 +3,17 @@ import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
-// 🌟 1. 引入 Chart.js 相關套件
 import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
-
-// 🌟 2. 註冊 Chart.js 元件
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 const store = useMainStore()
 
-// --- 全局篩選狀態 ---
 const filterTime = ref('month')
 const customStart = ref('')
 const customEnd = ref('')
 const filterBranch = ref('全部分店')
 
-// --- 編輯試堂與查看名單狀態 ---
 const showEditModal = ref(false)
 const showNewClientsModal = ref(false) 
 const showPackageSalesModal = ref(false)
@@ -30,7 +25,6 @@ const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月',
 const getDayStr = (d) => new Date(d).getDate().toString().padStart(2, '0')
 const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
 
-// 💡 優化：處理「免預約」客戶在名單上的時間顯示防呆
 const formatTrialDateDisplay = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '無紀錄'
   const d = new Date(dateStr)
@@ -45,10 +39,8 @@ const isDateInRange = (dateStr) => {
   if (filterTime.value === 'all') return true
   if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
   if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  
   if (filterTime.value === 'half_1') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 1 && d.getDate() <= 14
   if (filterTime.value === 'half_2') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 15
-  
   if (filterTime.value === 'week') {
     const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
     return d >= weekAgo && d <= now;
@@ -181,7 +173,6 @@ const clientStats = computed(() => {
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
 
-// 🚀 破壞級升級：漏斗智能融合「傳統預約客」與「免預約直接開卡客」
 const trialFunnelStats = computed(() => {
   let bookedList = [];
   let completedList = [];
@@ -189,8 +180,6 @@ const trialFunnelStats = computed(() => {
   let notConvertedList = [];
 
   const now = new Date();
-
-  // 取出首筆交易大腦，用於判定免預約直接付錢的客戶
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t.type === 'income' && t.client_id) {
@@ -204,14 +193,10 @@ const trialFunnelStats = computed(() => {
   store.clients.forEach(c => {
     if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
 
-    // 條件 A：有正常填寫預約日期的客戶
     let hasTrialInDate = c.trial_date && isDateInRange(c.trial_date);
-    
-    // 條件 B：直接購買免預約的霸氣客戶！
     let isDirectConvert = false;
-    let displayTrialDate = c.trial_date; // 預設為他原本的預約日
+    let displayTrialDate = c.trial_date;
 
-    // 如果沒有在區間內的預約，但他已經是 active，我們來查水表看他是不是這區間新加的
     if (!hasTrialInDate && c.status === 'active') {
         let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
         let isNewByFirstTxn = false;
@@ -221,19 +206,16 @@ const trialFunnelStats = computed(() => {
             isNewByFirstTxn = isDateInRange(firstTxnDateStr);
         }
 
-        // 如果是這區間新增的，強制判定為直接轉化的免預約客
         if (isNewByJoinDate || isNewByFirstTxn) {
             isDirectConvert = true;
-            // 隨便給他一個虛擬的預約時間好讓系統能排序
             displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c.join_date ? c.join_date + 'T12:00:00Z' : null);
         }
     }
 
-    // 無論是正常預約還是直接購買，都請進入我們的漏斗計算！
     if (hasTrialInDate || isDirectConvert) {
       const clientData = { ...c, virtual_trial_date: displayTrialDate, is_direct: isDirectConvert };
       
-      bookedList.push(clientData); // 直接加入總預約數
+      bookedList.push(clientData);
 
       let hasRealTransaction = false;
       store.transactions.forEach(t => {
@@ -242,13 +224,11 @@ const trialFunnelStats = computed(() => {
         }
       });
 
-      // 💡 免預約的人一進來就是 100% 轉化成功！
       if (isDirectConvert || c.status === 'active' || hasRealTransaction || c.expiry_date) {
         completedList.push(clientData);
         convertedList.push(clientData);     
       } 
       else {
-        // 傳統預約客，時間過了但還沒買
         const tDate = new Date(c.trial_date);
         if (tDate <= now) {
           completedList.push(clientData);
@@ -716,14 +696,11 @@ const chartOptions = {
 .f-sel { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; font-weight: 700; background: white; outline: none; }
 .custom-date-box { background: #eef2ff; padding: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border: 1px solid #c7d2fe; font-weight: 800; color: #4f46e2; }
 .d-inp { border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; outline: none; font-size: 16px;}
-
 .chart-wrapper { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; margin-bottom: 20px; margin-top: 10px; }
 .chart-header { font-weight: 900; color: #1e293b; font-size: 15px; margin-bottom: 15px; display: flex; align-items: center; }
 .canvas-container { position: relative; height: 220px; width: 100%; }
-
 .section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
 .card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
-
 .funnel-metrics { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .fm-item { text-align: center; flex: 1; }
 .fm-lbl { font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; }
@@ -759,9 +736,7 @@ const chartOptions = {
 .time { font-size: 12px; color: #d97706; background: #fff7ed; padding: 2px 8px; border-radius: 6px; margin-left: 8px; font-weight: 800;}
 .meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
 .empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
-
 .hover-bg:hover { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; }
-
 .source-grid { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 5px; }
 .source-grid::-webkit-scrollbar { height: 4px; }
 .source-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -770,17 +745,14 @@ const chartOptions = {
 .src-val { font-size: 18px; font-weight: 900; color: #1e293b; }
 .text-p { color: #4f46e2; }
 .divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 15px 0; }
-
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .b-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
 .b-card .num { font-size: 24px; font-weight: 900; color: #1e293b; }
 .b-card .loc { font-size: 12px; font-weight: 700; color: #64748b; margin-top: 5px; }
-
 .marathon-card { background: linear-gradient(135deg, #4f46e2, #4338ca); color: white; padding: 25px; border-radius: 20px; margin-top: 20px; box-shadow: 0 10px 25px rgba(79,70,229,0.3); }
 .m-title { font-size: 13px; font-weight: 800; opacity: 0.9; }
 .m-val { font-size: 42px; font-weight: 900; margin: 10px 0; border-bottom: 2px solid rgba(255,255,255,0.2); padding-bottom: 15px; }
 .m-foot { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; opacity: 0.9; }
-
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .cash-card { background: white; padding: 20px; border-radius: 16px; border: 2px solid #e2e8f0; }
 .border-0 { border-color: #3b82f6; background: #eff6ff;} 
@@ -789,33 +761,27 @@ const chartOptions = {
 .border-1 .c-name { color: #ec4899; }
 .c-total { font-size: 24px; font-weight: 900; margin: 10px 0; color: #1e293b; }
 .c-foot { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: #64748b; }
-
 .stat-card { background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 16px; text-align: center; }
 .s-val { font-size: 24px; font-weight: 900; color: #f59e0b; }
 .s-label { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 5px; }
 .s-sub { font-size: 11px; color: #64748b; font-weight: 700; margin-top: 5px; }
-
 .finance-grid { display: grid; gap: 12px; margin-bottom: 15px; }
 .f-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
 .f-val { font-size: 20px; font-weight: 900; margin-bottom: 5px; }
 .f-label { font-size: 12px; color: #64748b; font-weight: 700; }
-.text-green { color: #10b981; } .text-red { color: #ef4444; }
 .profit-box { background: #eef2ff; border: 1.5px solid #6366f1; padding: 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
 .p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }
-
 .shop-pending-box { background: #fffbeb; border: 1.5px solid #fcd34d; padding: 15px 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .sp-icon { font-size: 26px; }
 .sp-title { font-size: 14px; font-weight: 900; color: #b45309; }
 .sp-sub { font-size: 11px; font-weight: 700; color: #d97706; margin-top: 2px; }
 .sp-val { font-size: 24px; font-weight: 900; color: #b45309; }
-
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .edit-modal { background: white; width: 90%; max-width: 400px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center; }
-
 .form-item label { display: block; font-size: 13px; font-weight: 800; color: #475569; margin-bottom: 6px; }
 .mod-inp { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 10px; font-weight: 700; outline: none; color: #1e293b; font-size: 16px; appearance: none;}
 .mod-inp:focus { border-color: #4f46e2; }

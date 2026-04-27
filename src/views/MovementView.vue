@@ -12,20 +12,15 @@ const isNewCustomer = ref(false)
 const isReferral = ref(false)
 const showDropdown = ref(false)
 
-// 💡 新增：結帳日期狀態，預設為當天（格式：YYYY-MM-DD），支援候補紀錄
 const checkoutDate = ref(new Date().toISOString().split('T')[0])
 
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
-// 💡 核心更新：新增了「介紹朋友贈堂」項目
 const packages = {
   'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 0 },
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
   'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
   'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
-  
-  // 💡 新增：體驗卡30人次。
-  // 設定 baseCost: 0 保證不會扣減淨利潤，但結算大腦會自動把它加進應付舖頭的黃色卡片！
   'exp_30': { name: '🎟️ 體驗卡30人次', price: 0, baseCost: 750 } 
 }
 
@@ -42,12 +37,10 @@ function selectClient(c) {
   isNewCustomer.value = c.status === 'prospect'
 }
 
-// 💡 自動防呆計算
 const exCalc = computed(() => {
   let p = packages[selectedPkg.value].price
   let c = packages[selectedPkg.value].baseCost
   
-  // 如果已經選了「介紹朋友贈堂」，就不需要再重複疊加轉介紹優惠
   if (isReferral.value && selectedPkg.value !== 'referral_free') {
     c += 52
     if (selectedPkg.value === 'trial') p = 0
@@ -63,16 +56,19 @@ const exCalc = computed(() => {
 async function handleCheckout(staff) {
   if (!selectedClient.value) return alert('請先搜尋並選擇客戶！')
 
+  // 💡 自動抓取登入者的 Email 綁定專屬權限
+  const { data: authData } = await supabase.auth.getSession()
+  const userEmail = authData?.session?.user?.email
+  if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+
   const calc = exCalc.value
   const branch = selectedClient.value.branch || '觀塘'
   const pkgName = packages[selectedPkg.value].name.split(' ')[1] || packages[selectedPkg.value].name
 
-  // 設定分類，讓流水帳看起來更清楚
   let categoryStr = '運動套票'
   if (selectedPkg.value === 'trial') categoryStr = '試堂'
   if (selectedPkg.value === 'referral_free') categoryStr = '贈堂'
 
-  // 💡 關鍵修復：將選擇的日期轉換為完整的 ISO 時間格式，讓 Supabase 強制接受
   const [yyyy, mm, dd] = checkoutDate.value.split('-')
   const now = new Date()
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
@@ -86,16 +82,16 @@ async function handleCheckout(staff) {
     profit: calc.profit,
     branch: branch, 
     client_id: selectedClient.value.id, 
-    client_name: selectedClient.value.name, // ✅ 修復：強制把客戶名稱寫入，記帳頁面就能顯示了！
+    client_name: selectedClient.value.name, 
     staff: staff, 
     handled_by: staff,
-    created_at: fullIsoCreatedAt, // ✅ 修復：將日期強制設定為你所選擇的補紀錄日期
+    created_at: fullIsoCreatedAt,
+    own_email: userEmail, // ✅ 寫入私人 Email
     note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 買套票自動升級為正式客戶並增加次數 (贈堂或試堂不加套票次數)
   if (selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free') {
     await supabase.from('clients').update({ 
       status: 'active', 
@@ -103,7 +99,6 @@ async function handleCheckout(staff) {
     }).eq('id', selectedClient.value.id)
   }
 
-  // 💡 提示框加入日期顯示，讓你確認候補成功
   alert(`✅ 結帳成功！\n日期: ${checkoutDate.value}\n由 ${staff} 收取營業額 $${calc.price}\n(淨利潤: $${calc.profit})`)
   selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
   store.syncAll() 
@@ -170,19 +165,15 @@ async function handleCheckout(staff) {
 .page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
 .glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 15px; border: 1px solid #e2e8f0; }
 .form-item label { display: block; margin-bottom: 6px; font-weight: 800; font-size: 13px; color: #1e293b; }
-
-/* 確保不放大 */
 .modern-inp, .modern-select { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
 .modern-inp:focus { border-color: #4f46e2; }
 .highlight-sel { border: 2px solid #4f46e2; color: #4f46e2; font-weight: 900; background: #eef2ff; }
-
 .search-rel { position: relative; }
 .drop-menu { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 12px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
 .drop-item { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 700; color: #333; }
 .drop-item:hover { background: #f8fafc; }
 .sub-text { font-size: 12px; color: #64748b; font-weight: normal; margin-left: 5px; }
 .selected-badge { background: #eef2ff; color: #4f46e2; padding: 8px 12px; border-radius: 10px; margin-top: 10px; font-weight: 800; font-size: 13px; }
-
 .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
 .t-title { font-weight: 800; font-size: 14px; color: #1e293b; }
 .t-sub { font-size: 11px; color: #f59e0b; font-weight: 700; margin-top: 2px; }
@@ -191,13 +182,11 @@ async function handleCheckout(staff) {
 .toggle.on { background: #4f46e2; }
 .toggle.on::after { transform: translateX(20px); }
 .divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 10px 0; }
-
 .compact-total-display { background: #eef2ff; border: 2px solid #4f46e2; border-radius: 16px; padding: 15px 20px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
 .t-label { color: #64748b; font-weight: 800; font-size: 12px; }
 .t-val { font-size: 32px; font-weight: 900; color: #4f46e2; margin: 0; line-height: 1; }
 .p-label { font-size: 12px; font-weight: 800; color: #475569; }
 .text-red { color: #ef4444 !important; }
-
 .payee-buttons { display: flex; gap: 10px; }
 .payee-btn { flex: 1; padding: 15px; border-radius: 14px; border: none; font-weight: 900; color: white; font-size: 15px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
 .payee-btn:active { transform: scale(0.95); }

@@ -12,12 +12,11 @@ const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股�
 const incCategories = ['公司票', '其他收入']
 const expCategories = ['廣告費用', '觀塘租金', '中環租金', '馬拉松費用', '產品採購', '支付30%', '其他支出']
 
-// 💡 暫存表單
 const expForm = ref({
   type: 'expense',
   amount: '',
   note: '',
-  client_name: '', // 💡 關聯客戶
+  client_name: '', 
   staff: staffList.value[0],
   category: '廣告費用',
   ad_inquiries: 0,
@@ -25,23 +24,19 @@ const expForm = ref({
   date: new Date().toISOString().split('T')[0]
 })
 
-// 💡 抓取系統內所有客戶名單供下拉選擇
 const activeClientsOptions = computed(() => {
   return store.clients.map(c => c.name).sort((a,b) => a.localeCompare(b, 'zh-HK'))
 })
 
-// 💡 智能解析大腦：優先讀取資料庫的 client_name，並相容舊版 【】 格式
 const getDisplayData = (t) => {
   let client = t.client_name || null
   let text = t.note || '無備註'
   
-  // 1. 相容舊版或手動輸入的格式 (例如：【王小明】 買套票)
   const m = text.match(/^【(.*?)】\s*(.*)$/)
   if (m) {
     if (!client) client = m[1]
     text = m[2] || '無其他備註'
   } 
-  // 2. 處理零售系統傳來的格式 (例如：王小明 (蛋白素x1) -> 把前面的名字藏起來)
   else if (client && text.startsWith(client + ' (')) {
     text = text.replace(client + ' ', '')
   }
@@ -49,7 +44,6 @@ const getDisplayData = (t) => {
   return { client, text }
 }
 
-// 按日期分組流水帳
 const groupedTxns = computed(() => {
   const g = {}
   store.transactions.forEach(t => {
@@ -60,7 +54,6 @@ const groupedTxns = computed(() => {
   return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>new Date(b.date)-new Date(a.date))
 })
 
-// --- 新增/編輯視窗 ---
 function openExpForm() {
   editingTxn.value = null
   expForm.value = {
@@ -75,7 +68,6 @@ function openEditTransaction(t) {
   const d = new Date(t.created_at)
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
 
-  // 💡 自動完美還原客戶名稱與備註
   let extractedClient = t.client_name || ''
   let extractedNote = t.note || ''
   
@@ -98,11 +90,13 @@ function openEditTransaction(t) {
   showExpModal.value = true
 }
 
-// --- 儲存至資料庫 ---
 async function saveTransaction() {
   if (!expForm.value.amount) return alert('請輸入金額！')
   
-  // 儲存時，保持備註的相容性
+  const { data: authData } = await supabase.auth.getSession()
+  const userEmail = authData?.session?.user?.email
+  if (!userEmail) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
+  
   let finalNote = expForm.value.note || ''
   if (expForm.value.client_name && !finalNote.startsWith(`【${expForm.value.client_name}】`)) {
     finalNote = `【${expForm.value.client_name}】 ${finalNote}`.trim()
@@ -110,17 +104,17 @@ async function saveTransaction() {
 
   const amt = Number(expForm.value.amount)
   
-  // 💡 關鍵修復：確保 client_name 確實被打包進去
   const data = { 
     ...expForm.value, 
     amount: amt, 
     note: finalNote, 
-    client_name: expForm.value.client_name || null, // ✅ 確保有值，不會再被丟掉
+    client_name: expForm.value.client_name || null, 
+    own_email: userEmail, // ✅ 寫入專屬 Email
     profit: expForm.value.type === 'income' ? amt : -amt,
     handled_by: expForm.value.staff 
   }
   
-  delete data.date // ✅ 只刪除 date，保留了 client_name 寫入資料庫
+  delete data.date 
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
@@ -148,7 +142,6 @@ async function saveTransaction() {
   }
 }
 
-// --- 刪除紀錄 ---
 async function handleDeleteTransaction(id) {
   if (confirm('⚠️ 確定要永久刪除這筆收支紀錄嗎？\n此動作無法復原！')) {
     const { error } = await supabase.from('transactions').delete().eq('id', id)
@@ -276,37 +269,29 @@ async function handleDeleteTransaction(id) {
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; }
 .card { background: white; border-radius: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
 .date-header { font-size: 13px; font-weight: 900; color: #64748b; margin: 15px 0 8px; }
-
 .txn-item { display: flex; align-items: center; padding: 18px 0; border-bottom: 1px dashed #e2e8f0; }
 .txn-item:last-child { border-bottom: none; }
-
 .t-header-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .t-cat { font-weight: 900; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 8px; border: 1px solid #e2e8f0;}
 .t-client-highlight { font-weight: 900; font-size: 14px; color: #ec4899; background: #fdf2f8; padding: 4px 10px; border-radius: 8px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
-
 .t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 12px; margin-bottom: 6px; }
 .t-desc { font-size: 13px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
 .icon-lbl { font-size: 12px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
 .t-desc-val { color: #1e293b; font-weight: 900; font-size: 15px; } 
 .t-staff { font-weight: 900; color: #4f46e2; font-size: 14px; } 
-
 .t-ad { font-size: 11px; color: #d97706; margin-top: 8px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 4px 8px; border-radius: 6px; }
 .t-amt { font-weight: 900; font-size: 22px; }
 .t-amt.g { color: #10b981; }
 .t-amt.r { color: #ef4444; }
-
 .icon-btn { background: #f1f5f9; border: none; font-size: 14px; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 .icon-btn:active { transform: scale(0.9); }
-
 .form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #475569; }
 .modern-inp, .modern-select { width: 100%; border: 2px solid #e2e8f0; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; background: #f8fafc; appearance: none;}
 .modern-inp:focus, .modern-select:focus { border-color: #4f46e2; background: white;}
 .amt-inp { font-size: 26px; font-weight: 900; color: #4f46e2; text-align: center;}
-
 .t-btn { flex: 1; padding: 12px; border-radius: 12px; font-weight: 800; border: none; background: #f1f5f9; color: #64748b; cursor: pointer; transition: 0.2s; }
 .t-btn.activeI { background: #10b981; color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.2);}
 .t-btn.activeE { background: #ef4444; color: white; box-shadow: 0 4px 10px rgba(239,68,68,0.2);}
-
 .ad-box { background: #fff7ed; border: 1px solid #fed7aa; padding: 15px; border-radius: 12px; margin-top: 15px; }
 .ad-title { font-weight: 900; color: #d97706; margin-bottom: 10px; font-size: 13px; }
 .btn-primary { background: #4f46e2; color: white; border: none; transition: 0.2s;}

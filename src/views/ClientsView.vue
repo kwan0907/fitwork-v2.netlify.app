@@ -103,7 +103,12 @@ function openAddModal() {
 async function handleAddClient() {
   if (!newClient.value.name) return alert('請填寫姓名')
   
-  const dataToInsert = { ...newClient.value }
+  // 💡 自動抓取登入者的 Email 綁定專屬權限
+  const { data: authData } = await supabase.auth.getSession()
+  const userEmail = authData?.session?.user?.email
+  if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+  
+  const dataToInsert = { ...newClient.value, own_email: userEmail } // ✅ 寫入私人 Email
   
   if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
       dataToInsert.referred_by_id = null
@@ -443,16 +448,12 @@ async function handleImport(event) {
 .badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
-
-/* 💡 試堂日期高亮標籤 */
 .trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; margin-left: 8px; font-size: 11px; }
-
 .c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center;}
 .pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
 .t-10 { background: #3b82f6; }
 .t-35 { background: #ec4899; }
 .pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
-
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
