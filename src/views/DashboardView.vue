@@ -22,17 +22,19 @@ const filterBranch = ref('全部分店')
 const showEditModal = ref(false)
 const showNewClientsModal = ref(false) 
 const showPackageSalesModal = ref(false)
-const showFunnelModal = ref(false) // 💡 新增：控制查看漏斗名單的開關
-const funnelViewType = ref('booked') // 控制漏斗顯示哪個階段的名單
+const showFunnelModal = ref(false) 
+const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
 const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
 const getDayStr = (d) => new Date(d).getDate().toString().padStart(2, '0')
 const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
 
+// 💡 優化：處理「免預約」客戶在名單上的時間顯示防呆
 const formatTrialDateDisplay = (dateStr) => {
-  if (!dateStr) return '無紀錄'
+  if (!dateStr || dateStr === '無紀錄') return '無紀錄'
   const d = new Date(dateStr)
+  if (isNaN(d)) return dateStr
   return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
 
@@ -136,7 +138,7 @@ const financialStats = computed(() => {
 
 const clientStats = computed(() => {
   let newClientsList = [];
-  const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
+  const sourceCount = { '廣告': 0, '廣告+朋友介紹': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
 
   const firstTxnMap = {};
   store.transactions.forEach(t => {
@@ -179,7 +181,7 @@ const clientStats = computed(() => {
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
 
-// 💡 核心升級：漏斗系統現在會把各個名單都打包儲存起來
+// 🚀 破壞級升級：漏斗智能融合「傳統預約客」與「免預約直接開卡客」
 const trialFunnelStats = computed(() => {
   let bookedList = [];
   let completedList = [];
@@ -188,34 +190,75 @@ const trialFunnelStats = computed(() => {
 
   const now = new Date();
 
-  store.clients.forEach(c => {
-    if (c.trial_date && isDateInRange(c.trial_date)) {
-      if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
-
-      bookedList.push(c); // 總預約加入名單
-
-      const tDate = new Date(c.trial_date);
-      
-      let hasRealTransaction = false;
-      store.transactions.forEach(t => {
-        if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(c.name)) {
-          hasRealTransaction = true;
-        }
-      });
-
-      if (c.status === 'active' || hasRealTransaction || c.expiry_date) {
-        completedList.push(c);
-        convertedList.push(c);     
-      } 
-      else if (tDate <= now) {
-        completedList.push(c);
-        notConvertedList.push(c);
+  // 取出首筆交易大腦，用於判定免預約直接付錢的客戶
+  const firstTxnMap = {};
+  store.transactions.forEach(t => {
+    if (t.type === 'income' && t.client_id) {
+      const tDate = new Date(t.created_at);
+      if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
+        firstTxnMap[t.client_id] = tDate;
       }
     }
   });
 
-  // 依照預約時間排序
-  const sortByTrial = (a, b) => new Date(b.trial_date) - new Date(a.trial_date);
+  store.clients.forEach(c => {
+    if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
+
+    // 條件 A：有正常填寫預約日期的客戶
+    let hasTrialInDate = c.trial_date && isDateInRange(c.trial_date);
+    
+    // 條件 B：直接購買免預約的霸氣客戶！
+    let isDirectConvert = false;
+    let displayTrialDate = c.trial_date; // 預設為他原本的預約日
+
+    // 如果沒有在區間內的預約，但他已經是 active，我們來查水表看他是不是這區間新加的
+    if (!hasTrialInDate && c.status === 'active') {
+        let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
+        let isNewByFirstTxn = false;
+        let firstTxnDateStr = null;
+        if (firstTxnMap[c.id]) {
+            firstTxnDateStr = firstTxnMap[c.id].toISOString();
+            isNewByFirstTxn = isDateInRange(firstTxnDateStr);
+        }
+
+        // 如果是這區間新增的，強制判定為直接轉化的免預約客
+        if (isNewByJoinDate || isNewByFirstTxn) {
+            isDirectConvert = true;
+            // 隨便給他一個虛擬的預約時間好讓系統能排序
+            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c.join_date ? c.join_date + 'T12:00:00Z' : null);
+        }
+    }
+
+    // 無論是正常預約還是直接購買，都請進入我們的漏斗計算！
+    if (hasTrialInDate || isDirectConvert) {
+      const clientData = { ...c, virtual_trial_date: displayTrialDate, is_direct: isDirectConvert };
+      
+      bookedList.push(clientData); // 直接加入總預約數
+
+      let hasRealTransaction = false;
+      store.transactions.forEach(t => {
+        if ((t.category === '運動套票' || t.category === '運動' || t.category === '零售收入') && t.note && t.note.includes(c.name)) {
+          hasRealTransaction = true;
+        }
+      });
+
+      // 💡 免預約的人一進來就是 100% 轉化成功！
+      if (isDirectConvert || c.status === 'active' || hasRealTransaction || c.expiry_date) {
+        completedList.push(clientData);
+        convertedList.push(clientData);     
+      } 
+      else {
+        // 傳統預約客，時間過了但還沒買
+        const tDate = new Date(c.trial_date);
+        if (tDate <= now) {
+          completedList.push(clientData);
+          notConvertedList.push(clientData);
+        }
+      }
+    }
+  });
+
+  const sortByTrial = (a, b) => new Date(b.virtual_trial_date || 0) - new Date(a.virtual_trial_date || 0);
   bookedList.sort(sortByTrial);
   completedList.sort(sortByTrial);
   convertedList.sort(sortByTrial);
@@ -236,17 +279,16 @@ const trialFunnelStats = computed(() => {
   };
 })
 
-// 💡 控制打開漏斗名單的功能
 function openFunnelModal(type) {
   funnelViewType.value = type
   showFunnelModal.value = true
 }
 
 const funnelModalData = computed(() => {
-  if (funnelViewType.value === 'booked') return { title: '📅 總預約名單', list: trialFunnelStats.value.bookedList }
-  if (funnelViewType.value === 'completed') return { title: '🏃 已出席試堂名單', list: trialFunnelStats.value.completedList }
+  if (funnelViewType.value === 'booked') return { title: '📅 總預約 / 加入名單', list: trialFunnelStats.value.bookedList }
+  if (funnelViewType.value === 'completed') return { title: '🏃 已出席名單', list: trialFunnelStats.value.completedList }
   if (funnelViewType.value === 'converted') return { title: '👑 成功開卡名單', list: trialFunnelStats.value.convertedList }
-  if (funnelViewType.value === 'notConverted') return { title: '👀 僅試堂 (未買) 名單', list: trialFunnelStats.value.notConvertedList }
+  if (funnelViewType.value === 'notConverted') return { title: '👀 僅預約 (未買) 名單', list: trialFunnelStats.value.notConvertedList }
   return { title: '', list: [] }
 })
 
@@ -509,6 +551,7 @@ const chartOptions = {
       <div style="font-size: 13px; font-weight: 900; color: #1e293b; margin-bottom: 10px;">📊 新客戶來源分析</div>
       <div class="source-grid">
         <div class="src-item"><div class="src-lbl">廣告</div><div class="src-val">{{ clientStats.sources['廣告'] }}</div></div>
+        <div class="src-item" style="min-width: 75px;"><div class="src-lbl">廣告+介紹</div><div class="src-val text-p">{{ clientStats.sources['廣告+朋友介紹'] }}</div></div>
         <div class="src-item"><div class="src-lbl">介紹</div><div class="src-val text-p">{{ clientStats.sources['朋友介紹'] }}</div></div>
         <div class="src-item"><div class="src-lbl">傳單</div><div class="src-val">{{ clientStats.sources['傳單'] }}</div></div>
         <div class="src-item"><div class="src-lbl">朋友</div><div class="src-val">{{ clientStats.sources['朋友'] }}</div></div>
@@ -643,6 +686,7 @@ const chartOptions = {
             <div>
               <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
                 {{ idx + 1 }}. {{ c.name }}
+                <span v-if="c.is_direct" style="font-size: 10px; color: #fff; background: #ef4444; padding: 2px 6px; border-radius: 6px; margin-left: 6px; font-weight: 900;">⚡️ 直接購買</span>
                 <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
               </div>
               <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
@@ -650,8 +694,10 @@ const chartOptions = {
               </div>
             </div>
             <div style="text-align: right;">
-              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">預約日期</div>
-              <div style="font-size: 13px; font-weight: 900; color: #4f46e2;">{{ formatTrialDateDisplay(c.trial_date) }}</div>
+              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">{{ c.is_direct ? '判定加入' : '預約日期' }}</div>
+              <div style="font-size: 13px; font-weight: 900; color: #4f46e2;">
+                {{ c.is_direct ? '免預約' : formatTrialDateDisplay(c.virtual_trial_date) }}
+              </div>
             </div>
           </div>
         </div>
@@ -716,8 +762,10 @@ const chartOptions = {
 
 .hover-bg:hover { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; }
 
-.source-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-.src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; }
+.source-grid { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 5px; }
+.source-grid::-webkit-scrollbar { height: 4px; }
+.source-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+.src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; flex: 1; min-width: 50px; }
 .src-lbl { font-size: 11px; color: #64748b; font-weight: 800; margin-bottom: 4px; white-space: nowrap; }
 .src-val { font-size: 18px; font-weight: 900; color: #1e293b; }
 .text-p { color: #4f46e2; }
