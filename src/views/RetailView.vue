@@ -126,9 +126,17 @@ async function finalizeCheckout(payeeName) {
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
   const branchKey = selectedBranch.value.replace('店','')
 
+  // 💡 解決痛點：在此處強制寫入 client_name，讓記帳頁面能直接顯示
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', category: '零售收入', amount: totalRevenue.value, profit: netProfit.value,
-    branch: branchKey, client_id: selectedClient.value.id, handled_by: payeeName, staff: payeeName,
+    type: 'income', 
+    category: '零售收入', 
+    amount: totalRevenue.value, 
+    profit: netProfit.value,
+    branch: branchKey, 
+    client_id: selectedClient.value.id, 
+    client_name: selectedClient.value.name, // ✅ 就是少了這一行！現在加回去了
+    handled_by: payeeName, 
+    staff: payeeName,
     note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
@@ -197,8 +205,7 @@ async function finalizeCheckout(payeeName) {
       <div class="checkout-modal">
         <div class="m-header">🛒 結帳明細與總結 <button class="close-x" @click="showCheckoutModal=false">✕</button></div>
         
-        <!-- ✅ 改後完整版 -->
-<div class="cart-header-row">
+        <div class="cart-header-row">
   <span class="cart-header-title">🛍️ 已選商品（{{ totalItems }} 件）</span>
   <button class="clear-all-btn" @click="cart = []">🗑️ 清空</button>
 </div>
@@ -224,8 +231,7 @@ async function finalizeCheckout(payeeName) {
           <div class="s-row" style="margin-top:10px;"><span style="color:#4f46e2; font-weight:900; font-size:16px;">🚀 實收淨利潤</span> <span style="color:#4f46e2; font-weight:900; font-size:26px;">$ {{ Math.round(netProfit) }}</span></div>
         </div>
 
-        <!-- ✅ 改成 -->
-<div class="confirm-section">
+        <div class="confirm-section">
   <p class="confirm-label">💳 選擇收款人完成結帳</p>
   <div class="payee-buttons">
     <button v-for="(payee, index) in payees" :key="payee" class="payee-btn" :class="'style-' + (index % 2)" @click="finalizeCheckout(payee)">
