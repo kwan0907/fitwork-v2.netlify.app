@@ -112,18 +112,16 @@ function handleActionEdit() {
 
 function handleActionMovement() {
   showActionModal.value = false
-  // 1. 把客戶名字存在 store 的 quickActionClient
   store.quickActionClient = selectedClientForAction.value.name
-  // 2. 切換畫面到運動收銀 (請確保你的 App.vue 裡這頁叫做 'movement' 或是 'MovementView'，若不同請自行微調)
-  store.view = 'movement' 
+  // 試著把這裡改成大寫 M，或者去你的 App.vue 看你到底是用什麼字串命名這個頁面的
+  store.view = 'Movement' 
 }
 
 function handleActionRetail() {
   showActionModal.value = false
-  // 1. 把客戶名字存在 store 的 quickActionClient
   store.quickActionClient = selectedClientForAction.value.name
-  // 2. 切換畫面到零售收銀
-  store.view = 'retail' 
+  // 試著把這裡改成大寫 R
+  store.view = 'Retail' 
 }
 
 // --- 功能函數 ---
