@@ -18,8 +18,9 @@ const customStart = ref('')
 const customEnd = ref('')
 const filterBranch = ref('全部分店')
 
-// --- 編輯試堂狀態 ---
+// --- 編輯試堂與查看名單狀態 ---
 const showEditModal = ref(false)
+const showNewClientsModal = ref(false) // 💡 新增：控制查看新增客戶名單的開關
 const editingClient = ref(null)
 
 const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
@@ -34,7 +35,6 @@ const isDateInRange = (dateStr) => {
   if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
   if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
   
-  // 精準切割上半月與下半月
   if (filterTime.value === 'half_1') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 1 && d.getDate() <= 14
   if (filterTime.value === 'half_2') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 15
   
@@ -72,7 +72,6 @@ const upcomingTrials = computed(() => {
     .slice(0, 5)
 })
 
-// 💡 升級版：財務結算大腦 
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
   let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
@@ -126,26 +125,61 @@ const financialStats = computed(() => {
   };
 })
 
-// 計算區間新增客戶與來源
+// 💡 全新優化大腦：雙重判定新增客戶 (解決漏抓問題)
 const clientStats = computed(() => {
-  let newClientsTotal = 0;
+  let newClientsList = [];
   const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
-  
+
+  // 1. 預先整理每個客戶的「第一筆消費日期」，用來抓取「舊預約客轉化」
+  const firstTxnMap = {};
+  store.transactions.forEach(t => {
+    if (t.type === 'income' && t.client_id) {
+      const tDate = new Date(t.created_at);
+      if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
+        firstTxnMap[t.client_id] = tDate;
+      }
+    }
+  });
+
   store.clients.forEach(c => {
-    if (isDateInRange(c.join_date)) {
+    // 只計算目前已經是正式會員的人
+    if (c.status !== 'active') return;
+
+    // 判定條件 A：加入日期 (join_date) 落在區間內
+    let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
+
+    // 判定條件 B：防呆！如果 join_date 不在區間，但他的「首筆消費」落在區間內，強制判定為本區間新客！
+    let isNewByFirstTxn = false;
+    if (firstTxnMap[c.id]) {
+        isNewByFirstTxn = isDateInRange(firstTxnMap[c.id].toISOString());
+    }
+
+    // 只要符合任何一個條件，就算入新增客戶
+    if (isNewByJoinDate || isNewByFirstTxn) {
         if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
-            newClientsTotal++;
-            const src = c.source || '其他';
-            if (sourceCount[src] !== undefined) sourceCount[src]++;
-            else sourceCount['其他']++;
+            // 確保不重複計算同一個客戶
+            if (!newClientsList.find(x => x.id === c.id)) {
+                // 取較為精準的日期來顯示給你看
+                const displayDate = (isNewByJoinDate && c.join_date) 
+                                  ? c.join_date 
+                                  : (firstTxnMap[c.id] ? firstTxnMap[c.id].toISOString().split('T')[0] : '無紀錄');
+                
+                newClientsList.push({ ...c, display_join_date: displayDate });
+
+                const src = c.source || '其他';
+                if (sourceCount[src] !== undefined) sourceCount[src]++;
+                else sourceCount['其他']++;
+            }
         }
     }
   })
-  
-  return { total: newClientsTotal, sources: sourceCount }
+
+  // 依日期排序，最新的排最上面
+  newClientsList.sort((a,b) => new Date(b.display_join_date) - new Date(a.display_join_date));
+
+  return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
 
-// 💡 全新：智慧試堂轉化漏斗統計大腦 (高精準雙重交叉驗證版)
 const trialFunnelStats = computed(() => {
   let totalBooked = 0;
   let completedTrials = 0;
@@ -155,15 +189,13 @@ const trialFunnelStats = computed(() => {
   const now = new Date();
 
   store.clients.forEach(c => {
-    // 1. 檢查試堂日期是否落在篩選區間內
     if (c.trial_date && isDateInRange(c.trial_date)) {
       if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
 
-      totalBooked++; // 總預約數 +1
+      totalBooked++; 
 
       const tDate = new Date(c.trial_date);
       
-      // 💡 精準度優化 1：檢查財務紀錄，看是否有該客戶實質購買套票的交易紀錄
       let hasRealTransaction = false;
       store.transactions.forEach(t => {
         if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(c.name)) {
@@ -171,13 +203,10 @@ const trialFunnelStats = computed(() => {
         }
       });
 
-      // 💡 精準度優化 2：只要客戶已切換為 active、有實質交易，或有設定到期日，就強制判定為「成功開卡」
-      // 徹底解決「客戶提早買卡但時間還沒到」或「同事忘記改狀態但已經收錢」的數據誤差
       if (c.status === 'active' || hasRealTransaction || c.expiry_date) {
-        completedTrials++; // 既然都買卡了，絕對算已出席
-        converted++;       // 成功開卡納入結算
+        completedTrials++; 
+        converted++;       
       } 
-      // 💡 如果還沒買卡，但試堂時間確實已經過去了，則判定為「僅試堂未轉化」
       else if (tDate <= now) {
         completedTrials++;
         notConverted++;
@@ -391,13 +420,21 @@ const chartOptions = {
         </div>
       </div>
     </div>
+    
     <div class="section-title" style="margin-top: 25px;">🌟 區間客戶增長與來源</div>
     <div class="card" style="margin-bottom: 20px; padding: 20px;">
       <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px;">
-        <div>
-          <div style="font-size: 13px; color: #64748b; font-weight: 800;">新增客戶數</div>
-          <div style="font-size: 36px; font-weight: 900; color: #4f46e2; line-height: 1.1;">{{ clientStats.total }} <span style="font-size: 14px; color: #64748b;">人</span></div>
+        
+        <div @click="showNewClientsModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-left: -10px; border: 1px solid transparent; transition: 0.2s;">
+          <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; gap: 6px;">
+            新增客戶數
+            <span style="background: #eef2ff; color: #4f46e2; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
+          </div>
+          <div style="font-size: 36px; font-weight: 900; color: #4f46e2; line-height: 1.1; margin-top: 5px;">
+            {{ clientStats.total }} <span style="font-size: 14px; color: #64748b;">人</span>
+          </div>
         </div>
+
         <div style="text-align:right;">
           <div style="font-size: 13px; color: #64748b; font-weight: 800;">售出 / 續卡數</div>
           <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1;">{{ packageStats.pkg850 + packageStats.pkg2550 }} <span style="font-size: 14px; color: #64748b;">張</span></div>
@@ -452,24 +489,48 @@ const chartOptions = {
           <div class="form-item"><label>客戶姓名</label><input v-model="editingClient.name" class="mod-inp"></div>
           <div class="form-item" style="margin-top:12px;"><label>聯絡電話</label><input v-model="editingClient.phone" class="mod-inp"></div>
           <div class="form-item" style="margin-top:12px;"><label>預約日期與時間</label><input type="datetime-local" v-model="editingClient.trial_date" class="mod-inp"></div>
-          
           <div class="form-item" style="margin-top:12px;">
-            <label>📍 預約試堂地點 (同步分店資料)</label>
-            <select v-model="editingClient.branch" class="mod-inp">
-              <option value="觀塘">觀塘</option>
-              <option value="中環">中環</option>
-              <option value="佐敦">佐敦</option>
-            </select>
+            <label>📍 預約試堂地點</label>
+            <select v-model="editingClient.branch" class="mod-inp"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select>
           </div>
-
           <div class="form-item" style="margin-top:12px;"><label>更改狀態</label>
-            <select v-model="editingClient.status" class="mod-inp">
-              <option value="prospect">👀 維持預約狀態</option>
-              <option value="active">⭐️ 轉為正式會員</option>
-            </select>
+            <select v-model="editingClient.status" class="mod-inp"><option value="prospect">👀 維持預約狀態</option><option value="active">⭐️ 轉為正式會員</option></select>
           </div>
           <button class="btn-save" @click="updateTrial">確認儲存</button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="showNewClientsModal" class="modal-overlay" @click.self="showNewClientsModal = false">
+      <div class="edit-modal" style="max-width: 500px; width: 95%;">
+        <div class="m-header">👥 區間新增客戶名單 <button class="close-x" @click="showNewClientsModal=false">✕</button></div>
+        
+        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #4f46e2;">
+          💡 <b>系統抓取邏輯：</b> 客戶目前必須是「正式會員」，且其「登記加入日期」或「系統首筆消費日期」落在目前選擇的區間內。
+        </div>
+
+        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+          <div v-if="clientStats.list.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
+            區間內尚無符合條件的新增客戶
+          </div>
+          
+          <div v-for="(c, idx) in clientStats.list" :key="c.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+            <div>
+              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
+                {{ idx + 1 }}. {{ c.name }}
+                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
+                📞 {{ c.phone || '無' }} · 來源: {{ c.source || '無' }}
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">判定日期</div>
+              <div style="font-size: 13px; font-weight: 900; color: #4f46e2;">{{ c.display_join_date }}</div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -492,7 +553,6 @@ const chartOptions = {
 .section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
 .card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
 
-/* 🌟 漏斗專屬 CSS */
 .funnel-metrics { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .fm-item { text-align: center; flex: 1; }
 .fm-lbl { font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; }
@@ -504,19 +564,10 @@ const chartOptions = {
 .text-green { color: #10b981; }
 .text-white { color: white; }
 
-/* 💡 優化：手機版漏斗強制維持橫向，並支援左右滑動防破版 */
 @media (max-width: 600px) {
-  .funnel-metrics { 
-    flex-direction: row; 
-    flex-wrap: nowrap; 
-    overflow-x: auto; 
-    padding-bottom: 10px; 
-    gap: 8px; 
-    justify-content: flex-start;
-  }
+  .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }
   .funnel-metrics::-webkit-scrollbar { height: 4px; }
   .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-
   .fm-item { flex: 0 0 auto; min-width: 75px; }
   .fm-lbl { font-size: 11px; margin-bottom: 2px; }
   .fm-val { font-size: 20px; }
@@ -537,6 +588,9 @@ const chartOptions = {
 .time { font-size: 12px; color: #d97706; background: #fff7ed; padding: 2px 8px; border-radius: 6px; margin-left: 8px; font-weight: 800;}
 .meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
 .empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
+
+/* 💡 新增的滑鼠特效 */
+.hover-bg:hover { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; }
 
 .source-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; }
