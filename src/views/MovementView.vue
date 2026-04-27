@@ -12,6 +12,9 @@ const isNewCustomer = ref(false)
 const isReferral = ref(false)
 const showDropdown = ref(false)
 
+// 💡 新增：結帳日期狀態，預設為當天（格式：YYYY-MM-DD），支援候補紀錄
+const checkoutDate = ref(new Date().toISOString().split('T')[0])
+
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 // 💡 核心更新：新增了「介紹朋友贈堂」項目
@@ -69,6 +72,12 @@ async function handleCheckout(staff) {
   if (selectedPkg.value === 'trial') categoryStr = '試堂'
   if (selectedPkg.value === 'referral_free') categoryStr = '贈堂'
 
+  // 💡 關鍵修復：將選擇的日期轉換為完整的 ISO 時間格式，讓 Supabase 強制接受
+  const [yyyy, mm, dd] = checkoutDate.value.split('-')
+  const now = new Date()
+  const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
+  const fullIsoCreatedAt = txnDate.toISOString()
+
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: categoryStr, 
@@ -77,8 +86,10 @@ async function handleCheckout(staff) {
     profit: calc.profit,
     branch: branch, 
     client_id: selectedClient.value.id, 
+    client_name: selectedClient.value.name, // ✅ 修復：強制把客戶名稱寫入，記帳頁面就能顯示了！
     staff: staff, 
     handled_by: staff,
+    created_at: fullIsoCreatedAt, // ✅ 修復：將日期強制設定為你所選擇的補紀錄日期
     note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`
   }])
 
@@ -92,7 +103,8 @@ async function handleCheckout(staff) {
     }).eq('id', selectedClient.value.id)
   }
 
-  alert(`✅ 結帳成功！\n由 ${staff} 收取營業額 $${calc.price}\n(淨利潤: $${calc.profit})`)
+  // 💡 提示框加入日期顯示，讓你確認候補成功
+  alert(`✅ 結帳成功！\n日期: ${checkoutDate.value}\n由 ${staff} 收取營業額 $${calc.price}\n(淨利潤: $${calc.profit})`)
   selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
   store.syncAll() 
 }
@@ -118,6 +130,11 @@ async function handleCheckout(staff) {
           </div>
         </div>
         <div v-if="selectedClient" class="selected-badge">✔ 已選擇: {{ selectedClient.name }}</div>
+      </div>
+      
+      <div class="form-item" style="margin-top:15px;">
+        <label>3. 📅 購買日期 (補紀錄請修改)</label>
+        <input type="date" v-model="checkoutDate" class="modern-inp">
       </div>
     </div>
 
