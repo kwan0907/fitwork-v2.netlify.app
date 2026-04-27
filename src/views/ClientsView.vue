@@ -114,14 +114,14 @@ function handleActionMovement() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
   // 試著把這裡改成大寫 M，或者去你的 App.vue 看你到底是用什麼字串命名這個頁面的
-  store.view = 'Movement' 
+  store.view = 'movement' 
 }
 
 function handleActionRetail() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
   // 試著把這裡改成大寫 R
-  store.view = 'Retail' 
+  store.view = 'retail' 
 }
 
 // --- 功能函數 ---
