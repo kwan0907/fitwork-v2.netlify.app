@@ -23,14 +23,42 @@ const stocktakeNote = ref('')
 
 const payees = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
+// 💡 恢復並優化排序大腦：Shake -> 蘆薈汁 -> 茶 -> 其他
+const sortedBaseProducts = computed(() => {
+  return [...store.products].sort((a, b) => {
+    const getWeight = (p) => {
+      const name = (p.name || '').toLowerCase()
+      if (name.includes('shake') || name.includes('蛋白素')) return 1
+      if (name.includes('蘆薈汁')) return 2
+      if (name.includes('茶')) return 3
+      return 999 // 其他排最後
+    }
+    const weightA = getWeight(a)
+    const weightB = getWeight(b)
+    if (weightA !== weightB) return weightA - weightB
+    return (a.name || '').localeCompare(b.name || '', 'zh-HK')
+  })
+})
+
+// 💡 處理分類與搜尋邏輯
 const filteredProducts = computed(() => {
-  let list = [...store.products]
-  if (selectedCategory.value !== '全部') list = list.filter(p => p.category && p.category.includes(selectedCategory.value.replace('全部', '')))
+  let list = sortedBaseProducts.value
+  
+  // 修正：確保點選「內在營養」能精確抓到包含「內」字的產品
+  if (selectedCategory.value !== '全部') {
+    const target = selectedCategory.value.includes('內') ? '內' : '外'
+    list = list.filter(p => p.category && p.category.includes(target))
+  }
+
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
-    list = list.filter(p => (p.name?.toLowerCase().includes(q)) || (p.name_en?.toLowerCase().includes(q)) || (p.id?.toLowerCase().includes(q)))
+    list = list.filter(p => 
+      (p.name?.toLowerCase().includes(q)) || 
+      (p.name_en?.toLowerCase().includes(q)) || 
+      (p.id?.toLowerCase().includes(q))
+    )
   }
-  return list.sort((a,b) => (a.name||'').localeCompare(b.name||''))
+  return list
 })
 
 const totalStockCost = computed(() => {
@@ -45,31 +73,41 @@ function openAddStock(p) { selectedProduct.value = p; addQty.value = 1; showAddS
 function openConsume(p) { selectedProduct.value = p; consumeQty.value = 1; consumeStaff.value = payees.value[0]; consumePayee.value = payees.value[0]; showConsumeModal.value = true }
 function openStocktake(p) { selectedProduct.value = p; stocktakeQty.value = store.stock[`${p.name}_${selectedBranch.value}`] || 0; stocktakeNote.value = ''; showStocktakeModal.value = true }
 
-async function getUserEmail() {
-  const { data: authData } = await supabase.auth.getSession()
-  return authData?.session?.user?.email
-}
-
+// 💡 強化：更穩定的 Email 抓取方式
 async function handleAddStock() {
   if (addQty.value <= 0) return alert('數量必須大於 0')
-  const userEmail = await getUserEmail()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  const userEmail = user?.email
   if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
   const currentQty = store.stock[`${selectedProduct.value.name}_${selectedBranch.value}`] || 0
   const newQty = currentQty + addQty.value
   
   const { error } = await supabase.from('stock').upsert(
-    { prod_name: selectedProduct.value.name, branch: selectedBranch.value, quantity: newQty, own_email: userEmail },
+    { 
+      prod_name: selectedProduct.value.name, 
+      branch: selectedBranch.value, 
+      quantity: newQty, 
+      own_email: userEmail 
+    },
     { onConflict: 'prod_name,branch,own_email' }
   )
   
-  if (error) alert('進貨失敗: ' + error.message)
-  else { showAddStockModal.value = false; await store.syncAll(); alert('✅ 進貨成功') }
+  if (error) {
+    console.error('進貨詳細錯誤:', error)
+    alert('進貨失敗: ' + error.message)
+  } else { 
+    showAddStockModal.value = false
+    await store.syncAll()
+    alert('✅ 進貨成功') 
+  }
 }
 
 async function handleConsume() {
   if (consumeQty.value <= 0) return alert('數量必須大於 0')
-  const userEmail = await getUserEmail()
+  const { data: { user } } = await supabase.auth.getUser()
+  const userEmail = user?.email
   if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
   const currentQty = store.stock[`${selectedProduct.value.name}_${selectedBranch.value}`] || 0
@@ -79,7 +117,12 @@ async function handleConsume() {
   const totalCost = costPerItem * consumeQty.value
 
   const { error: stockError } = await supabase.from('stock').upsert(
-    { prod_name: selectedProduct.value.name, branch: selectedBranch.value, quantity: currentQty - consumeQty.value, own_email: userEmail },
+    { 
+      prod_name: selectedProduct.value.name, 
+      branch: selectedBranch.value, 
+      quantity: currentQty - consumeQty.value, 
+      own_email: userEmail 
+    },
     { onConflict: 'prod_name,branch,own_email' }
   )
 
@@ -98,7 +141,8 @@ async function handleConsume() {
 
 async function handleStocktake() {
   if (stocktakeQty.value < 0) return alert('數量不能為負數')
-  const userEmail = await getUserEmail()
+  const { data: { user } } = await supabase.auth.getUser()
+  const userEmail = user?.email
   if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
   const currentQty = store.stock[`${selectedProduct.value.name}_${selectedBranch.value}`] || 0
@@ -106,7 +150,12 @@ async function handleStocktake() {
   if (diff === 0) return alert('數量無變化')
 
   const { error: stockError } = await supabase.from('stock').upsert(
-    { prod_name: selectedProduct.value.name, branch: selectedBranch.value, quantity: stocktakeQty.value, own_email: userEmail },
+    { 
+      prod_name: selectedProduct.value.name, 
+      branch: selectedBranch.value, 
+      quantity: stocktakeQty.value, 
+      own_email: userEmail 
+    },
     { onConflict: 'prod_name,branch,own_email' }
   )
 
@@ -200,7 +249,6 @@ async function handleStocktake() {
         <button class="btn-confirm btn-gray" style="margin-top:25px;" @click="handleStocktake">強制覆寫庫存</button>
       </div>
     </div>
-
   </div>
 </template>
 
