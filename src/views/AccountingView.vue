@@ -30,12 +30,23 @@ const activeClientsOptions = computed(() => {
   return store.clients.map(c => c.name).sort((a,b) => a.localeCompare(b, 'zh-HK'))
 })
 
-// 💡 智能解析大腦：精準拆解「客戶」與「買了什麼」
-const formatNoteStr = (noteStr) => {
-  if (!noteStr) return { client: null, text: '無備註' }
-  const m = noteStr.match(/^【(.*?)】\s*(.*)$/)
-  if (m) return { client: m[1], text: m[2] || '無其他備註' }
-  return { client: null, text: noteStr } // 舊資料的回退顯示
+// 💡 智能解析大腦升級：優先讀取資料庫的 client_name，並相容舊版 【】 格式
+const getDisplayData = (t) => {
+  let client = t.client_name || null
+  let text = t.note || '無備註'
+  
+  // 1. 相容舊版或手動輸入的格式 (例如：【王小明】 買套票)
+  const m = text.match(/^【(.*?)】\s*(.*)$/)
+  if (m) {
+    if (!client) client = m[1]
+    text = m[2] || '無其他備註'
+  } 
+  // 2. 處理零售系統傳來的格式 (例如：王小明 (蛋白素x1) -> 把前面的名字藏起來)
+  else if (client && text.startsWith(client + ' (')) {
+    text = text.replace(client + ' ', '')
+  }
+  
+  return { client, text }
 }
 
 // 按日期分組流水帳
@@ -64,13 +75,16 @@ function openEditTransaction(t) {
   const d = new Date(t.created_at)
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
 
-  // 自動把 【客戶名】 從字串中拔出來，放回下拉選單
-  let extractedClient = ''
+  // 💡 自動完美還原客戶名稱與備註
+  let extractedClient = t.client_name || ''
   let extractedNote = t.note || ''
+  
   const match = extractedNote.match(/^【(.*?)】\s*(.*)$/)
   if (match) {
-    extractedClient = match[1]
+    if (!extractedClient) extractedClient = match[1]
     extractedNote = match[2]
+  } else if (extractedClient && extractedNote.startsWith(extractedClient + ' (')) {
+    extractedNote = extractedNote.replace(extractedClient + ' ', '')
   }
 
   expForm.value = {
@@ -88,9 +102,9 @@ function openEditTransaction(t) {
 async function saveTransaction() {
   if (!expForm.value.amount) return alert('請輸入金額！')
   
-  // 儲存時，自動把客戶名字加上【】保護殼
+  // 儲存時，保持備註的相容性
   let finalNote = expForm.value.note || ''
-  if (expForm.value.client_name) {
+  if (expForm.value.client_name && !finalNote.startsWith(`【${expForm.value.client_name}】`)) {
     finalNote = `【${expForm.value.client_name}】 ${finalNote}`.trim()
   }
 
@@ -99,12 +113,12 @@ async function saveTransaction() {
     ...expForm.value, 
     amount: amt, 
     note: finalNote, 
+    client_name: expForm.value.client_name, // 💡 修復：現在會正確把 client_name 寫入資料庫！不會再被刪掉了
     profit: expForm.value.type === 'income' ? amt : -amt,
     handled_by: expForm.value.staff 
   }
   
-  delete data.client_name 
-  delete data.date 
+  delete data.date // 只刪除 date 屬性，保留 client_name
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
@@ -160,15 +174,15 @@ async function handleDeleteTransaction(id) {
             
             <div class="t-header-row">
               <div class="t-cat">{{ t.category }}</div>
-              <div v-if="formatNoteStr(t.note).client" class="t-client-highlight">
-                👤 客戶：{{ formatNoteStr(t.note).client }}
+              <div v-if="getDisplayData(t).client" class="t-client-highlight">
+                👤 客戶：{{ getDisplayData(t).client }}
               </div>
             </div>
             
             <div class="t-desc-box">
               <div class="t-desc">
                 <span class="icon-lbl">📝 項目/備註:</span> 
-                <span class="t-desc-val">{{ formatNoteStr(t.note).text }}</span>
+                <span class="t-desc-val">{{ getDisplayData(t).text }}</span>
               </div>
               <div class="t-desc" style="margin-top: 6px;">
                 <span class="icon-lbl">💼 經手(收款):</span> 
@@ -215,6 +229,7 @@ async function handleDeleteTransaction(id) {
           <option v-if="expForm.type==='income' && !incCategories.includes('運動套票')" value="運動套票">運動套票</option>
           <option v-if="expForm.type==='income' && !incCategories.includes('試堂')" value="試堂">試堂</option>
           <option v-if="expForm.type==='income' && !incCategories.includes('運動')" value="運動">運動</option>
+          <option v-if="expForm.type==='income' && !incCategories.includes('零售收入')" value="零售收入">零售收入</option>
         </select>
       </div>
 
