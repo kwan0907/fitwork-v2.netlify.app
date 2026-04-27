@@ -64,12 +64,18 @@ const currentTotalCost = computed(() => {
 const selfUseRecords = computed(() => store.transactions.filter(t => t.category === '自用消耗'))
 const selfUseTotalCost = computed(() => selfUseRecords.value.reduce((sum, t) => sum + Number(t.amount), 0))
 
-// 🛡️ 絕對安全寫入邏輯：徹底移除對 `id` 的依賴！
+// 🛡️ 絕對安全寫入邏輯：修復 user_id Not Null 報錯！
 async function updateStock(itemName, newQty) {
+  // 1. 自動獲取當前登入者的 user_id 和 email
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, message: '請重新登入！無法獲取使用者資訊。' }
+
+  // 2. 尋找是否已經有該使用者的庫存紀錄
   const { data, error: selectError } = await supabase.from('stock')
     .select('quantity')
     .eq('prod_name', itemName)
     .eq('branch', selectedBranch.value)
+    .eq('user_id', user.id) // 精準對應自己的帳號
     .maybeSingle()
   
   if (selectError) {
@@ -78,15 +84,24 @@ async function updateStock(itemName, newQty) {
   }
 
   if (data) {
+    // 存在則更新
     const { error: updateError } = await supabase.from('stock')
-      .update({ quantity: newQty })
+      .update({ quantity: newQty, own_email: user.email })
       .eq('prod_name', itemName)
       .eq('branch', selectedBranch.value)
+      .eq('user_id', user.id)
       
     if (updateError) return { success: false, message: updateError.message }
   } else {
+    // 💡 關鍵修復：新增時必須同時寫入 user_id 與 own_email
     const { error: insertError } = await supabase.from('stock')
-      .insert({ prod_name: itemName, branch: selectedBranch.value, quantity: newQty })
+      .insert({ 
+        prod_name: itemName, 
+        branch: selectedBranch.value, 
+        quantity: newQty,
+        user_id: user.id,        // 解決 null value 報錯！
+        own_email: user.email    // 確保權限隔離！
+      })
       
     if (insertError) return { success: false, message: insertError.message }
   }
@@ -96,7 +111,6 @@ async function updateStock(itemName, newQty) {
 
 // 💡 支援正負加減，且【沒有預設數字】
 async function handleRestock(item) {
-  // 提示文字改為入貨，但依舊提醒可以輸入負數
   const amountStr = prompt(`[入貨 / 扣除]\n請輸入「${item.name}」要變動的數量：\n(輸入正數為增加，輸入負數如 -5 為減少)`, "")
   if (!amountStr || isNaN(amountStr)) return
   
@@ -134,9 +148,17 @@ async function handleSelfUse(item) {
   const itemCost = Number(item.cost) || Number(item.price_50) || 0
   const totalExpense = itemCost * extractQty
 
+  // 獲取使用者資訊寫入流水帳
+  const { data: { user } } = await supabase.auth.getUser()
+
   const { error: txnError } = await supabase.from('transactions').insert({
-    type: 'expense', category: '自用消耗', amount: totalExpense, staff: '內部自用', 
-    branch: selectedBranch.value, note: `提取自用: ${item.name} x${extractQty}` 
+    type: 'expense', 
+    category: '自用消耗', 
+    amount: totalExpense, 
+    staff: '內部自用', 
+    branch: selectedBranch.value, 
+    note: `提取自用: ${item.name} x${extractQty}`,
+    own_email: user?.email // 綁定流水帳
   })
 
   if (txnError) return alert('流水帳紀錄失敗: ' + txnError.message)
