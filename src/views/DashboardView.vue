@@ -21,12 +21,20 @@ const filterBranch = ref('全部分店')
 // --- 編輯試堂與查看名單狀態 ---
 const showEditModal = ref(false)
 const showNewClientsModal = ref(false) 
-const showPackageSalesModal = ref(false) // 💡 新增：控制查看售出套票名單的開關
+const showPackageSalesModal = ref(false)
+const showFunnelModal = ref(false) // 💡 新增：控制查看漏斗名單的開關
+const funnelViewType = ref('booked') // 控制漏斗顯示哪個階段的名單
 const editingClient = ref(null)
 
 const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
 const getDayStr = (d) => new Date(d).getDate().toString().padStart(2, '0')
 const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
+
+const formatTrialDateDisplay = (dateStr) => {
+  if (!dateStr) return '無紀錄'
+  const d = new Date(dateStr)
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+}
 
 const isDateInRange = (dateStr) => {
   if (!dateStr) return false
@@ -126,7 +134,6 @@ const financialStats = computed(() => {
   };
 })
 
-// 雙重判定新增客戶
 const clientStats = computed(() => {
   let newClientsList = [];
   const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
@@ -172,11 +179,12 @@ const clientStats = computed(() => {
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
 
+// 💡 核心升級：漏斗系統現在會把各個名單都打包儲存起來
 const trialFunnelStats = computed(() => {
-  let totalBooked = 0;
-  let completedTrials = 0;
-  let converted = 0;
-  let notConverted = 0;
+  let bookedList = [];
+  let completedList = [];
+  let convertedList = [];
+  let notConvertedList = [];
 
   const now = new Date();
 
@@ -184,7 +192,7 @@ const trialFunnelStats = computed(() => {
     if (c.trial_date && isDateInRange(c.trial_date)) {
       if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
 
-      totalBooked++; 
+      bookedList.push(c); // 總預約加入名單
 
       const tDate = new Date(c.trial_date);
       
@@ -196,22 +204,52 @@ const trialFunnelStats = computed(() => {
       });
 
       if (c.status === 'active' || hasRealTransaction || c.expiry_date) {
-        completedTrials++; 
-        converted++;       
+        completedList.push(c);
+        convertedList.push(c);     
       } 
       else if (tDate <= now) {
-        completedTrials++;
-        notConverted++;
+        completedList.push(c);
+        notConvertedList.push(c);
       }
     }
   });
 
-  const conversionRate = completedTrials > 0 ? ((converted / completedTrials) * 100).toFixed(1) : "0.0";
+  // 依照預約時間排序
+  const sortByTrial = (a, b) => new Date(b.trial_date) - new Date(a.trial_date);
+  bookedList.sort(sortByTrial);
+  completedList.sort(sortByTrial);
+  convertedList.sort(sortByTrial);
+  notConvertedList.sort(sortByTrial);
 
-  return { totalBooked, completedTrials, converted, notConverted, conversionRate };
+  const conversionRate = completedList.length > 0 ? ((convertedList.length / completedList.length) * 100).toFixed(1) : "0.0";
+
+  return { 
+    totalBooked: bookedList.length, 
+    completedTrials: completedList.length, 
+    converted: convertedList.length, 
+    notConverted: notConvertedList.length, 
+    conversionRate,
+    bookedList,
+    completedList,
+    convertedList,
+    notConvertedList
+  };
 })
 
-// 💡 全新升級：不僅計算數量，還打包具體明細給 Modal 顯示
+// 💡 控制打開漏斗名單的功能
+function openFunnelModal(type) {
+  funnelViewType.value = type
+  showFunnelModal.value = true
+}
+
+const funnelModalData = computed(() => {
+  if (funnelViewType.value === 'booked') return { title: '📅 總預約名單', list: trialFunnelStats.value.bookedList }
+  if (funnelViewType.value === 'completed') return { title: '🏃 已出席試堂名單', list: trialFunnelStats.value.completedList }
+  if (funnelViewType.value === 'converted') return { title: '👑 成功開卡名單', list: trialFunnelStats.value.convertedList }
+  if (funnelViewType.value === 'notConverted') return { title: '👀 僅試堂 (未買) 名單', list: trialFunnelStats.value.notConvertedList }
+  return { title: '', list: [] }
+})
+
 const packageStats = computed(() => {
   let pkg850 = 0, pkg2550 = 0;
   let list = [];
@@ -226,7 +264,6 @@ const packageStats = computed(() => {
       if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35'))) { pkg2550++; isPkg = true; typeStr = '35點套票'; }
       
       if (isPkg) {
-        // 智能抽取顯示名稱
         let cName = t.client_name;
         if (!cName && t.note) {
            const match = t.note.match(/^【(.*?)】/);
@@ -243,7 +280,6 @@ const packageStats = computed(() => {
     }
   })
   
-  // 依日期排序，最新排上面
   list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
   
   return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
@@ -417,21 +453,24 @@ const chartOptions = {
     <div class="section-title" style="margin-top: 25px; color: #4f46e2;">🎯 區間試堂轉化漏斗 (Funnel)</div>
     <div class="card" style="margin-bottom: 20px; padding: 20px; border: 2px solid #eef2ff;">
       <div class="funnel-metrics">
-        <div class="fm-item">
-          <div class="fm-lbl">📅 總預約數</div>
+        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('booked')">
+          <div class="fm-lbl">📅 總預約數 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
           <div class="fm-val">{{ trialFunnelStats.totalBooked }}</div>
         </div>
         <div class="fm-arrow">👉</div>
-        <div class="fm-item">
-          <div class="fm-lbl">🏃 已出席試堂</div>
+        
+        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('completed')">
+          <div class="fm-lbl">🏃 已出席試堂 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
           <div class="fm-val text-blue">{{ trialFunnelStats.completedTrials }}</div>
-          <div class="fm-sub">僅試堂(未買): {{ trialFunnelStats.notConverted }}</div>
+          <div class="fm-sub" @click.stop="openFunnelModal('notConverted')" style="cursor: pointer;">僅試堂(未買): {{ trialFunnelStats.notConverted }} 🖱️</div>
         </div>
         <div class="fm-arrow">👉</div>
-        <div class="fm-item">
-          <div class="fm-lbl">👑 成功開卡</div>
+        
+        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('converted')">
+          <div class="fm-lbl">👑 成功開卡 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
           <div class="fm-val text-green">{{ trialFunnelStats.converted }}</div>
         </div>
+        
         <div class="fm-rate-box">
           <div class="fm-lbl text-white" style="margin-bottom: 2px;">開卡轉換率</div>
           <div class="fm-val text-white" style="font-size: 22px;">{{ trialFunnelStats.conversionRate }}%</div>
@@ -584,6 +623,35 @@ const chartOptions = {
             <div style="text-align: right;">
               <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">購買日期</div>
               <div style="font-size: 13px; font-weight: 900; color: #10b981;">{{ t.display_date }}</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div v-if="showFunnelModal" class="modal-overlay" @click.self="showFunnelModal = false">
+      <div class="edit-modal" style="max-width: 500px; width: 95%;">
+        <div class="m-header">{{ funnelModalData.title }} <button class="close-x" @click="showFunnelModal=false">✕</button></div>
+
+        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+          <div v-if="funnelModalData.list.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
+            區間內尚無符合條件的紀錄
+          </div>
+
+          <div v-for="(c, idx) in funnelModalData.list" :key="c.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+            <div>
+              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
+                {{ idx + 1 }}. {{ c.name }}
+                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
+                📞 {{ c.phone || '無電話' }} · 狀態: {{ c.status === 'active' ? '⭐️ 正式' : '👀 預約' }}
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">預約日期</div>
+              <div style="font-size: 13px; font-weight: 900; color: #4f46e2;">{{ formatTrialDateDisplay(c.trial_date) }}</div>
             </div>
           </div>
         </div>
