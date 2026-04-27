@@ -145,7 +145,7 @@ const clientStats = computed(() => {
   return { total: newClientsTotal, sources: sourceCount }
 })
 
-// 💡 全新：智慧試堂轉化漏斗統計大腦
+// 💡 全新：智慧試堂轉化漏斗統計大腦 (高精準雙重交叉驗證版)
 const trialFunnelStats = computed(() => {
   let totalBooked = 0;
   let completedTrials = 0;
@@ -155,23 +155,32 @@ const trialFunnelStats = computed(() => {
   const now = new Date();
 
   store.clients.forEach(c => {
-    // 檢查試堂日期是否落在篩選區間內
+    // 1. 檢查試堂日期是否落在篩選區間內
     if (c.trial_date && isDateInRange(c.trial_date)) {
       if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
 
       totalBooked++; // 總預約數 +1
 
       const tDate = new Date(c.trial_date);
-      // 如果試堂時間已經過去了（代表確實有出席）
-      if (tDate <= now) {
-        completedTrials++;
-        
-        // 判斷是否轉化成功
-        if (c.status === 'active') {
-          converted++; // 成功開卡
-        } else {
-          notConverted++; // 僅試堂（未買）
+      
+      // 💡 精準度優化 1：檢查財務紀錄，看是否有該客戶實質購買套票的交易紀錄
+      let hasRealTransaction = false;
+      store.transactions.forEach(t => {
+        if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(c.name)) {
+          hasRealTransaction = true;
         }
+      });
+
+      // 💡 精準度優化 2：只要客戶已切換為 active、有實質交易，或有設定到期日，就強制判定為「成功開卡」
+      // 徹底解決「客戶提早買卡但時間還沒到」或「同事忘記改狀態但已經收錢」的數據誤差
+      if (c.status === 'active' || hasRealTransaction || c.expiry_date) {
+        completedTrials++; // 既然都買卡了，絕對算已出席
+        converted++;       // 成功開卡納入結算
+      } 
+      // 💡 如果還沒買卡，但試堂時間確實已經過去了，則判定為「僅試堂未轉化」
+      else if (tDate <= now) {
+        completedTrials++;
+        notConverted++;
       }
     }
   });
