@@ -21,6 +21,7 @@ export const useMainStore = defineStore('main', () => {
 
   // 🚀 新增：用來暫存「再來一套」的複刻訂單資料，作為頁面間的溝通橋樑
   const pendingRepeatOrder = ref(null)
+  const quickActionClient = ref(null) // 🚀 新增：用來暫存快捷鍵選中的客戶
 
   // --- 同步資料邏輯 (Actions) ---
   async function syncAll() {
