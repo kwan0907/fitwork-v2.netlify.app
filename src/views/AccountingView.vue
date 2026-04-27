@@ -54,7 +54,7 @@ const groupedTxns = computed(() => {
   return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>new Date(b.date)-new Date(a.date))
 })
 
-// 🚀 新增功能：複刻訂單 (再來一套)
+// 🚀 功能：複刻訂單 (再來一套)
 function handleRepeatOrder(t) {
   const { client, text } = getDisplayData(t)
   let items = []
@@ -173,19 +173,20 @@ async function saveTransaction() {
   }
 }
 
-// 🚀 終極強化：刪除流水帳並「自動智能退回庫存」
+// 🚀 終極強化：刪除流水帳並「自動智能退回庫存」 (支援零售退貨 與 採購退貨)
 async function handleDeleteTransaction(t) {
-  if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用產品，扣除的庫存將自動補回)')) return
+  if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用/採購紀錄，系統將自動同步校正庫存)')) return
 
   // 1. 取得使用者資訊 (補庫存需要 user_id)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
 
-  // 2. 智能解析備註，尋找需要退回的產品
+  // 2. 智能解析備註，尋找需要處理的產品
   let itemsToRefund = []
+  let isProcurement = false // 標記是否為採購退貨
   
   if (t.category === '零售收入' && t.note) {
-    // 解析零售格式：王小明 (蛋白素(士多啤梨)x2, 蘆薈汁(芒果)x1)
+    // 💡 解析零售格式：王小明 (蛋白素(士多啤梨)x2, 蘆薈汁(芒果)x1) -> 刪除要補回庫存 (+)
     const match = t.note.match(/\((.*?)\)$/)
     if (match) {
       const itemsStr = match[1]
@@ -200,10 +201,26 @@ async function handleDeleteTransaction(t) {
       })
     }
   } else if (t.category === '自用消耗' && t.note) {
-    // 解析自用格式：提取自用: 蛋白素(士多啤梨) x2
+    // 💡 解析自用格式：提取自用: 蛋白素(士多啤梨) x2 -> 刪除要補回庫存 (+)
     const match = t.note.match(/提取自用:\s*(.*?)\s*x(\d+)$/)
     if (match) {
       itemsToRefund.push({ name: match[1].trim(), qty: parseInt(match[2]) })
+    }
+  } else if (t.category === '產品採購' && t.note) {
+    // 💡 解析採購格式：批量採購 (蛋白素(士多啤梨)x10, 茶x5) -> 刪除要扣除庫存 (-)
+    isProcurement = true
+    const match = t.note.match(/\((.*?)\)$/)
+    if (match) {
+      const itemsStr = match[1]
+      const parts = itemsStr.split(', ')
+      parts.forEach(p => {
+        const lastXIndex = p.lastIndexOf('x')
+        if (lastXIndex !== -1) {
+          const pName = p.substring(0, lastXIndex).trim()
+          const pQty = parseInt(p.substring(lastXIndex + 1))
+          if (pName && !isNaN(pQty)) itemsToRefund.push({ name: pName, qty: pQty })
+        }
+      })
     }
   }
 
@@ -211,9 +228,9 @@ async function handleDeleteTransaction(t) {
   const { error } = await supabase.from('transactions').delete().eq('id', t.id)
   if (error) return alert('刪除失敗: ' + error.message)
 
-  // 4. 自動退回庫存程序
+  // 4. 自動退回 / 扣減庫存程序
   if (itemsToRefund.length > 0) {
-    let stockRefundFailed = false
+    let stockUpdateFailed = false
     
     for (const item of itemsToRefund) {
       // 查詢現在真實的庫存
@@ -225,7 +242,11 @@ async function handleDeleteTransaction(t) {
         .maybeSingle()
 
       const currentQty = stockData ? stockData.quantity : 0
-      const newQty = currentQty + item.qty // 把數量加回去
+      
+      // 🚀 核心邏輯判斷：如果是採購退貨就減掉，如果是零售退貨就加回來
+      const newQty = isProcurement 
+                     ? currentQty - item.qty 
+                     : currentQty + item.qty 
 
       if (stockData) {
         const { error: updateErr } = await supabase.from('stock')
@@ -233,7 +254,7 @@ async function handleDeleteTransaction(t) {
           .eq('prod_name', item.name)
           .eq('branch', t.branch || '觀塘')
           .eq('user_id', user.id)
-        if (updateErr) stockRefundFailed = true
+        if (updateErr) stockUpdateFailed = true
       } else {
         // 如果原本沒資料，就建立並寫入退回數量
         const { error: insertErr } = await supabase.from('stock')
@@ -244,17 +265,21 @@ async function handleDeleteTransaction(t) {
             user_id: user.id,
             own_email: user.email
           })
-        if (insertErr) stockRefundFailed = true
+        if (insertErr) stockUpdateFailed = true
       }
     }
 
-    if (stockRefundFailed) {
-      alert('⚠️ 流水帳已刪除，但部分庫存退回失敗！請手動至「庫存管理」確認。')
+    if (stockUpdateFailed) {
+      alert('⚠️ 流水帳已刪除，但部分庫存校正失敗！請手動至「庫存管理」確認。')
     } else {
-      alert('✅ 紀錄已成功刪除，扣除的庫存已自動補回！')
+      if (isProcurement) {
+        alert('✅ 採購紀錄已刪除，剛剛進的貨已經從庫存中自動扣除了！')
+      } else {
+        alert('✅ 紀錄已成功刪除，扣除的庫存已自動補回！')
+      }
     }
   } else {
-    // 如果不是零售或自用，就一般刪除
+    // 如果不是零售或自用或採購，就一般刪除
     alert('✅ 紀錄已成功刪除')
   }
 
