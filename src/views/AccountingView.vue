@@ -54,6 +54,37 @@ const groupedTxns = computed(() => {
   return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>new Date(b.date)-new Date(a.date))
 })
 
+// 🚀 新增功能：複刻訂單 (再來一套)
+function handleRepeatOrder(t) {
+  const { client, text } = getDisplayData(t)
+  let items = []
+  
+  // 智能解析格式：(蛋白素(士多啤梨)x2, 蘆薈汁(芒果)x1)
+  const match = t.note.match(/\((.*?)\)$/)
+  if (match) {
+    const parts = match[1].split(', ')
+    parts.forEach(p => {
+      const lastX = p.lastIndexOf('x')
+      if (lastX !== -1) {
+        items.push({
+          name: p.substring(0, lastX).trim(),
+          qty: parseInt(p.substring(lastX + 1))
+        })
+      }
+    })
+  }
+
+  // 將資料存入 Store，通知零售頁面
+  store.pendingRepeatOrder = {
+    clientName: client,
+    branch: t.branch,
+    items: items
+  }
+
+  // 透過 store.view 跳轉到零售頁面
+  store.view = 'retail'
+}
+
 function openExpForm() {
   editingTxn.value = null
   expForm.value = {
@@ -250,6 +281,7 @@ async function handleDeleteTransaction(t) {
               <div v-if="getDisplayData(t).client" class="t-client-highlight">
                 👤 客戶：{{ getDisplayData(t).client }}
               </div>
+              <button v-if="t.category === '零售收入'" class="repeat-btn" @click="handleRepeatOrder(t)">🔁 再來一套</button>
             </div>
             
             <div class="t-desc-box">
@@ -352,6 +384,11 @@ async function handleDeleteTransaction(t) {
 .t-header-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .t-cat { font-weight: 900; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 8px; border: 1px solid #e2e8f0;}
 .t-client-highlight { font-weight: 900; font-size: 14px; color: #ec4899; background: #fdf2f8; padding: 4px 10px; border-radius: 8px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
+
+/* 🚀 新增按鈕樣式 */
+.repeat-btn { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center;}
+.repeat-btn:active { transform: scale(0.95); background: #c7d2fe; }
+
 .t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 12px; margin-bottom: 6px; }
 .t-desc { font-size: 13px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
 .icon-lbl { font-size: 12px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}

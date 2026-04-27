@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
@@ -12,6 +12,10 @@ const selectedTier = ref('無折扣')
 const showDropdown = ref(false)
 
 const checkoutDate = ref(new Date().toISOString().split('T')[0])
+
+// 🚀 新增：刪除確定 Modal 狀態
+const showDeleteConfirm = ref(false)
+const itemToDelete = ref(null)
 
 const tierMapping = {
   '無折扣': 'price_standard',
@@ -28,6 +32,34 @@ const selectedCategory = ref('全部')
 const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
 const showCheckoutModal = ref(false)
+
+// 🚀 核心邏輯：自動載入歷史訂單
+onMounted(() => {
+  if (store.pendingRepeatOrder) {
+    const data = store.pendingRepeatOrder
+    
+    // 1. 尋找並選定客戶
+    const client = store.clients.find(c => c.name === data.clientName)
+    if (client) selectClient(client)
+    
+    // 2. 設定分店
+    if (data.branch) selectedBranch.value = data.branch.includes('店') ? data.branch : data.branch + '店'
+
+    // 3. 將產品加入購物車
+    data.items.forEach(item => {
+      const product = store.products.find(p => p.name === item.name)
+      if (product) {
+        cart.value.push({ ...product, qty: item.qty })
+      }
+    })
+
+    // 清除任務
+    store.pendingRepeatOrder = null
+    
+    // 自動打開結帳面板方便修改
+    if (cart.value.length > 0) showCheckoutModal.value = true
+  }
+})
 
 const cartWithPrices = computed(() => {
   const priceCol = tierMapping[selectedTier.value]
@@ -108,7 +140,20 @@ const decreaseQty = (item) => {
   const found = cart.value.find(i => i.id === item.id)
   if (!found) return
   if (found.qty > 1) found.qty--
-  else cart.value = cart.value.filter(i => i.id !== item.id)
+  else confirmDelete(item) // 🚀 數量減到 0 也觸發二次確認
+}
+
+// 🚀 新增：二次確定功能
+function confirmDelete(item) {
+  itemToDelete.value = item
+  showDeleteConfirm.value = true
+}
+
+function executeDelete() {
+  cart.value = cart.value.filter(i => i.id !== itemToDelete.value.id)
+  showDeleteConfirm.value = false
+  itemToDelete.value = null
+  if (cart.value.length === 0) showCheckoutModal.value = false
 }
 
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
@@ -121,7 +166,6 @@ async function finalizeCheckout(payeeName) {
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
   const branchKey = selectedBranch.value.replace('店','')
 
-  // 💡 自動獲取當前登入者的 user_id 和 email (修復 Null 報錯關鍵)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
@@ -130,7 +174,6 @@ async function finalizeCheckout(payeeName) {
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
-  // 1. 寫入交易紀錄
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
@@ -148,10 +191,8 @@ async function finalizeCheckout(payeeName) {
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 2. 💡 專屬私人庫存扣減邏輯 (採用與庫存頁面相同的安全寫入模式)
   let stockUpdateFailed = false;
   for (const item of cart.value) {
-    // 先查詢資料庫中真實的庫存數量
     const { data: stockData, error: selectError } = await supabase.from('stock')
       .select('quantity')
       .eq('prod_name', item.name)
@@ -169,7 +210,6 @@ async function finalizeCheckout(payeeName) {
     const newQty = currentDbQty - item.qty;
 
     if (stockData) {
-      // 存在則更新
       const { error: updateError } = await supabase.from('stock')
         .update({ quantity: newQty, own_email: user.email })
         .eq('prod_name', item.name)
@@ -181,13 +221,12 @@ async function finalizeCheckout(payeeName) {
         stockUpdateFailed = true;
       }
     } else {
-      // 不存在則新增 (雖然是負數，但確保資料對齊)
       const { error: insertError } = await supabase.from('stock')
         .insert({ 
           prod_name: item.name, 
           branch: branchKey, 
           quantity: newQty,
-          user_id: user.id,      // ✅ 補上這行解決報錯！
+          user_id: user.id,
           own_email: user.email  
         })
         
@@ -276,7 +315,7 @@ async function finalizeCheckout(payeeName) {
 
         <div class="cart-items">
           <div v-for="item in cartWithPrices" :key="item.id" class="c-item">
-            <button class="c-delete" @click="cart = cart.filter(i => i.id !== item.id)">✕</button>
+            <button class="c-delete" @click="confirmDelete(item)">✕</button>
             <div style="flex:1;"><div class="c-name">{{ item.name }}</div><div class="c-sub">單價 ${{ item.active_price }}</div></div>
             <div class="c-price">$ {{ item.active_price * item.qty }}</div>
             <div class="qty-control">
@@ -305,6 +344,19 @@ async function finalizeCheckout(payeeName) {
         </div>
       </div>
     </div>
+
+    <div v-if="showDeleteConfirm" class="modal-overlay" style="z-index: 1000;" @click.self="showDeleteConfirm = false">
+      <div class="confirm-modal">
+        <div class="cm-icon">⚠️</div>
+        <div class="cm-title">確定移除產品？</div>
+        <div class="cm-text">您正要從購物車中移除<br><b>{{ itemToDelete?.name }}</b></div>
+        <div class="cm-actions">
+          <button class="cm-btn cm-cancel" @click="showDeleteConfirm = false">取消</button>
+          <button class="cm-btn cm-ok" @click="executeDelete">確定移除</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -382,4 +434,16 @@ async function finalizeCheckout(payeeName) {
 .confirm-label { text-align: center; font-weight: 800; font-size: 14px; color: #64748b; margin: 0; padding: 0; }
 .btn-back { width: 100%; padding: 14px; border-radius: 14px; border: 2px solid #e2e8f0; background: white; color: #64748b; font-size: 15px; font-weight: 800; cursor: pointer; }
 .btn-back:active { background: #f8fafc; }
+
+/* 🚀 二次確定彈窗樣式 */
+.confirm-modal { background: white; width: 280px; padding: 25px; border-radius: 20px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: pop 0.2s cubic-bezier(0.16, 1, 0.3, 1); margin-bottom: 20vh; }
+@keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.cm-icon { font-size: 45px; margin-bottom: 10px; }
+.cm-title { font-weight: 900; font-size: 18px; color: #1e293b; margin-bottom: 8px; }
+.cm-text { font-size: 14px; color: #64748b; line-height: 1.5; margin-bottom: 20px; }
+.cm-actions { display: flex; gap: 10px; }
+.cm-btn { flex: 1; padding: 12px; border-radius: 12px; font-weight: 800; font-size: 14px; border: none; cursor: pointer; transition: 0.2s;}
+.cm-btn:active { transform: scale(0.95); }
+.cm-cancel { background: #f1f5f9; color: #64748b; }
+.cm-ok { background: #ef4444; color: white; box-shadow: 0 4px 10px rgba(239,68,68,0.2);}
 </style>

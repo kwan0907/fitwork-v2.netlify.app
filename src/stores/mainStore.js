@@ -19,6 +19,9 @@ export const useMainStore = defineStore('main', () => {
   const deviceUsers = ref(JSON.parse(localStorage.getItem('fitwork_deviceUsers')) || [])
   const currentUser = ref(localStorage.getItem('fitwork_currentUser') || '') 
 
+  // 🚀 新增：用來暫存「再來一套」的複刻訂單資料，作為頁面間的溝通橋樑
+  const pendingRepeatOrder = ref(null)
+
   // --- 同步資料邏輯 (Actions) ---
   async function syncAll() {
     console.log('🚀 開始從 Supabase 同步資料...')
@@ -116,6 +119,7 @@ export const useMainStore = defineStore('main', () => {
   return { 
     view, session, clients, transactions, products, stock, stockExpiry, 
     promotions, settings, displayTxnCount, syncAll,
-    deviceUsers, currentUser, setDeviceUsers, switchUser 
+    deviceUsers, currentUser, setDeviceUsers, switchUser,
+    pendingRepeatOrder // 🚀 將變數導出供 AccountingView 與 RetailView 使用
   }
 })
