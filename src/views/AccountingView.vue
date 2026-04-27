@@ -30,7 +30,7 @@ const activeClientsOptions = computed(() => {
   return store.clients.map(c => c.name).sort((a,b) => a.localeCompare(b, 'zh-HK'))
 })
 
-// 💡 智能解析大腦升級：優先讀取資料庫的 client_name，並相容舊版 【】 格式
+// 💡 智能解析大腦：優先讀取資料庫的 client_name，並相容舊版 【】 格式
 const getDisplayData = (t) => {
   let client = t.client_name || null
   let text = t.note || '無備註'
@@ -109,16 +109,18 @@ async function saveTransaction() {
   }
 
   const amt = Number(expForm.value.amount)
+  
+  // 💡 關鍵修復：確保 client_name 確實被打包進去
   const data = { 
     ...expForm.value, 
     amount: amt, 
     note: finalNote, 
-    client_name: expForm.value.client_name, // 💡 修復：現在會正確把 client_name 寫入資料庫！不會再被刪掉了
+    client_name: expForm.value.client_name || null, // ✅ 確保有值，不會再被丟掉
     profit: expForm.value.type === 'income' ? amt : -amt,
     handled_by: expForm.value.staff 
   }
   
-  delete data.date // 只刪除 date 屬性，保留 client_name
+  delete data.date // ✅ 只刪除 date，保留了 client_name 寫入資料庫
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
@@ -278,7 +280,6 @@ async function handleDeleteTransaction(id) {
 .txn-item { display: flex; align-items: center; padding: 18px 0; border-bottom: 1px dashed #e2e8f0; }
 .txn-item:last-child { border-bottom: none; }
 
-/* 💡 全新優化的排版 CSS */
 .t-header-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .t-cat { font-weight: 900; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 8px; border: 1px solid #e2e8f0;}
 .t-client-highlight { font-weight: 900; font-size: 14px; color: #ec4899; background: #fdf2f8; padding: 4px 10px; border-radius: 8px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
@@ -286,8 +287,8 @@ async function handleDeleteTransaction(id) {
 .t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 12px; margin-bottom: 6px; }
 .t-desc { font-size: 13px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
 .icon-lbl { font-size: 12px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
-.t-desc-val { color: #1e293b; font-weight: 900; font-size: 15px; } /* 💡 買了什麼：加粗放大 */
-.t-staff { font-weight: 900; color: #4f46e2; font-size: 14px; } /* 💡 收款人：專屬藍色 */
+.t-desc-val { color: #1e293b; font-weight: 900; font-size: 15px; } 
+.t-staff { font-weight: 900; color: #4f46e2; font-size: 14px; } 
 
 .t-ad { font-size: 11px; color: #d97706; margin-top: 8px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 4px 8px; border-radius: 6px; }
 .t-amt { font-weight: 900; font-size: 22px; }
@@ -297,7 +298,6 @@ async function handleDeleteTransaction(id) {
 .icon-btn { background: #f1f5f9; border: none; font-size: 14px; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 .icon-btn:active { transform: scale(0.9); }
 
-/* 表單樣式 */
 .form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #475569; }
 .modern-inp, .modern-select { width: 100%; border: 2px solid #e2e8f0; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; background: #f8fafc; appearance: none;}
 .modern-inp:focus, .modern-select:focus { border-color: #4f46e2; background: white;}

@@ -11,7 +11,6 @@ const selectedBranch = ref('觀塘店')
 const selectedTier = ref('無折扣')
 const showDropdown = ref(false)
 
-// 💡 新增：結帳日期狀態，預設為當天（格式：YYYY-MM-DD）
 const checkoutDate = ref(new Date().toISOString().split('T')[0])
 
 const tierMapping = {
@@ -21,7 +20,7 @@ const tierMapping = {
   '金級(65折)': 'price_gold',
   '直接58折': 'price_58',
   '直接半折': 'price_50',
-  '領班(半折)': 'price_50' // 💡 讓收銀系統知道領班對應的是半價
+  '領班(半折)': 'price_50' 
 }
 
 const searchProduct = ref('')
@@ -30,7 +29,6 @@ const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
 const showCheckoutModal = ref(false)
 
-// 💡 新增：購物車價格隨 selectedTier 動態重算
 const cartWithPrices = computed(() => {
   const priceCol = tierMapping[selectedTier.value]
   return cart.value.map(item => {
@@ -56,7 +54,6 @@ function selectClient(c) {
   else selectedTier.value = '無折扣'
 }
 
-// 💡 核心優化：自訂排序邏輯 (Shake -> 佳能 -> 蘆薈汁 -> 茶)
 const sortedProducts = computed(() => {
   return [...store.products].sort((a, b) => {
     const getW = (p) => {
@@ -65,13 +62,12 @@ const sortedProducts = computed(() => {
       if (n.includes('佳能')) return 2
       if (n.includes('蘆薈汁')) return 3
       if (n.includes('茶')) return 4
-      return 999 // 其他產品排後面
+      return 999 
     }
     return getW(a) - getW(b) || (a.name || '').localeCompare(b.name || '')
   })
 })
 
-// 💡 核心優化：支援英文搜尋、精確匹配「內/外」分類
 const displayProducts = computed(() => {
   let list = sortedProducts.value.map(p => {
     const branchKey = selectedBranch.value.replace('店', '')
@@ -84,14 +80,12 @@ const displayProducts = computed(() => {
     return { ...p, current_stock: currentQty, active_price: finalPrice }
   })
   
-  // 解決：精確比對 Supabase 裡面的 "內" 或 "外"
   if (selectedCategory.value === '內在營養') {
     list = list.filter(p => p.category && p.category.includes('內'))
   } else if (selectedCategory.value === '外在保養') {
     list = list.filter(p => p.category && p.category.includes('外'))
   }
 
-  // 解決：同時支援中英文與 ID 搜尋
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
     list = list.filter(p => 
@@ -109,7 +103,7 @@ const addToCart = (product) => {
   if (existing) existing.qty++ 
   else cart.value.push({ ...product, qty: 1 })
 }
-// ✅ 修改後
+
 const decreaseQty = (item) => {
   const found = cart.value.find(i => i.id === item.id)
   if (!found) return
@@ -118,9 +112,7 @@ const decreaseQty = (item) => {
 }
 
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
-// ✅ 修改後
 const totalRevenue = computed(() => cartWithPrices.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
-// 💡 核心修復：強制購物車成本只使用 price_50 (半折價)，無視其他可能有錯的資料
 const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((Number(item.price_50) || 0) * item.qty), 0))
 const netProfit = computed(() => totalRevenue.value - totalCost.value)
 
@@ -129,8 +121,12 @@ async function finalizeCheckout(payeeName) {
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
   const branchKey = selectedBranch.value.replace('店','')
 
-  // 💡 解決痛點：在此處強制寫入 client_name，讓記帳頁面能直接顯示
-  // 💡 新增：寫入 created_at 確保與手動選擇的日期完全一致
+  // 💡 關鍵修復：把選擇的日期強制加上現在的時間，組合成 Supabase 要求的精確 ISO 格式
+  const [yyyy, mm, dd] = checkoutDate.value.split('-')
+  const now = new Date()
+  const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
+  const fullIsoCreatedAt = txnDate.toISOString()
+
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
@@ -138,10 +134,10 @@ async function finalizeCheckout(payeeName) {
     profit: netProfit.value,
     branch: branchKey, 
     client_id: selectedClient.value.id, 
-    client_name: selectedClient.value.name, // ✅ 保留上次的修復
+    client_name: selectedClient.value.name, 
     handled_by: payeeName, 
     staff: payeeName,
-    created_at: checkoutDate.value, // ✅ 將日期強制設定為你所選擇的補紀錄日期
+    created_at: fullIsoCreatedAt, // ✅ 現在絕對能成功把候補時間寫進資料庫
     note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
@@ -152,7 +148,6 @@ async function finalizeCheckout(payeeName) {
     await supabase.from('stock').upsert({ prod_name: item.name, branch: branchKey, quantity: currentQty - item.qty }, { onConflict: 'prod_name,branch' })
   }
 
-  // 提示框加入日期顯示，讓你確認候補成功
   alert(`✅ 結帳成功！\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
   cart.value = []; selectedClient.value = null; searchClient.value = ''; showCheckoutModal.value = false; store.syncAll() 
 }
@@ -258,7 +253,6 @@ async function finalizeCheckout(payeeName) {
 </template>
 
 <style scoped>
-/* 樣式保留 */
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
 .glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
