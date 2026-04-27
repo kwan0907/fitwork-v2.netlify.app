@@ -11,6 +11,7 @@ const selectedBranch = ref('觀塘店')
 const selectedTier = ref('無折扣')
 const showDropdown = ref(false)
 
+// 💡 結帳日期狀態，預設為當天
 const checkoutDate = ref(new Date().toISOString().split('T')[0])
 
 const tierMapping = {
@@ -119,14 +120,16 @@ const netProfit = computed(() => totalRevenue.value - totalCost.value)
 async function finalizeCheckout(payeeName) {
   if (!selectedClient.value) return alert('請在上方先選擇紀錄對象！')
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
+  
+  // 💡 關鍵：統一分店名稱格式，確保庫存更新能對應到正確的 branch (去除'店'字)
   const branchKey = selectedBranch.value.replace('店','')
 
-  // 💡 關鍵修復：把選擇的日期強制加上現在的時間，組合成 Supabase 要求的精確 ISO 格式
   const [yyyy, mm, dd] = checkoutDate.value.split('-')
   const now = new Date()
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
+  // 1. 寫入交易紀錄
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
@@ -137,19 +140,41 @@ async function finalizeCheckout(payeeName) {
     client_name: selectedClient.value.name, 
     handled_by: payeeName, 
     staff: payeeName,
-    created_at: fullIsoCreatedAt, // ✅ 現在絕對能成功把候補時間寫進資料庫
+    created_at: fullIsoCreatedAt,
     note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
+  // 2. 💡 修正並優化庫存扣減邏輯
+  let stockUpdateFailed = false;
   for (const item of cart.value) {
     const currentQty = item.current_stock || 0
-    await supabase.from('stock').upsert({ prod_name: item.name, branch: branchKey, quantity: currentQty - item.qty }, { onConflict: 'prod_name,branch' })
+    const newQty = currentQty - item.qty
+    
+    // 使用精確的名稱與分店進行 Upsert
+    const { error: stockError } = await supabase
+      .from('stock')
+      .upsert(
+        { prod_name: item.name, branch: branchKey, quantity: newQty }, 
+        { onConflict: 'prod_name,branch' }
+      )
+      
+    if (stockError) {
+      console.error(`庫存更新失敗 (${item.name}):`, stockError)
+      stockUpdateFailed = true;
+    }
   }
 
-  alert(`✅ 結帳成功！\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
-  cart.value = []; selectedClient.value = null; searchClient.value = ''; showCheckoutModal.value = false; store.syncAll() 
+  if (stockUpdateFailed) {
+      alert(`⚠️ 結帳成功，但部分商品庫存扣減失敗！請手動至「庫存管理」確認。\n日期: ${checkoutDate.value}\n收現金 $${totalRevenue.value}`)
+  } else {
+      alert(`✅ 結帳成功！(庫存已自動扣除)\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
+  }
+  
+  cart.value = []; selectedClient.value = null; searchClient.value = ''; showCheckoutModal.value = false; 
+  // 重新同步確保畫面數字更新
+  await store.syncAll() 
 }
 </script>
 
@@ -209,7 +234,7 @@ async function finalizeCheckout(payeeName) {
         <div class="summary-box" style="margin-bottom: 20px; border-color: #4f46e2; background: #f5f3ff;">
           <div class="s-row">
             <span style="color:#4f46e2; font-weight:800;">📅 購買日期 (補紀錄請修改)</span>
-            <input type="date" v-model="checkoutDate" class="modern-select" style="width: 150px; padding: 5px 10px; background: white;">
+            <input type="date" v-model="checkoutDate" class="modern-select" style="width: 150px; padding: 5px 10px; background: white; border: 2px solid #4f46e2;">
           </div>
         </div>
 
