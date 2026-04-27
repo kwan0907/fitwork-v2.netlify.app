@@ -220,14 +220,16 @@ async function confirmAction() {
     <div class="inventory-list">
       <div v-for="item in displayInventory" :key="item.id" class="inv-item">
         
-        <div class="inv-info-area">
-          <div class="inv-name">{{ item.name }}</div>
-          <div class="inv-sub">單個成本: <span style="font-weight:900; color:#64748b;">${{ Number(item.cost) || Number(item.price_50) || 0 }}</span></div>
-        </div>
-        
-        <div class="inv-qty-area">
-          <div class="inv-qty" :class="{warn: item.current_qty <= 5}">{{ item.current_qty }}</div>
-          <div class="inv-qty-lbl">現有件數</div>
+        <div class="inv-top-row">
+          <div class="inv-info-area">
+            <div class="inv-name">{{ item.name }}</div>
+            <div class="inv-sub">單個成本: <span style="font-weight:900; color:#64748b;">${{ Number(item.cost) || Number(item.price_50) || 0 }}</span></div>
+          </div>
+          
+          <div class="inv-qty-area">
+            <div class="inv-qty" :class="{warn: item.current_qty <= 5}">{{ item.current_qty }}</div>
+            <div class="inv-qty-lbl">現有件數</div>
+          </div>
         </div>
 
         <div class="inv-actions">
@@ -304,18 +306,19 @@ async function confirmAction() {
 .cat-btn { padding: 8px 18px; border-radius: 99px; background: white; border: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; cursor: pointer; transition: 0.2s;}
 .cat-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
 
-/* 🌟 庫存列表卡片 - 全新排版 */
+/* 🌟 庫存列表卡片 - 修復防疊字排版 */
 .inv-item { background: white; padding: 18px; border-radius: 24px; margin-bottom: 15px; border: 1px solid #f1f5f9; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 15px;}
-.inv-info-area { display: flex; justify-content: space-between; align-items: flex-start; }
+.inv-top-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; } /* 左右完美拆分 */
+.inv-info-area { display: flex; flex-direction: column; flex: 1; }
 .inv-name { font-weight: 900; font-size: 16px; color: #1e293b; line-height: 1.3;}
 .inv-sub { font-size: 12px; color: #94a3b8; font-weight: 700; margin-top: 6px; }
-.inv-qty-area { display: flex; flex-direction: column; align-items: flex-end; margin-top: -45px;} /* 讓數量靠右上角 */
+.inv-qty-area { display: flex; flex-direction: column; align-items: flex-end; min-width: 60px; }
 .inv-qty { font-size: 32px; font-weight: 900; color: #10b981; line-height: 1;}
 .inv-qty.warn { color: #ef4444; } 
 .inv-qty-lbl { font-size: 10px; font-weight: 800; color: #cbd5e1; margin-top: 4px; text-transform: uppercase;}
 
 /* 橫向操作按鈕 */
-.inv-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 5px; padding-top: 15px; border-top: 1px dashed #f1f5f9;}
+.inv-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding-top: 15px; border-top: 1px dashed #f1f5f9;}
 .act-btn { padding: 10px; border-radius: 12px; border: none; font-size: 13px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 4px;}
 .act-btn:active { transform: scale(0.95); }
 .btn-blue { background: #eef2ff; color: #4f46e2; }
