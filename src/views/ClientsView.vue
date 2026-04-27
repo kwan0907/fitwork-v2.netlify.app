@@ -1,11 +1,9 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router' // 🟢 新增：引入路由功能
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase' 
 
 const store = useMainStore()
-const router = useRouter() // 🟢 新增：啟用路由功能
 
 // --- 狀態定義 ---
 const showAddModal = ref(false)
@@ -97,7 +95,7 @@ const filteredClients = computed(() => {
 })
 
 // ==========================================
-// 🟢 新增：快捷操作選單邏輯 (無刪減原本功能)
+// 🟢 快捷操作選單邏輯 (使用 Store 進行頁面跳轉)
 // ==========================================
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
@@ -109,19 +107,23 @@ function openActionModal(client) {
 
 function handleActionEdit() {
   showActionModal.value = false
-  openEditModal(selectedClientForAction.value) // 呼叫原本的修改功能，1000%保留！
+  openEditModal(selectedClientForAction.value) // 呼叫原本的修改功能
 }
 
 function handleActionMovement() {
   showActionModal.value = false
-  // 跳轉到運動頁面，並帶入客戶名字
-  router.push({ path: '/movement', query: { clientName: selectedClientForAction.value.name } })
+  // 1. 把客戶名字存在 store 的 quickActionClient
+  store.quickActionClient = selectedClientForAction.value.name
+  // 2. 切換畫面到運動收銀 (請確保你的 App.vue 裡這頁叫做 'movement' 或是 'MovementView'，若不同請自行微調)
+  store.view = 'movement' 
 }
 
 function handleActionRetail() {
   showActionModal.value = false
-  // 跳轉到零售頁面，並帶入客戶名字
-  router.push({ path: '/retail', query: { clientName: selectedClientForAction.value.name } })
+  // 1. 把客戶名字存在 store 的 quickActionClient
+  store.quickActionClient = selectedClientForAction.value.name
+  // 2. 切換畫面到零售收銀
+  store.view = 'retail' 
 }
 
 // --- 功能函數 ---
@@ -295,7 +297,7 @@ async function handleImport(event) {
         <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
         <div class="v-line"></div>
-        <button v-for="b in ['觀塘','中環']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
+        <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
       </div>
 
       <div class="sort-row">
@@ -327,11 +329,9 @@ async function handleImport(event) {
           </div>
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
-            
             <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
               ⏰ {{ formatTrialDate(c.trial_date) }}
             </span>
-
           </div>
 
           <div class="c-packages" v-if="c.status !== 'prospect'">
@@ -597,7 +597,6 @@ async function handleImport(event) {
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 .tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 
-/* 🟢 新增：快捷操作選單專用樣式 */
 .action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .action-big-btn { 
@@ -612,7 +611,6 @@ async function handleImport(event) {
 .action-big-btn strong { font-size: 16px; color: #1e293b; font-weight: 800; }
 .action-big-btn small { font-size: 12px; color: #64748b; font-weight: 600; }
 
-/* 個別按鈕的 Hover/Active 色彩強化 */
 .btn-edit-style:hover { background: #e0f2fe; }
 .btn-edit-style:hover strong { color: #0284c7; }
 .btn-move-style:hover { background: #ede9fe; }

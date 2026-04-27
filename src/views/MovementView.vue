@@ -43,8 +43,9 @@ function selectClient(c) {
 // 🟢 新增：頁面載入時，自動抓取並填入客戶名字
 // ==========================================
 onMounted(() => {
-  if (route.query.clientName) {
-    const targetName = route.query.clientName
+  if (store.quickActionClient) {
+    const targetName = store.quickActionClient
+    store.quickActionClient = null // 讀取完就清空，避免下次進來又被填入
     // 在客戶資料庫中尋找這位客戶
     const foundClient = store.clients.find(c => c.name === targetName)
     

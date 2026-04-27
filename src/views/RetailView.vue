@@ -38,8 +38,9 @@ const showCheckoutModal = ref(false)
 // 🚀 核心邏輯：自動載入歷史訂單 與 🟢 快捷選單帶入客戶
 onMounted(() => {
   // 🟢 新增：從網址參數接收客戶名字 (來自 ClientsView 快捷按鈕)
-  if (route.query.clientName) {
-    const targetName = route.query.clientName
+  if (store.quickActionClient) {
+    const targetName = store.quickActionClient
+    store.quickActionClient = null // 讀取完就清空，避免下次進來又被填入
     const foundClient = store.clients.find(c => c.name === targetName)
     
     if (foundClient) {
