@@ -121,16 +121,16 @@ async function finalizeCheckout(payeeName) {
   const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
   const branchKey = selectedBranch.value.replace('店','')
 
-  // 💡 自動抓取登入者的 Email 綁定專屬權限
-  const { data: authData } = await supabase.auth.getSession()
-  const userEmail = authData?.session?.user?.email
-  if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+  // 💡 自動獲取當前登入者的 user_id 和 email (修復 Null 報錯關鍵)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
   const [yyyy, mm, dd] = checkoutDate.value.split('-')
   const now = new Date()
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
+  // 1. 寫入交易紀錄
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
@@ -142,27 +142,59 @@ async function finalizeCheckout(payeeName) {
     handled_by: payeeName, 
     staff: payeeName,
     created_at: fullIsoCreatedAt,
-    own_email: userEmail, // ✅ 寫入專屬 Email
+    own_email: user.email, 
     note: `${selectedClient.value.name} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
+  // 2. 💡 專屬私人庫存扣減邏輯 (採用與庫存頁面相同的安全寫入模式)
   let stockUpdateFailed = false;
   for (const item of cart.value) {
-    const currentQty = item.current_stock || 0
-    const newQty = currentQty - item.qty
-    
-    const { error: stockError } = await supabase
-      .from('stock')
-      .upsert(
-        { prod_name: item.name, branch: branchKey, quantity: newQty, own_email: userEmail }, // ✅ 綁定專屬庫存
-        { onConflict: 'prod_name,branch,own_email' }
-      )
+    // 先查詢資料庫中真實的庫存數量
+    const { data: stockData, error: selectError } = await supabase.from('stock')
+      .select('quantity')
+      .eq('prod_name', item.name)
+      .eq('branch', branchKey)
+      .eq('user_id', user.id)
+      .maybeSingle()
       
-    if (stockError) {
-      console.error(`專屬庫存更新失敗 (${item.name}):`, stockError)
+    if (selectError) {
+      console.error(`庫存查詢失敗 (${item.name}):`, selectError)
       stockUpdateFailed = true;
+      continue;
+    }
+
+    const currentDbQty = stockData ? stockData.quantity : 0;
+    const newQty = currentDbQty - item.qty;
+
+    if (stockData) {
+      // 存在則更新
+      const { error: updateError } = await supabase.from('stock')
+        .update({ quantity: newQty, own_email: user.email })
+        .eq('prod_name', item.name)
+        .eq('branch', branchKey)
+        .eq('user_id', user.id)
+        
+      if (updateError) {
+        console.error(`庫存扣減失敗 (${item.name}):`, updateError)
+        stockUpdateFailed = true;
+      }
+    } else {
+      // 不存在則新增 (雖然是負數，但確保資料對齊)
+      const { error: insertError } = await supabase.from('stock')
+        .insert({ 
+          prod_name: item.name, 
+          branch: branchKey, 
+          quantity: newQty,
+          user_id: user.id,      // ✅ 補上這行解決報錯！
+          own_email: user.email  
+        })
+        
+      if (insertError) {
+        console.error(`庫存新增失敗 (${item.name}):`, insertError)
+        stockUpdateFailed = true;
+      }
     }
   }
 
