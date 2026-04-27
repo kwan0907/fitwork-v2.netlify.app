@@ -109,7 +109,7 @@ async function saveTransaction() {
     amount: amt, 
     note: finalNote, 
     client_name: expForm.value.client_name || null, 
-    own_email: userEmail, // ✅ 寫入專屬 Email
+    own_email: userEmail, 
     profit: expForm.value.type === 'income' ? amt : -amt,
     handled_by: expForm.value.staff 
   }
@@ -142,15 +142,93 @@ async function saveTransaction() {
   }
 }
 
-async function handleDeleteTransaction(id) {
-  if (confirm('⚠️ 確定要永久刪除這筆收支紀錄嗎？\n此動作無法復原！')) {
-    const { error } = await supabase.from('transactions').delete().eq('id', id)
-    if (error) alert('刪除失敗: ' + error.message)
-    else {
-      await store.syncAll()
-      alert('已成功刪除')
+// 🚀 終極強化：刪除流水帳並「自動智能退回庫存」
+async function handleDeleteTransaction(t) {
+  if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用產品，扣除的庫存將自動補回)')) return
+
+  // 1. 取得使用者資訊 (補庫存需要 user_id)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
+
+  // 2. 智能解析備註，尋找需要退回的產品
+  let itemsToRefund = []
+  
+  if (t.category === '零售收入' && t.note) {
+    // 解析零售格式：王小明 (蛋白素(士多啤梨)x2, 蘆薈汁(芒果)x1)
+    const match = t.note.match(/\((.*?)\)$/)
+    if (match) {
+      const itemsStr = match[1]
+      const parts = itemsStr.split(', ')
+      parts.forEach(p => {
+        const lastXIndex = p.lastIndexOf('x')
+        if (lastXIndex !== -1) {
+          const pName = p.substring(0, lastXIndex).trim()
+          const pQty = parseInt(p.substring(lastXIndex + 1))
+          if (pName && !isNaN(pQty)) itemsToRefund.push({ name: pName, qty: pQty })
+        }
+      })
+    }
+  } else if (t.category === '自用消耗' && t.note) {
+    // 解析自用格式：提取自用: 蛋白素(士多啤梨) x2
+    const match = t.note.match(/提取自用:\s*(.*?)\s*x(\d+)$/)
+    if (match) {
+      itemsToRefund.push({ name: match[1].trim(), qty: parseInt(match[2]) })
     }
   }
+
+  // 3. 刪除資料庫中的該筆交易紀錄
+  const { error } = await supabase.from('transactions').delete().eq('id', t.id)
+  if (error) return alert('刪除失敗: ' + error.message)
+
+  // 4. 自動退回庫存程序
+  if (itemsToRefund.length > 0) {
+    let stockRefundFailed = false
+    
+    for (const item of itemsToRefund) {
+      // 查詢現在真實的庫存
+      const { data: stockData } = await supabase.from('stock')
+        .select('quantity')
+        .eq('prod_name', item.name)
+        .eq('branch', t.branch || '觀塘')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      const currentQty = stockData ? stockData.quantity : 0
+      const newQty = currentQty + item.qty // 把數量加回去
+
+      if (stockData) {
+        const { error: updateErr } = await supabase.from('stock')
+          .update({ quantity: newQty })
+          .eq('prod_name', item.name)
+          .eq('branch', t.branch || '觀塘')
+          .eq('user_id', user.id)
+        if (updateErr) stockRefundFailed = true
+      } else {
+        // 如果原本沒資料，就建立並寫入退回數量
+        const { error: insertErr } = await supabase.from('stock')
+          .insert({
+            prod_name: item.name,
+            branch: t.branch || '觀塘',
+            quantity: newQty,
+            user_id: user.id,
+            own_email: user.email
+          })
+        if (insertErr) stockRefundFailed = true
+      }
+    }
+
+    if (stockRefundFailed) {
+      alert('⚠️ 流水帳已刪除，但部分庫存退回失敗！請手動至「庫存管理」確認。')
+    } else {
+      alert('✅ 紀錄已成功刪除，扣除的庫存已自動補回！')
+    }
+  } else {
+    // 如果不是零售或自用，就一般刪除
+    alert('✅ 紀錄已成功刪除')
+  }
+
+  // 5. 重新同步最新數據到畫面
+  await store.syncAll()
 }
 </script>
 
@@ -196,7 +274,7 @@ async function handleDeleteTransaction(id) {
             </div>
             <div style="display:flex; flex-direction:column; gap:5px;">
               <button class="icon-btn" @click="openEditTransaction(t)">✏️</button>
-              <button class="icon-btn" style="color:#ef4444;" @click="handleDeleteTransaction(t.id)">🗑️</button>
+              <button class="icon-btn" style="color:#ef4444;" @click="handleDeleteTransaction(t)">🗑️</button>
             </div>
           </div>
         </div>
