@@ -20,7 +20,8 @@ const filterBranch = ref('全部分店')
 
 // --- 編輯試堂與查看名單狀態 ---
 const showEditModal = ref(false)
-const showNewClientsModal = ref(false) // 💡 新增：控制查看新增客戶名單的開關
+const showNewClientsModal = ref(false) 
+const showPackageSalesModal = ref(false) // 💡 新增：控制查看售出套票名單的開關
 const editingClient = ref(null)
 
 const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
@@ -125,12 +126,11 @@ const financialStats = computed(() => {
   };
 })
 
-// 💡 全新優化大腦：雙重判定新增客戶 (解決漏抓問題)
+// 雙重判定新增客戶
 const clientStats = computed(() => {
   let newClientsList = [];
   const sourceCount = { '廣告': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
 
-  // 1. 預先整理每個客戶的「第一筆消費日期」，用來抓取「舊預約客轉化」
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t.type === 'income' && t.client_id) {
@@ -142,24 +142,17 @@ const clientStats = computed(() => {
   });
 
   store.clients.forEach(c => {
-    // 只計算目前已經是正式會員的人
     if (c.status !== 'active') return;
 
-    // 判定條件 A：加入日期 (join_date) 落在區間內
     let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
-
-    // 判定條件 B：防呆！如果 join_date 不在區間，但他的「首筆消費」落在區間內，強制判定為本區間新客！
     let isNewByFirstTxn = false;
     if (firstTxnMap[c.id]) {
         isNewByFirstTxn = isDateInRange(firstTxnMap[c.id].toISOString());
     }
 
-    // 只要符合任何一個條件，就算入新增客戶
     if (isNewByJoinDate || isNewByFirstTxn) {
         if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
-            // 確保不重複計算同一個客戶
             if (!newClientsList.find(x => x.id === c.id)) {
-                // 取較為精準的日期來顯示給你看
                 const displayDate = (isNewByJoinDate && c.join_date) 
                                   ? c.join_date 
                                   : (firstTxnMap[c.id] ? firstTxnMap[c.id].toISOString().split('T')[0] : '無紀錄');
@@ -174,7 +167,6 @@ const clientStats = computed(() => {
     }
   })
 
-  // 依日期排序，最新的排最上面
   newClientsList.sort((a,b) => new Date(b.display_join_date) - new Date(a.display_join_date));
 
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
@@ -219,16 +211,42 @@ const trialFunnelStats = computed(() => {
   return { totalBooked, completedTrials, converted, notConverted, conversionRate };
 })
 
+// 💡 全新升級：不僅計算數量，還打包具體明細給 Modal 顯示
 const packageStats = computed(() => {
-  let pkg850 = 0, pkg2550 = 0
+  let pkg850 = 0, pkg2550 = 0;
+  let list = [];
+  
   store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return; 
     if (t.category === '運動套票' || t.category === '運動') {
-      if (t.amount === 850 || (t.note && t.note.includes('pkg_10'))) pkg850++
-      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35'))) pkg2550++
+      let isPkg = false;
+      let typeStr = '';
+      
+      if (t.amount === 850 || (t.note && t.note.includes('pkg_10'))) { pkg850++; isPkg = true; typeStr = '10點套票'; }
+      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35'))) { pkg2550++; isPkg = true; typeStr = '35點套票'; }
+      
+      if (isPkg) {
+        // 智能抽取顯示名稱
+        let cName = t.client_name;
+        if (!cName && t.note) {
+           const match = t.note.match(/^【(.*?)】/);
+           if (match) cName = match[1];
+        }
+        
+        list.push({
+          ...t,
+          display_client_name: cName || '未記錄',
+          pkg_type: typeStr,
+          display_date: new Date(t.created_at).toISOString().split('T')[0]
+        });
+      }
     }
   })
-  return { pkg850, pkg2550 }
+  
+  // 依日期排序，最新排上面
+  list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  
+  return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
 })
 
 const marathonRate = computed(() => {
@@ -435,10 +453,16 @@ const chartOptions = {
           </div>
         </div>
 
-        <div style="text-align:right;">
-          <div style="font-size: 13px; color: #64748b; font-weight: 800;">售出 / 續卡數</div>
-          <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1;">{{ packageStats.pkg850 + packageStats.pkg2550 }} <span style="font-size: 14px; color: #64748b;">張</span></div>
+        <div @click="showPackageSalesModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-right: -10px; border: 1px solid transparent; transition: 0.2s; text-align: right;">
+          <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
+            <span style="background: #d1fae5; color: #10b981; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
+            售出 / 續卡數
+          </div>
+          <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1; margin-top: 5px;">
+            {{ packageStats.total }} <span style="font-size: 14px; color: #64748b;">張</span>
+          </div>
         </div>
+
       </div>
 
       <div class="divider-dash"></div>
@@ -534,6 +558,39 @@ const chartOptions = {
       </div>
     </div>
 
+    <div v-if="showPackageSalesModal" class="modal-overlay" @click.self="showPackageSalesModal = false">
+      <div class="edit-modal" style="max-width: 500px; width: 95%;">
+        <div class="m-header">🎟️ 區間售出 / 續卡名單 <button class="close-x" @click="showPackageSalesModal=false">✕</button></div>
+
+        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #10b981;">
+          💡 <b>系統抓取邏輯：</b> 顯示區間內所有購買「10點套票」與「35點套票」的交易紀錄。
+        </div>
+
+        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+          <div v-if="packageStats.list.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
+            區間內尚無套票售出紀錄
+          </div>
+
+          <div v-for="(t, idx) in packageStats.list" :key="t.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+            <div>
+              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
+                {{ idx + 1 }}. {{ t.display_client_name }}
+                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ t.pkg_type }}</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
+                📍 分店: {{ t.branch || '無' }} · 收款: {{ t.staff || '無' }}
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">購買日期</div>
+              <div style="font-size: 13px; font-weight: 900; color: #10b981;">{{ t.display_date }}</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -589,7 +646,6 @@ const chartOptions = {
 .meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
 .empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
 
-/* 💡 新增的滑鼠特效 */
 .hover-bg:hover { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; }
 
 .source-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
