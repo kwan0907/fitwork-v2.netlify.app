@@ -32,7 +32,7 @@ const showFunnelModal = ref(false)
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
-// 1. 純文字切割：列表與圖表顯示 (不再用 new Date 轉換 Supabase 資料)
+// 1. 純文字切割：列表與圖表顯示
 const getMonthStr = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '';
   const m = String(dateStr).slice(5, 7);
@@ -59,7 +59,7 @@ const formatTrialDateDisplay = (dateStr) => {
 // 2. 純文字日期範圍判斷
 const isDateInRange = (dateStr) => {
   if (!dateStr) return false;
-  const tDateStr = String(dateStr).slice(0, 10); // YYYY-MM-DD
+  const tDateStr = String(dateStr).slice(0, 10); 
   if (tDateStr.length < 10) return false;
 
   const [ty, tm, td] = tDateStr.split('-').map(Number);
@@ -85,27 +85,28 @@ const isDateInRange = (dateStr) => {
   return true;
 }
 
-const prospectClients = computed(() => store.clients.filter(c => c.status === 'prospect'))
-const activeClients = computed(() => store.clients.filter(c => c.status === 'active'))
+// 🛡️ 加上 ? 防護盾
+const prospectClients = computed(() => store.clients.filter(c => c?.status === 'prospect'))
+const activeClients = computed(() => store.clients.filter(c => c?.status === 'active'))
 
 const branchCounts = computed(() => {
   return {
-    kwunTong: activeClients.value.filter(c => c.branch === '觀塘').length,
-    central: activeClients.value.filter(c => c.branch === '中環').length,
-    jordan: activeClients.value.filter(c => c.branch === '佐敦').length
+    kwunTong: activeClients.value.filter(c => c?.branch === '觀塘').length,
+    central: activeClients.value.filter(c => c?.branch === '中環').length,
+    jordan: activeClients.value.filter(c => c?.branch === '佐敦').length
   }
 })
 
 const upcomingTrials = computed(() => {
   const todayYMD = getLocalHKDate();
   return prospectClients.value
-    .filter(c => c.trial_date)
+    .filter(c => c?.trial_date)
     .filter(c => { 
-       const tDateStr = String(c.trial_date).slice(0, 10);
+       const tDateStr = String(c?.trial_date || '').slice(0, 10);
        return tDateStr >= todayYMD; 
     })
-    .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => String(a.trial_date).localeCompare(String(b.trial_date)))
+    .filter(c => filterBranch.value === '全部分店' ? true : c?.branch === filterBranch.value)
+    .sort((a,b) => String(a?.trial_date || '').localeCompare(String(b?.trial_date || '')))
     .slice(0, 5)
 })
 
@@ -114,20 +115,19 @@ const financialStats = computed(() => {
   let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
   let inventoryCost = 0; 
 
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
-    const amt = Number(t.amount) || 0;
-    const noteStr = t.note || '';
+  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
+    if (filterBranch.value !== '全部分店' && t?.branch !== filterBranch.value) return;
+    const amt = Number(t?.amount) || 0;
+    const noteStr = t?.note || '';
     
-    // 純字串擷取 DD
-    const txDate = parseInt(String(t.created_at).slice(8, 10));
+    const txDate = parseInt(String(t?.created_at || '').slice(8, 10));
     
-    if (t.type === 'income') { 
+    if (t?.type === 'income') { 
       revenue += amt; 
-      profit += Number(t.profit ?? amt); 
+      profit += Number(t?.profit ?? amt); 
       
       let owed = 0;
-      if (t.category === '運動套票' || t.category === '試堂' || t.category === '運動') {
+      if (t?.category === '運動套票' || t?.category === '試堂' || t?.category === '運動') {
         if (noteStr.includes('35點') || amt === 2550 || amt === 2452) owed = 800;
         else if (noteStr.includes('10點') || amt === 850 || amt === 752) owed = 250;
         else if (noteStr.includes('體驗卡30人次')) owed = 750;
@@ -137,11 +137,11 @@ const financialStats = computed(() => {
       if (txDate <= 14) shopOwed1 += owed;
       else shopOwed2 += owed;
     } 
-    else if (t.type === 'expense') { 
-      if (t.category === '支付30%') {
+    else if (t?.type === 'expense') { 
+      if (t?.category === '支付30%') {
         cost += amt;
         shopPaid += amt; 
-      } else if (t.category === '自用消耗') {
+      } else if (t?.category === '自用消耗') {
         inventoryCost += amt; 
       } else {
         cost += amt;
@@ -170,32 +170,32 @@ const clientStats = computed(() => {
 
   const firstTxnMap = {};
   store.transactions.forEach(t => {
-    if (t.type === 'income' && t.client_id) {
+    if (t?.type === 'income' && t?.client_id) {
       if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = String(t.created_at); // 儲存純文字
+        firstTxnMap[t.client_id] = String(t.created_at); 
       }
     }
   });
 
   store.clients.forEach(c => {
-    if (c.status !== 'active') return;
+    if (c?.status !== 'active') return;
 
-    let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
+    let isNewByJoinDate = c?.join_date && isDateInRange(c?.join_date);
     let isNewByFirstTxn = false;
-    if (firstTxnMap[c.id]) {
+    if (firstTxnMap[c?.id]) {
         isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
     }
 
     if (isNewByJoinDate || isNewByFirstTxn) {
-        if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
-            if (!newClientsList.find(x => x.id === c.id)) {
-                const displayDate = (isNewByJoinDate && c.join_date) 
+        if (filterBranch.value === '全部分店' || c?.branch === filterBranch.value) {
+            if (!newClientsList.find(x => x?.id === c?.id)) {
+                const displayDate = (isNewByJoinDate && c?.join_date) 
                                   ? c.join_date 
-                                  : (firstTxnMap[c.id] ? firstTxnMap[c.id].slice(0, 10) : '無紀錄');
+                                  : (firstTxnMap[c?.id] ? firstTxnMap[c.id].slice(0, 10) : '無紀錄');
                 
                 newClientsList.push({ ...c, display_join_date: displayDate });
 
-                const src = c.source || '其他';
+                const src = c?.source || '其他';
                 if (sourceCount[src] !== undefined) sourceCount[src]++;
                 else sourceCount['其他']++;
             }
@@ -203,7 +203,8 @@ const clientStats = computed(() => {
     }
   })
 
-  newClientsList.sort((a,b) => String(b.display_join_date).localeCompare(String(a.display_join_date)));
+  // 🛡️ 加上 ? 防護盾
+  newClientsList.sort((a,b) => String(b?.display_join_date || '').localeCompare(String(a?.display_join_date || '')));
 
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
@@ -217,7 +218,7 @@ const trialFunnelStats = computed(() => {
   const todayYMD = getLocalHKDate();
   const firstTxnMap = {};
   store.transactions.forEach(t => {
-    if (t.type === 'income' && t.client_id) {
+    if (t?.type === 'income' && t?.client_id) {
       if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) {
         firstTxnMap[t.client_id] = String(t.created_at);
       }
@@ -225,24 +226,24 @@ const trialFunnelStats = computed(() => {
   });
 
   store.clients.forEach(c => {
-    if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
+    if (filterBranch.value !== '全部分店' && c?.branch !== filterBranch.value) return;
 
-    let hasTrialInDate = c.trial_date && isDateInRange(c.trial_date);
+    let hasTrialInDate = c?.trial_date && isDateInRange(c?.trial_date);
     let isDirectConvert = false;
-    let displayTrialDate = c.trial_date;
+    let displayTrialDate = c?.trial_date;
 
-    if (!hasTrialInDate && c.status === 'active') {
-        let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
+    if (!hasTrialInDate && c?.status === 'active') {
+        let isNewByJoinDate = c?.join_date && isDateInRange(c?.join_date);
         let isNewByFirstTxn = false;
         let firstTxnDateStr = null;
-        if (firstTxnMap[c.id]) {
+        if (firstTxnMap[c?.id]) {
             firstTxnDateStr = firstTxnMap[c.id].slice(0, 19);
             isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
         }
 
         if (isNewByJoinDate || isNewByFirstTxn) {
             isDirectConvert = true;
-            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c.join_date ? c.join_date + 'T12:00:00' : null);
+            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c?.join_date ? c.join_date + 'T12:00:00' : null);
         }
     }
 
@@ -253,17 +254,17 @@ const trialFunnelStats = computed(() => {
 
       let hasRealTransaction = false;
       store.transactions.forEach(t => {
-        if ((t.category === '運動套票' || t.category === '運動' || t.category === '零售收入') && t.note && t.note.includes(c.name)) {
+        if ((t?.category === '運動套票' || t?.category === '運動' || t?.category === '零售收入') && t?.note && c?.name && t.note.includes(c.name)) {
           hasRealTransaction = true;
         }
       });
 
-      if (isDirectConvert || c.status === 'active' || hasRealTransaction || c.expiry_date) {
+      if (isDirectConvert || c?.status === 'active' || hasRealTransaction || c?.expiry_date) {
         completedList.push(clientData);
         convertedList.push(clientData);     
       } 
       else {
-        const tDateStr = String(c.trial_date).slice(0, 10);
+        const tDateStr = String(c?.trial_date || '').slice(0, 10);
         if (tDateStr <= todayYMD) {
           completedList.push(clientData);
           notConvertedList.push(clientData);
@@ -272,7 +273,8 @@ const trialFunnelStats = computed(() => {
     }
   });
 
-  const sortByTrial = (a, b) => String(b.virtual_trial_date || '').localeCompare(String(a.virtual_trial_date || ''));
+  // 🛡️ 加上 ? 防護盾
+  const sortByTrial = (a, b) => String(b?.virtual_trial_date || '').localeCompare(String(a?.virtual_trial_date || ''));
   bookedList.sort(sortByTrial);
   completedList.sort(sortByTrial);
   convertedList.sort(sortByTrial);
@@ -310,9 +312,9 @@ const packageStats = computed(() => {
   let pkg850 = 0, pkg2550 = 0;
   let list = [];
   
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return; 
-    if (t.category === '運動套票' || t.category === '運動') {
+  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
+    if (filterBranch.value !== '全部分店' && t?.branch !== filterBranch.value) return; 
+    if (t?.category === '運動套票' || t?.category === '運動') {
       let isPkg = false;
       let typeStr = '';
       
@@ -336,7 +338,8 @@ const packageStats = computed(() => {
     }
   })
   
-  list.sort((a,b) => String(b.created_at).localeCompare(String(a.created_at)));
+  // 🛡️ 加上 ? 防護盾
+  list.sort((a,b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
   
   return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
 })
@@ -348,12 +351,12 @@ const myGiftStats = computed(() => {
   let issued = 0;
   let consumed = 0;
 
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
+  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
+    if (filterBranch.value !== '全部分店' && t?.branch !== filterBranch.value) return;
 
-    if (t.category === 'MyGift消耗') {
+    if (t?.category === 'MyGift消耗') {
       consumed++;
-    } else if ((t.category === '運動套票' || t.category === '運動') && t.type === 'income') {
+    } else if ((t?.category === '運動套票' || t?.category === '運動') && t?.type === 'income') {
       if (t.amount === 850 || (t.note && t.note.includes('10點'))) issued += 2;
       if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('35點'))) issued += 5;
     }
@@ -364,14 +367,14 @@ const myGiftStats = computed(() => {
 
 const marathonRate = computed(() => {
   if (activeClients.value.length === 0) return "0.0"
-  const runners = activeClients.value.filter(c => c.is_marathon).length
+  const runners = activeClients.value.filter(c => c?.is_marathon).length
   return ((runners / activeClients.value.length) * 100).toFixed(1)
 })
 
 const cashSummary = computed(() => {
   const summary = {}
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (!t.handled_by && !t.staff) return
+  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
+    if (!t?.handled_by && !t?.staff) return
     let person = t.handled_by || t.staff
     if (person.toLowerCase() === 'kwan') person = 'kwan'
 
@@ -384,14 +387,13 @@ const cashSummary = computed(() => {
 
 const marketingStats = computed(() => {
   let adSpend = 0, inquiries = 0
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if(t.type === 'expense' && t.category === '廣告費用') { adSpend += Number(t.amount); inquiries += (t.ad_inquiries || 0) }
+  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
+    if(t?.type === 'expense' && t?.category === '廣告費用') { adSpend += Number(t.amount); inquiries += (t.ad_inquiries || 0) }
   })
-  const adClients = store.clients.filter(c => c.source === '廣告')
-  return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c.status === 'active').length }
+  const adClients = store.clients.filter(c => c?.source === '廣告')
+  return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c?.status === 'active').length }
 })
 
-// 編輯時使用純字串
 function openTrialEdit(client) {
   editingClient.value = { ...client }
   if (editingClient.value.trial_date) {
@@ -403,7 +405,6 @@ function openTrialEdit(client) {
 async function updateTrial() {
   let finalTrialDate = editingClient.value.trial_date;
   if (finalTrialDate) {
-    // 🛡️ 終極防呆：純字串送出，完全不加 Z
     finalTrialDate = finalTrialDate.slice(0, 16);
   } else {
     finalTrialDate = null;
@@ -432,22 +433,22 @@ const trendChartData = computed(() => {
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
     d.setDate(d.getDate() - i)
     
-    const targetStr = d.toISOString().split('T')[0] // YYYY-MM-DD
+    const targetStr = d.toISOString().split('T')[0] 
     const [ty, tm, td] = targetStr.split('-')
     labels.push(`${parseInt(tm)}/${parseInt(td)}`)
     
     const dailyTxns = store.transactions.filter(t => {
-      const tStr = String(t.created_at).slice(0, 10)
+      const tStr = String(t?.created_at || '').slice(0, 10)
       const isSameDay = tStr === targetStr
-      const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
+      const isBranchMatch = filterBranch.value === '全部分店' || t?.branch === filterBranch.value
       return isSameDay && isBranchMatch
     })
 
     let dailyRev = 0, dailyProf = 0
     dailyTxns.forEach(t => {
-      const amt = Number(t.amount) || 0
-      if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
-      else if (t.type === 'expense') { 
+      const amt = Number(t?.amount) || 0
+      if (t?.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
+      else if (t?.type === 'expense') { 
         if (t.category !== '支付30%' && t.category !== '自用消耗') dailyProf -= amt; 
       }
     })
@@ -620,7 +621,7 @@ const chartOptions = {
     <div class="marathon-card">
       <div class="m-title">客戶轉馬拉松百分比</div>
       <div class="m-val">{{ marathonRate }}% <span style="float:right; font-size:32px;">🏃</span></div>
-      <div class="m-foot"><span>活躍: {{ activeClients.filter(c=>c.is_marathon).length }} 人</span><span>正式會員: {{ activeClients.length }} 人</span></div>
+      <div class="m-foot"><span>活躍: {{ activeClients.filter(c=>c?.is_marathon).length }} 人</span><span>正式會員: {{ activeClients.length }} 人</span></div>
     </div>
 
     <div class="section-title" v-if="Object.keys(cashSummary).length > 0">💰 經手人資金結算</div>
