@@ -178,14 +178,14 @@ const filteredClients = computed(() => {
     list.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''))
   } else if (sortBy.value === 'expiry_asc') {
     list.sort((a, b) => {
-      const d1 = String(a.expiry_date || '9999-99-99')
-      const d2 = String(b.expiry_date || '9999-99-99')
+      const d1 = String(a?.expiry_date || '9999-99-99')
+      const d2 = String(b?.expiry_date || '9999-99-99')
       return d1.localeCompare(d2)
     })
   } else if (sortBy.value === 'expiry_desc') {
     list.sort((a, b) => {
-      const d1 = String(a.expiry_date || '0000-00-00')
-      const d2 = String(b.expiry_date || '0000-00-00')
+      const d1 = String(a?.expiry_date || '0000-00-00')
+      const d2 = String(b?.expiry_date || '0000-00-00')
       return d2.localeCompare(d1)
     })
   }
