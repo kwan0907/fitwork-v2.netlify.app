@@ -9,6 +9,30 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
+// 🛡️ 終極防呆：拆開字串變數字，強迫瀏覽器認作本地時間
+const toSafeUTCString = (dateStr) => {
+  if (!dateStr) return null;
+  const cleanStr = dateStr.slice(0, 16);
+  const [dPart, tPart] = cleanStr.split('T');
+  const [yyyy, mm, dd] = dPart.split('-');
+  const [hh, min] = tPart.split(':');
+  const d = new Date(yyyy, mm - 1, dd, hh, min);
+  return d.toISOString();
+}
+
+// ✅ 新增：統一處理 Supabase 回傳的 UTC 無時區標記字串
+// Supabase 回傳格式如 "2026-05-05T10:30:00"，沒有 Z，JS 會當本地時間解析
+// 加上 Z 才能正確當 UTC 解析，再由 JS 轉換成本地時間（香港 +8）
+const parseUTCDate = (dateStr) => {
+  if (!dateStr) return new Date(NaN)
+  let str = String(dateStr).split('.')[0] // 移除毫秒部分
+  // 如果字串末尾沒有時區標記（Z 或 +HH:MM），就補上 Z 當 UTC
+  if (!str.includes('Z') && !str.match(/[+-]\d{2}:\d{2}$/)) {
+    str += 'Z'
+  }
+  return new Date(str)
+}
+
 const filterTime = ref('month')
 const customStart = ref('')
 const customEnd = ref('')
@@ -21,18 +45,18 @@ const showFunnelModal = ref(false)
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
-const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
-const getDayStr = (d) => new Date(d).getDate().toString().padStart(2, '0')
-const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
+// ✅ 修復：使用 parseUTCDate 正確解析 Supabase UTC 時間
+const getMonthStr = (d) => {
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
+  return months[parseUTCDate(d).getMonth()]
+}
+const getDayStr = (d) => parseUTCDate(d).getDate().toString().padStart(2, '0')
+const getTimeStr = (d) => parseUTCDate(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
 
-// 🛡️ 時間防呆解析器 (破解 Safari 終極 Bug)
+// ✅ 修復：使用 parseUTCDate 正確解析顯示日期
 const formatTrialDateDisplay = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '無紀錄'
-  // 【關鍵修復】把 "-" 換成 "/"，把 "T" 換成空格
-  const safeStr = dateStr.includes('T') && !dateStr.includes('Z') && !dateStr.includes('+') 
-      ? dateStr.replace(/-/g, '/').replace('T', ' ').split('.')[0] 
-      : dateStr;
-  const d = new Date(safeStr)
+  const d = parseUTCDate(dateStr)
   if (isNaN(d)) return dateStr
   return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
@@ -74,17 +98,9 @@ const upcomingTrials = computed(() => {
   const now = new Date(); now.setHours(0,0,0,0);
   return prospectClients.value
     .filter(c => c.trial_date)
-    .filter(c => { 
-      const safeStr = c.trial_date.includes('T') && !c.trial_date.includes('Z') && !c.trial_date.includes('+') ? c.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0] : c.trial_date;
-      const tDate = new Date(safeStr); 
-      return tDate >= now || tDate.toDateString() === now.toDateString(); 
-    })
+    .filter(c => { const tDate = new Date(c.trial_date); return tDate >= now || tDate.toDateString() === now.toDateString(); })
     .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => {
-      const safeA = a.trial_date.includes('T') && !a.trial_date.includes('Z') && !a.trial_date.includes('+') ? a.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0] : a.trial_date;
-      const safeB = b.trial_date.includes('T') && !b.trial_date.includes('Z') && !b.trial_date.includes('+') ? b.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0] : b.trial_date;
-      return new Date(safeA) - new Date(safeB)
-    })
+    .sort((a,b) => new Date(a.trial_date) - new Date(b.trial_date))
     .slice(0, 5)
 })
 
@@ -242,8 +258,7 @@ const trialFunnelStats = computed(() => {
         convertedList.push(clientData);     
       } 
       else {
-        const safeStr = c.trial_date.includes('T') && !c.trial_date.includes('Z') && !c.trial_date.includes('+') ? c.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0] : c.trial_date;
-        const tDate = new Date(safeStr);
+        const tDate = new Date(c.trial_date);
         if (tDate <= now) {
           completedList.push(clientData);
           notConvertedList.push(clientData);
@@ -350,15 +365,12 @@ const marketingStats = computed(() => {
   return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c.status === 'active').length }
 })
 
+// ✅ 修復核心：使用 parseUTCDate 正確把 Supabase UTC 時間轉成香港本地時間顯示
 function openTrialEdit(client) {
   editingClient.value = { ...client }
   if (editingClient.value.trial_date) {
-    // 【關鍵修復】直接套用 Safari 破解器
-    const safeStr = editingClient.value.trial_date.includes('T') && !editingClient.value.trial_date.includes('Z') && !editingClient.value.trial_date.includes('+') 
-        ? editingClient.value.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0] 
-        : editingClient.value.trial_date;
-    const d = new Date(safeStr);
-    
+    // parseUTCDate 會加上 Z，令 JS 正確把 UTC 轉換成本地時間（香港 +8）
+    const d = parseUTCDate(editingClient.value.trial_date)
     const yyyy = d.getFullYear()
     const MM = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
@@ -370,8 +382,16 @@ function openTrialEdit(client) {
 }
 
 async function updateTrial() {
-  // 還原：直接儲存，不加時區
-  let finalTrialDate = editingClient.value.trial_date || null;
+  
+  // 🛡️ 終極防呆：無視瀏覽器有冇加秒數，強制裁切前 16 碼，再補上香港時區
+  let finalTrialDate = editingClient.value.trial_date;
+  if (finalTrialDate) {
+    // 例如 "2026-05-05T18:30:00" 會被切成 "2026-05-05T18:30"
+    // 然後硬生生加上 ":00+08:00"
+    finalTrialDate = finalTrialDate.slice(0, 16) + ':00+08:00';
+  } else {
+    finalTrialDate = null;
+  }
 
   const { error } = await supabase.from('clients').update({
     name: editingClient.value.name, 
@@ -382,7 +402,11 @@ async function updateTrial() {
   }).eq('id', editingClient.value.id)
 
   if (error) alert('更新失敗: ' + error.message)
-  else { alert('✅ 預約資料已更新'); showEditModal.value = false; store.syncAll() }
+  else { 
+    alert('✅ 預約資料已更新'); 
+    showEditModal.value = false; 
+    store.syncAll() 
+  }
 }
 
 const trendChartData = computed(() => {
