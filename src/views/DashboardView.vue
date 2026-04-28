@@ -9,11 +9,6 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
-// ==========================================
-// 🛡️ 終極防護大絕招：字串絕對隔離法
-// ==========================================
-
-// 取得本地的 YYYY-MM-DD
 const getLocalHKDate = () => {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -29,10 +24,10 @@ const showEditModal = ref(false)
 const showNewClientsModal = ref(false) 
 const showPackageSalesModal = ref(false)
 const showFunnelModal = ref(false) 
+const showMyGiftModal = ref(false) // 🟢 MyGift 名單 Modal
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
-// 1. 純文字切割：列表與圖表顯示
 const getMonthStr = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '';
   const m = String(dateStr).slice(5, 7);
@@ -56,7 +51,6 @@ const formatTrialDateDisplay = (dateStr) => {
   return `${parseInt(m)}/${parseInt(day)} ${t}`;
 }
 
-// 2. 純文字日期範圍判斷
 const isDateInRange = (dateStr) => {
   if (!dateStr) return false;
   const tDateStr = String(dateStr).slice(0, 10); 
@@ -85,7 +79,6 @@ const isDateInRange = (dateStr) => {
   return true;
 }
 
-// 🛡️ 加上 ? 防護盾
 const prospectClients = computed(() => store.clients.filter(c => c?.status === 'prospect'))
 const activeClients = computed(() => store.clients.filter(c => c?.status === 'active'))
 
@@ -203,7 +196,6 @@ const clientStats = computed(() => {
     }
   })
 
-  // 🛡️ 加上 ? 防護盾
   newClientsList.sort((a,b) => String(b?.display_join_date || '').localeCompare(String(a?.display_join_date || '')));
 
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
@@ -273,7 +265,6 @@ const trialFunnelStats = computed(() => {
     }
   });
 
-  // 🛡️ 加上 ? 防護盾
   const sortByTrial = (a, b) => String(b?.virtual_trial_date || '').localeCompare(String(a?.virtual_trial_date || ''));
   bookedList.sort(sortByTrial);
   completedList.sort(sortByTrial);
@@ -338,32 +329,89 @@ const packageStats = computed(() => {
     }
   })
   
-  // 🛡️ 加上 ? 防護盾
   list.sort((a,b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
   
   return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
 })
 
 // ==========================================
-// 🎁 區間 MyGift 發放與消耗統計
+// 🟢 智能計算系統 - 抓取未使用 MyGift 的客戶
 // ==========================================
-const myGiftStats = computed(() => {
-  let issued = 0;
-  let consumed = 0;
+const parseLocal = (dateStr) => {
+  if (!dateStr) return new Date(NaN);
+  let str = String(dateStr).split('.')[0].replace(' ', 'T');
+  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
+  return new Date(str); 
+}
 
-  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t?.branch !== filterBranch.value) return;
+const getMyGiftStats = (client) => {
+  if (!client || !client.name) return { available: 0, closestExpiry: null };
+  let earnedTickets = [];
+  let consumedCount = 0;
+  
+  store.transactions.forEach(t => {
+    const isMatch = t.client_name === client.name || (t.note && t.note.includes(client.name));
+    if (!isMatch) return;
 
-    if (t?.category === 'MyGift消耗') {
-      consumed++;
-    } else if ((t?.category === '運動套票' || t?.category === '運動') && t?.type === 'income') {
-      if (t.amount === 850 || (t.note && t.note.includes('10點'))) issued += 2;
-      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('35點'))) issued += 5;
+    if (t.category === 'MyGift消耗') {
+      consumedCount++;
+    } 
+    else if ((t.category === '運動套票' || t.category === '運動') && t.type === 'income') {
+      let earn = 0;
+      if (t.amount === 850 || (t.note && t.note.includes('10點'))) earn = 2;
+      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('35點'))) earn = 5;
+      
+      if (earn > 0) {
+        const expDate = parseLocal(t.created_at);
+        if (!isNaN(expDate)) {
+          expDate.setMonth(expDate.getMonth() + 3);
+          for(let i=0; i<earn; i++) {
+            earnedTickets.push(expDate);
+          }
+        }
+      }
     }
   });
+  
+  earnedTickets.sort((a, b) => a - b);
+  if (consumedCount > 0) earnedTickets.splice(0, consumedCount);
+  
+  const todayYMD = getLocalHKDate();
+  const [ty, tm, td] = todayYMD.split('-').map(Number);
+  const todayObj = new Date(ty, tm - 1, td);
+  
+  const validTickets = earnedTickets.filter(exp => {
+    const expDay = new Date(exp.getFullYear(), exp.getMonth(), exp.getDate());
+    return expDay >= todayObj;
+  });
+  
+  if (validTickets.length === 0) return { available: 0, closestExpiry: null };
+  const closest = validTickets[0];
+  const cYMD = `${closest.getFullYear()}-${String(closest.getMonth()+1).padStart(2,'0')}-${String(closest.getDate()).padStart(2,'0')}`;
+  return { available: validTickets.length, closestExpiry: cYMD };
+}
 
-  return { issued, consumed };
-})
+// 產生清單：還有未使用 MyGift 的客戶
+const clientsWithMyGift = computed(() => {
+  let list = [];
+  store.clients.forEach(c => {
+    if (filterBranch.value !== '全部分店' && c?.branch !== filterBranch.value) return;
+    const stats = getMyGiftStats(c);
+    if (stats.available > 0) {
+      list.push({ ...c, mygift_available: stats.available, mygift_expiry: stats.closestExpiry });
+    }
+  });
+  list.sort((a,b) => String(a.mygift_expiry).localeCompare(String(b.mygift_expiry)));
+  return list;
+});
+
+const myGiftConsumedTotal = computed(() => {
+  let consumed = 0;
+  store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
+    if (t?.category === 'MyGift消耗') consumed++;
+  });
+  return consumed;
+});
 
 const marathonRate = computed(() => {
   if (activeClients.value.length === 0) return "0.0"
@@ -637,10 +685,43 @@ const chartOptions = {
     <div class="grid-2">
       <div class="stat-card"><div class="s-val">{{ marketingStats.adCount }} 人</div><div class="s-label">廣告來源客戶</div><div class="s-sub">成功轉正式: {{ marketingStats.adActive }}</div></div>
       <div class="stat-card"><div class="s-val">{{ packageStats.pkg850 }} / {{ packageStats.pkg2550 }}</div><div class="s-label">套票銷量</div><div class="s-sub">10點 / 35點</div></div>
-      <div class="stat-card" style="grid-column: span 2; border-color: #8b5cf6; background: #faf5ff;">
-        <div class="s-val text-purple">{{ myGiftStats.issued }} / {{ myGiftStats.consumed }}</div>
-        <div class="s-label" style="color: #7c3aed;">🎁 區間 MyGift 派發 / 消耗</div>
-        <div class="s-sub" style="color: #8b5cf6;">追蹤買卡派發與轉介紹消耗</div>
+      
+      <div class="stat-card hover-bg" style="grid-column: span 2; border-color: #8b5cf6; background: #faf5ff; cursor: pointer; transition: 0.2s;" @click="showMyGiftModal = true">
+        <div class="s-val text-purple">{{ clientsWithMyGift.length }} <span style="font-size: 14px; font-weight: 800;">人</span></div>
+        <div class="s-label" style="color: #7c3aed;">🎁 擁有未消耗 MyGift 優惠</div>
+        <div class="s-sub" style="color: #8b5cf6;">(區間內共消耗: {{ myGiftConsumedTotal }} 張) 🖱️ 點擊查看名單</div>
+      </div>
+    </div>
+
+    <div v-if="showMyGiftModal" class="modal-overlay" @click.self="showMyGiftModal = false">
+      <div class="edit-modal" style="max-width: 500px; width: 95%;">
+        <div class="m-header">🎁 未消耗 MyGift 客戶名單 <button class="close-x" @click="showMyGiftModal=false">✕</button></div>
+
+        <div style="margin-bottom: 15px; font-size: 12px; color: #7c3aed; font-weight: 700; background: #faf5ff; padding: 10px; border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          💡 <b>系統自動排序：</b> 名單已依照「最快過期日」由近到遠排序。你可以主動聯繫排在最前面的客戶！
+        </div>
+
+        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+          <div v-if="clientsWithMyGift.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
+            目前沒有符合條件的客戶
+          </div>
+
+          <div v-for="(c, idx) in clientsWithMyGift" :key="c.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+            <div>
+              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
+                {{ idx + 1 }}. {{ c.name }}
+                <span style="font-size: 11px; color: #8b5cf6; background: #ede9fe; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
+                📞 {{ c.phone || '無' }}
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">剩餘 <span style="font-size:14px; color:#ef4444; font-weight:900;">{{ c.mygift_available }}</span> 張</div>
+              <div style="font-size: 13px; font-weight: 900; color: #8b5cf6;">至 {{ c.mygift_expiry }}</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

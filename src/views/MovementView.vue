@@ -1,11 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue' // 🟢 新增：引入 onMounted
-import { useRoute } from 'vue-router' // 🟢 新增：引入 useRoute 來接收網址參數
+import { ref, computed, onMounted } from 'vue' 
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
-const route = useRoute() // 🟢 新增：啟用 route
 
 const searchClient = ref('')
 const selectedClient = ref(null)
@@ -40,7 +38,7 @@ function selectClient(c) {
 }
 
 // ==========================================
-// 🟢 新增：頁面載入時，自動抓取並填入客戶名字
+// 🟢 頁面載入時，自動抓取並填入客戶名字
 // ==========================================
 onMounted(() => {
   if (store.quickActionClient) {
