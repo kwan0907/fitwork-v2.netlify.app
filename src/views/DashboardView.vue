@@ -9,23 +9,23 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
-// 🛡️ 終極防呆：拆開字串變數字，強迫瀏覽器認作本地時間
-const toSafeUTCString = (dateStr) => {
-  if (!dateStr) return null;
-  // 1. 確保只攞前 16 碼 (YYYY-MM-DDTHH:mm)
-  const cleanStr = dateStr.slice(0, 16);
+// 🔪 核心解法 (斬斷時區法)：把 Supabase 的 UTC 標記砍掉，強迫瀏覽器當成本地時間
+const parseLocal = (dateStr) => {
+  if (!dateStr || dateStr === '無紀錄') return new Date(NaN);
+  if (dateStr instanceof Date) return dateStr;
   
-  // 2. 斬件拆開年月日、時分
-  const [dPart, tPart] = cleanStr.split('T');
-  const [yyyy, mm, dd] = dPart.split('-');
-  const [hh, min] = tPart.split(':');
+  // 砍掉 Z 或 +00:00，例如 "2026-05-05T14:00:00Z" 會變成 "2026-05-05T14:00:00"
+  let str = String(dateStr).split('.')[0].replace(' ', 'T');
+  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
   
-  // 3. 用「數字」建立 Date (JavaScript 見到數字，必定會用你手機嘅本地時區)
-  // 注意：月份要減 1，因為 JS 月份係 0-11
-  const d = new Date(yyyy, mm - 1, dd, hh, min);
-  
-  // 4. 轉換成 UTC 標準格式 (結尾有 Z) 俾 Supabase
-  return d.toISOString();
+  // 這樣 JS 就會乖乖當作本地時間，絕對不會再 +8
+  return new Date(str); 
+}
+
+// 輔助函數：將 Date 轉為 YYYY-MM-DD，避免 toISOString 又加回時區
+const toYMD = (d) => {
+  if(isNaN(d)) return '無紀錄';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 const filterTime = ref('month')
@@ -40,26 +40,31 @@ const showFunnelModal = ref(false)
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
-const getMonthStr = (d) => { const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']; return months[new Date(d).getMonth()] }
-const getDayStr = (d) => new Date(d).getDate().toString().padStart(2, '0')
-const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
+const getMonthStr = (d) => {
+  const x = parseLocal(d);
+  return isNaN(x) ? '' : `${x.getMonth() + 1}月`;
+}
+const getDayStr = (d) => {
+  const x = parseLocal(d);
+  return isNaN(x) ? '' : String(x.getDate()).padStart(2, '0');
+}
+const getTimeStr = (d) => {
+  const x = parseLocal(d);
+  return isNaN(x) ? '' : `${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
+}
 
 const formatTrialDateDisplay = (dateStr) => {
-  if (!dateStr || dateStr === '無紀錄') return '無紀錄'
-  
-  // 【關鍵修復】把 "-" 換成 "/"，把 "T" 換成空格
-  const safeStr = dateStr.includes('T') && !dateStr.includes('Z') && !dateStr.includes('+') 
-      ? dateStr.replace(/-/g, '/').replace('T', ' ').split('.')[0] 
-      : dateStr;
-      
-  const d = new Date(safeStr)
-  if (isNaN(d)) return dateStr
-  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  if (!dateStr || dateStr === '無紀錄') return '無紀錄';
+  const d = parseLocal(dateStr);
+  if (isNaN(d)) return dateStr;
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
 const isDateInRange = (dateStr) => {
   if (!dateStr) return false
-  const d = new Date(dateStr)
+  const d = parseLocal(dateStr)
+  if (isNaN(d)) return false
+
   const now = new Date()
   if (filterTime.value === 'all') return true
   if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
@@ -94,9 +99,12 @@ const upcomingTrials = computed(() => {
   const now = new Date(); now.setHours(0,0,0,0);
   return prospectClients.value
     .filter(c => c.trial_date)
-    .filter(c => { const tDate = new Date(c.trial_date); return tDate >= now || tDate.toDateString() === now.toDateString(); })
+    .filter(c => { 
+       const tDate = parseLocal(c.trial_date); 
+       return tDate >= now || tDate.toDateString() === now.toDateString(); 
+    })
     .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => new Date(a.trial_date) - new Date(b.trial_date))
+    .sort((a,b) => parseLocal(a.trial_date) - parseLocal(b.trial_date))
     .slice(0, 5)
 })
 
@@ -109,7 +117,7 @@ const financialStats = computed(() => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
     const amt = Number(t.amount) || 0;
     const noteStr = t.note || '';
-    const txDate = new Date(t.created_at).getDate();
+    const txDate = parseLocal(t.created_at).getDate();
     
     if (t.type === 'income') { 
       revenue += amt; 
@@ -160,9 +168,9 @@ const clientStats = computed(() => {
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t.type === 'income' && t.client_id) {
-      const tDate = new Date(t.created_at);
+      const tDate = parseLocal(t.created_at);
       if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = tDate;
+        firstTxnMap[t.client_id] = tDate; // 儲存乾淨的 Local Date
       }
     }
   });
@@ -173,7 +181,7 @@ const clientStats = computed(() => {
     let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
     let isNewByFirstTxn = false;
     if (firstTxnMap[c.id]) {
-        isNewByFirstTxn = isDateInRange(firstTxnMap[c.id].toISOString());
+        isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
     }
 
     if (isNewByJoinDate || isNewByFirstTxn) {
@@ -181,7 +189,7 @@ const clientStats = computed(() => {
             if (!newClientsList.find(x => x.id === c.id)) {
                 const displayDate = (isNewByJoinDate && c.join_date) 
                                   ? c.join_date 
-                                  : (firstTxnMap[c.id] ? firstTxnMap[c.id].toISOString().split('T')[0] : '無紀錄');
+                                  : (firstTxnMap[c.id] ? toYMD(firstTxnMap[c.id]) : '無紀錄');
                 
                 newClientsList.push({ ...c, display_join_date: displayDate });
 
@@ -208,7 +216,7 @@ const trialFunnelStats = computed(() => {
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t.type === 'income' && t.client_id) {
-      const tDate = new Date(t.created_at);
+      const tDate = parseLocal(t.created_at);
       if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
         firstTxnMap[t.client_id] = tDate;
       }
@@ -227,13 +235,13 @@ const trialFunnelStats = computed(() => {
         let isNewByFirstTxn = false;
         let firstTxnDateStr = null;
         if (firstTxnMap[c.id]) {
-            firstTxnDateStr = firstTxnMap[c.id].toISOString();
-            isNewByFirstTxn = isDateInRange(firstTxnDateStr);
+            firstTxnDateStr = toYMD(firstTxnMap[c.id]);
+            isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
         }
 
         if (isNewByJoinDate || isNewByFirstTxn) {
             isDirectConvert = true;
-            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c.join_date ? c.join_date + 'T12:00:00Z' : null);
+            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c.join_date ? c.join_date + 'T12:00:00' : null);
         }
     }
 
@@ -254,7 +262,7 @@ const trialFunnelStats = computed(() => {
         convertedList.push(clientData);     
       } 
       else {
-        const tDate = new Date(c.trial_date);
+        const tDate = parseLocal(c.trial_date);
         if (tDate <= now) {
           completedList.push(clientData);
           notConvertedList.push(clientData);
@@ -263,7 +271,7 @@ const trialFunnelStats = computed(() => {
     }
   });
 
-  const sortByTrial = (a, b) => new Date(b.virtual_trial_date || 0) - new Date(a.virtual_trial_date || 0);
+  const sortByTrial = (a, b) => parseLocal(b.virtual_trial_date || 0) - parseLocal(a.virtual_trial_date || 0);
   bookedList.sort(sortByTrial);
   completedList.sort(sortByTrial);
   convertedList.sort(sortByTrial);
@@ -321,13 +329,13 @@ const packageStats = computed(() => {
           ...t,
           display_client_name: cName || '未記錄',
           pkg_type: typeStr,
-          display_date: new Date(t.created_at).toISOString().split('T')[0]
+          display_date: toYMD(parseLocal(t.created_at))
         });
       }
     }
   })
   
-  list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  list.sort((a,b) => parseLocal(b.created_at) - parseLocal(a.created_at));
   
   return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
 })
@@ -364,29 +372,25 @@ const marketingStats = computed(() => {
 function openTrialEdit(client) {
   editingClient.value = { ...client }
   if (editingClient.value.trial_date) {
-    // 【關鍵修復】不要再減 timezone offset，直接替換字元讀取
-    const safeStr = editingClient.value.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0];
-    const d = new Date(safeStr);
-    
-    // 手動重組成 YYYY-MM-DDTHH:mm 給 input 顯示
-    const yyyy = d.getFullYear()
-    const MM = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    const hh = String(d.getHours()).padStart(2, '0')
-    const mm = String(d.getMinutes()).padStart(2, '0')
-    editingClient.value.trial_date = `${yyyy}-${MM}-${dd}T${hh}:${mm}`
+    const d = parseLocal(editingClient.value.trial_date)
+    if (!isNaN(d)) {
+      const yyyy = d.getFullYear()
+      const MM = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mm = String(d.getMinutes()).padStart(2, '0')
+      editingClient.value.trial_date = `${yyyy}-${MM}-${dd}T${hh}:${mm}`
+    }
   }
   showEditModal.value = true
 }
 
 async function updateTrial() {
-  
-  // 🛡️ 終極防呆：無視瀏覽器有冇加秒數，強制裁切前 16 碼，再補上香港時區
   let finalTrialDate = editingClient.value.trial_date;
   if (finalTrialDate) {
-    // 例如 "2026-05-05T18:30:00" 會被切成 "2026-05-05T18:30"
-    // 然後硬生生加上 ":00+08:00"
-    finalTrialDate = finalTrialDate.slice(0, 16) + ':00';
+    // 💡 終極防呆：既然 Supabase 要我們說謊，我們就送給它假的 UTC 標記 "Z"
+    // 例如輸入 14:00，我們送 14:00Z，Supabase 就會在後台乖乖顯示 14:00！
+    finalTrialDate = `${finalTrialDate.slice(0, 16)}:00Z`;
   } else {
     finalTrialDate = null;
   }
@@ -415,7 +419,7 @@ const trendChartData = computed(() => {
     labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
     
     const dailyTxns = store.transactions.filter(t => {
-      const td = new Date(t.created_at)
+      const td = parseLocal(t.created_at)
       const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
       const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
       return isSameDay && isBranchMatch
