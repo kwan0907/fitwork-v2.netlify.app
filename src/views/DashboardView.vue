@@ -9,19 +9,15 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
-const parseLocal = (dateStr) => {
-  if (!dateStr) return new Date();
-  if (dateStr instanceof Date) return dateStr;
-  
-  let cleanStr = String(dateStr).slice(0, 19);
-  cleanStr = cleanStr.replace(/-/g, '/').replace('T', ' ');
-  return new Date(cleanStr); 
-}
+// ==========================================
+// 🛡️ 終極防護大絕招：字串絕對隔離法
+// ==========================================
 
-// 輔助函數：將 Date 轉為 YYYY-MM-DD，避免 toISOString 又加回時區
-const toYMD = (d) => {
-  if(isNaN(d)) return '無紀錄';
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+// 取得本地的 YYYY-MM-DD
+const getLocalHKDate = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().split('T')[0]
 }
 
 const filterTime = ref('month')
@@ -36,48 +32,57 @@ const showFunnelModal = ref(false)
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
-const getMonthStr = (d) => {
-  const x = parseLocal(d);
-  return isNaN(x) ? '' : `${x.getMonth() + 1}月`;
+// 1. 純文字切割：列表與圖表顯示 (不再用 new Date 轉換 Supabase 資料)
+const getMonthStr = (dateStr) => {
+  if (!dateStr || dateStr === '無紀錄') return '';
+  const m = String(dateStr).slice(5, 7);
+  return `${parseInt(m)}月`;
 }
-const getDayStr = (d) => {
-  const x = parseLocal(d);
-  return isNaN(x) ? '' : String(x.getDate()).padStart(2, '0');
+const getDayStr = (dateStr) => {
+  if (!dateStr || dateStr === '無紀錄') return '';
+  return String(dateStr).slice(8, 10);
 }
-const getTimeStr = (d) => {
-  const x = parseLocal(d);
-  return isNaN(x) ? '' : `${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
+const getTimeStr = (dateStr) => {
+  if (!dateStr || dateStr === '無紀錄') return '';
+  return String(dateStr).slice(11, 16);
 }
 
 const formatTrialDateDisplay = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '無紀錄';
-  const d = parseLocal(dateStr);
-  if (isNaN(d)) return dateStr;
-  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const str = String(dateStr).slice(0, 16);
+  if (str.length < 16) return dateStr;
+  const [d, t] = str.split('T');
+  const [y, m, day] = d.split('-');
+  return `${parseInt(m)}/${parseInt(day)} ${t}`;
 }
 
+// 2. 純文字日期範圍判斷
 const isDateInRange = (dateStr) => {
-  if (!dateStr) return false
-  const d = parseLocal(dateStr)
-  if (isNaN(d)) return false
+  if (!dateStr) return false;
+  const tDateStr = String(dateStr).slice(0, 10); // YYYY-MM-DD
+  if (tDateStr.length < 10) return false;
 
-  const now = new Date()
-  if (filterTime.value === 'all') return true
-  if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
-  if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  if (filterTime.value === 'half_1') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 1 && d.getDate() <= 14
-  if (filterTime.value === 'half_2') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 15
+  const [ty, tm, td] = tDateStr.split('-').map(Number);
+  const hkToday = getLocalHKDate();
+  const [ny, nm, nd] = hkToday.split('-').map(Number);
+
+  if (filterTime.value === 'all') return true;
+  if (filterTime.value === 'today') return tDateStr === hkToday;
+  if (filterTime.value === 'month') return ty === ny && tm === nm;
+  if (filterTime.value === 'half_1') return ty === ny && tm === nm && td >= 1 && td <= 14;
+  if (filterTime.value === 'half_2') return ty === ny && tm === nm && td >= 15;
   if (filterTime.value === 'week') {
-    const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
-    return d >= weekAgo && d <= now;
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    now.setDate(now.getDate() - 7);
+    const weekAgoStr = now.toISOString().split('T')[0];
+    return tDateStr >= weekAgoStr && tDateStr <= hkToday;
   }
   if (filterTime.value === 'custom') {
-    if (!customStart.value || !customEnd.value) return true
-    const start = new Date(customStart.value); start.setHours(0,0,0,0)
-    const end = new Date(customEnd.value); end.setHours(23,59,59,999)
-    return d >= start && d <= end
+    if (!customStart.value || !customEnd.value) return true;
+    return tDateStr >= customStart.value && tDateStr <= customEnd.value;
   }
-  return true
+  return true;
 }
 
 const prospectClients = computed(() => store.clients.filter(c => c.status === 'prospect'))
@@ -92,15 +97,15 @@ const branchCounts = computed(() => {
 })
 
 const upcomingTrials = computed(() => {
-  const now = new Date(); now.setHours(0,0,0,0);
+  const todayYMD = getLocalHKDate();
   return prospectClients.value
     .filter(c => c.trial_date)
     .filter(c => { 
-       const tDate = parseLocal(c.trial_date); 
-       return tDate >= now || tDate.toDateString() === now.toDateString(); 
+       const tDateStr = String(c.trial_date).slice(0, 10);
+       return tDateStr >= todayYMD; 
     })
     .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => parseLocal(a.trial_date) - parseLocal(b.trial_date))
+    .sort((a,b) => String(a.trial_date).localeCompare(String(b.trial_date)))
     .slice(0, 5)
 })
 
@@ -113,7 +118,9 @@ const financialStats = computed(() => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
     const amt = Number(t.amount) || 0;
     const noteStr = t.note || '';
-    const txDate = parseLocal(t.created_at).getDate();
+    
+    // 純字串擷取 DD
+    const txDate = parseInt(String(t.created_at).slice(8, 10));
     
     if (t.type === 'income') { 
       revenue += amt; 
@@ -164,9 +171,8 @@ const clientStats = computed(() => {
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t.type === 'income' && t.client_id) {
-      const tDate = parseLocal(t.created_at);
-      if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = tDate; // 儲存乾淨的 Local Date
+      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) {
+        firstTxnMap[t.client_id] = String(t.created_at); // 儲存純文字
       }
     }
   });
@@ -185,7 +191,7 @@ const clientStats = computed(() => {
             if (!newClientsList.find(x => x.id === c.id)) {
                 const displayDate = (isNewByJoinDate && c.join_date) 
                                   ? c.join_date 
-                                  : (firstTxnMap[c.id] ? toYMD(firstTxnMap[c.id]) : '無紀錄');
+                                  : (firstTxnMap[c.id] ? firstTxnMap[c.id].slice(0, 10) : '無紀錄');
                 
                 newClientsList.push({ ...c, display_join_date: displayDate });
 
@@ -197,7 +203,7 @@ const clientStats = computed(() => {
     }
   })
 
-  newClientsList.sort((a,b) => new Date(b.display_join_date) - new Date(a.display_join_date));
+  newClientsList.sort((a,b) => String(b.display_join_date).localeCompare(String(a.display_join_date)));
 
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
@@ -208,13 +214,12 @@ const trialFunnelStats = computed(() => {
   let convertedList = [];
   let notConvertedList = [];
 
-  const now = new Date();
+  const todayYMD = getLocalHKDate();
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t.type === 'income' && t.client_id) {
-      const tDate = parseLocal(t.created_at);
-      if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = tDate;
+      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) {
+        firstTxnMap[t.client_id] = String(t.created_at);
       }
     }
   });
@@ -231,7 +236,7 @@ const trialFunnelStats = computed(() => {
         let isNewByFirstTxn = false;
         let firstTxnDateStr = null;
         if (firstTxnMap[c.id]) {
-            firstTxnDateStr = toYMD(firstTxnMap[c.id]);
+            firstTxnDateStr = firstTxnMap[c.id].slice(0, 19);
             isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
         }
 
@@ -258,8 +263,8 @@ const trialFunnelStats = computed(() => {
         convertedList.push(clientData);     
       } 
       else {
-        const tDate = parseLocal(c.trial_date);
-        if (tDate <= now) {
+        const tDateStr = String(c.trial_date).slice(0, 10);
+        if (tDateStr <= todayYMD) {
           completedList.push(clientData);
           notConvertedList.push(clientData);
         }
@@ -267,7 +272,7 @@ const trialFunnelStats = computed(() => {
     }
   });
 
-  const sortByTrial = (a, b) => parseLocal(b.virtual_trial_date || 0) - parseLocal(a.virtual_trial_date || 0);
+  const sortByTrial = (a, b) => String(b.virtual_trial_date || '').localeCompare(String(a.virtual_trial_date || ''));
   bookedList.sort(sortByTrial);
   completedList.sort(sortByTrial);
   convertedList.sort(sortByTrial);
@@ -325,15 +330,36 @@ const packageStats = computed(() => {
           ...t,
           display_client_name: cName || '未記錄',
           pkg_type: typeStr,
-          display_date: toYMD(parseLocal(t.created_at))
+          display_date: String(t.created_at).slice(0, 10)
         });
       }
     }
   })
   
-  list.sort((a,b) => parseLocal(b.created_at) - parseLocal(a.created_at));
+  list.sort((a,b) => String(b.created_at).localeCompare(String(a.created_at)));
   
   return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
+})
+
+// ==========================================
+// 🎁 區間 MyGift 發放與消耗統計
+// ==========================================
+const myGiftStats = computed(() => {
+  let issued = 0;
+  let consumed = 0;
+
+  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
+    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
+
+    if (t.category === 'MyGift消耗') {
+      consumed++;
+    } else if ((t.category === '運動套票' || t.category === '運動') && t.type === 'income') {
+      if (t.amount === 850 || (t.note && t.note.includes('10點'))) issued += 2;
+      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('35點'))) issued += 5;
+    }
+  });
+
+  return { issued, consumed };
 })
 
 const marathonRate = computed(() => {
@@ -365,18 +391,11 @@ const marketingStats = computed(() => {
   return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c.status === 'active').length }
 })
 
+// 編輯時使用純字串
 function openTrialEdit(client) {
   editingClient.value = { ...client }
   if (editingClient.value.trial_date) {
-    const d = parseLocal(editingClient.value.trial_date)
-    if (!isNaN(d)) {
-      const yyyy = d.getFullYear()
-      const MM = String(d.getMonth() + 1).padStart(2, '0')
-      const dd = String(d.getDate()).padStart(2, '0')
-      const hh = String(d.getHours()).padStart(2, '0')
-      const mm = String(d.getMinutes()).padStart(2, '0')
-      editingClient.value.trial_date = `${yyyy}-${MM}-${dd}T${hh}:${mm}`
-    }
+    editingClient.value.trial_date = String(editingClient.value.trial_date).slice(0, 16);
   }
   showEditModal.value = true
 }
@@ -384,9 +403,8 @@ function openTrialEdit(client) {
 async function updateTrial() {
   let finalTrialDate = editingClient.value.trial_date;
   if (finalTrialDate) {
-    // 💡 終極防呆：既然 Supabase 要我們說謊，我們就送給它假的 UTC 標記 "Z"
-    // 例如輸入 14:00，我們送 14:00Z，Supabase 就會在後台乖乖顯示 14:00！
-    finalTrialDate = `${finalTrialDate.slice(0, 16)}:00Z`;
+    // 🛡️ 終極防呆：純字串送出，完全不加 Z
+    finalTrialDate = finalTrialDate.slice(0, 16);
   } else {
     finalTrialDate = null;
   }
@@ -411,12 +429,16 @@ const trendChartData = computed(() => {
   const labels = [], revData = [], profData = []
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
     d.setDate(d.getDate() - i)
-    labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+    
+    const targetStr = d.toISOString().split('T')[0] // YYYY-MM-DD
+    const [ty, tm, td] = targetStr.split('-')
+    labels.push(`${parseInt(tm)}/${parseInt(td)}`)
     
     const dailyTxns = store.transactions.filter(t => {
-      const td = parseLocal(t.created_at)
-      const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
+      const tStr = String(t.created_at).slice(0, 10)
+      const isSameDay = tStr === targetStr
       const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
       return isSameDay && isBranchMatch
     })
@@ -610,10 +632,15 @@ const chartOptions = {
       </div>
     </div>
 
-    <div class="section-title">📈 廣告與套票數據</div>
+    <div class="section-title">📈 廣告、套票與推廣數據</div>
     <div class="grid-2">
       <div class="stat-card"><div class="s-val">{{ marketingStats.adCount }} 人</div><div class="s-label">廣告來源客戶</div><div class="s-sub">成功轉正式: {{ marketingStats.adActive }}</div></div>
       <div class="stat-card"><div class="s-val">{{ packageStats.pkg850 }} / {{ packageStats.pkg2550 }}</div><div class="s-label">套票銷量</div><div class="s-sub">10點 / 35點</div></div>
+      <div class="stat-card" style="grid-column: span 2; border-color: #8b5cf6; background: #faf5ff;">
+        <div class="s-val text-purple">{{ myGiftStats.issued }} / {{ myGiftStats.consumed }}</div>
+        <div class="s-label" style="color: #7c3aed;">🎁 區間 MyGift 派發 / 消耗</div>
+        <div class="s-sub" style="color: #8b5cf6;">追蹤買卡派發與轉介紹消耗</div>
+      </div>
     </div>
 
     <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
@@ -759,6 +786,7 @@ const chartOptions = {
 .text-blue { color: #3b82f6; }
 .text-green { color: #10b981; }
 .text-white { color: white; }
+.text-purple { color: #8b5cf6; }
 
 @media (max-width: 600px) {
   .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }

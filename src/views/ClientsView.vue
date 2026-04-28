@@ -11,9 +11,13 @@ const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
 const filterStatus = ref('active')
+const filterMyGiftExpiring = ref(false) // 🎁 MyGift 快過期篩選
 
 // 💡 排序狀態
 const sortBy = ref('default') 
+
+// 🎁 新增客戶時，是否消耗介紹人的 MyGift
+const consumeMyGift = ref(false)
 
 // 計算正確的香港本地時區日期 (僅用於產生今天的預設值)
 const getLocalHKDate = () => {
@@ -54,13 +58,18 @@ const getClientPackageStats = (clientName) => {
 
 // ==========================================
 // 🛡️ 終極防護大絕招：字串絕對隔離法
-// 完全不經過 new Date()，只操作純文字，瀏覽器絕對無法干涉！
+// 完全不經過 new Date() 轉換，確保不被瀏覽器 +8
 // ==========================================
+const parseLocal = (dateStr) => {
+  if (!dateStr) return new Date(NaN);
+  let str = String(dateStr).split('.')[0].replace(' ', 'T');
+  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
+  return new Date(str); 
+}
 
 // 1. 將資料庫回傳的文字，切割成列表上漂亮的顯示格式
 const formatTrialDate = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return ''
-  // 直接擷取字串的前 16 個字元 "YYYY-MM-DDTHH:mm"
   const str = String(dateStr).slice(0, 16) 
   if (str.length < 16) return dateStr
   const [d, t] = str.split('T')
@@ -71,11 +80,71 @@ const formatTrialDate = (dateStr) => {
 // 2. 將資料庫回傳的文字，填入編輯表單的 input
 const toLocalDatetimeString = (dateStr) => {
   if (!dateStr) return ''
-  // input 需要的格式剛好就是前 16 碼 "YYYY-MM-DDTHH:mm"，直接切給它！
   return String(dateStr).slice(0, 16)
 }
 
-// --- 篩選與排序邏輯 (全部改用字串比對) ---
+// ==========================================
+// 🎁 核心：MyGift 智能計算系統 (先進先出 + 過期判定)
+// ==========================================
+const getMyGiftStats = (client) => {
+  if (!client || !client.name) return { available: 0, closestExpiry: null };
+  
+  let earnedTickets = [];
+  let consumedCount = 0;
+  
+  store.transactions.forEach(t => {
+    const isMatch = t.client_name === client.name || (t.note && t.note.includes(client.name));
+    if (!isMatch) return;
+
+    if (t.category === 'MyGift消耗') {
+      consumedCount++;
+    } 
+    else if ((t.category === '運動套票' || t.category === '運動') && t.type === 'income') {
+      let earn = 0;
+      if (t.amount === 850 || (t.note && t.note.includes('10點'))) earn = 2;
+      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('35點'))) earn = 5;
+      
+      if (earn > 0) {
+        // 計算 3 個月後的到期日
+        const expDate = parseLocal(t.created_at);
+        if (!isNaN(expDate)) {
+          expDate.setMonth(expDate.getMonth() + 3);
+          for(let i=0; i<earn; i++) {
+            earnedTickets.push(expDate);
+          }
+        }
+      }
+    }
+  });
+  
+  // 按照到期日排序 (先進先出)
+  earnedTickets.sort((a, b) => a - b);
+  
+  // 扣除已使用的張數
+  if (consumedCount > 0) {
+    earnedTickets.splice(0, consumedCount);
+  }
+  
+  // 過濾掉已經過期的張數
+  const todayYMD = getLocalHKDate();
+  const [ty, tm, td] = todayYMD.split('-').map(Number);
+  const todayObj = new Date(ty, tm - 1, td);
+  
+  const validTickets = earnedTickets.filter(exp => {
+    const expDay = new Date(exp.getFullYear(), exp.getMonth(), exp.getDate());
+    return expDay >= todayObj;
+  });
+  
+  if (validTickets.length === 0) return { available: 0, closestExpiry: null };
+  
+  // 取得最快過期的日期
+  const closest = validTickets[0];
+  const cYMD = `${closest.getFullYear()}-${String(closest.getMonth()+1).padStart(2,'0')}-${String(closest.getDate()).padStart(2,'0')}`;
+  
+  return { available: validTickets.length, closestExpiry: cYMD };
+}
+
+// --- 篩選與排序邏輯 (純字串比對) ---
 const filteredClients = computed(() => {
   let list = [...store.clients] 
   
@@ -84,6 +153,24 @@ const filteredClients = computed(() => {
   if (filterBranch.value) list = list.filter(c => c.branch === filterBranch.value)
   if (filterStatus.value === 'active') list = list.filter(c => c.status !== 'prospect')
   else list = list.filter(c => c.status === 'prospect')
+
+  // 🎁 過濾出 MyGift 30天內即將過期的客戶
+  if (filterMyGiftExpiring.value) {
+    const todayYMD = getLocalHKDate();
+    const [ty, tm, td] = todayYMD.split('-').map(Number);
+    const todayObj = new Date(ty, tm - 1, td);
+
+    list = list.filter(c => {
+      const stats = getMyGiftStats(c);
+      if (stats.available === 0 || !stats.closestExpiry) return false;
+      
+      const [ey, em, ed] = stats.closestExpiry.split('-').map(Number);
+      const expObj = new Date(ey, em - 1, ed);
+      
+      const diffDays = (expObj - todayObj) / 86400000;
+      return diffDays >= 0 && diffDays <= 30;
+    });
+  }
 
   if (sortBy.value === 'name') {
     list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-HK'))
@@ -104,20 +191,6 @@ const filteredClients = computed(() => {
   }
 
   return list
-})
-
-const upcomingTrials = computed(() => {
-  const todayYMD = getLocalHKDate(); // "2026-04-28"
-  return prospectClients.value
-    .filter(c => c.trial_date)
-    .filter(c => { 
-       // 擷取 YYYY-MM-DD 進行純字串比較，大於等於今天就顯示
-       const tDateStr = String(c.trial_date).slice(0, 10);
-       return tDateStr >= todayYMD; 
-    })
-    .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => String(a.trial_date).localeCompare(String(b.trial_date)))
-    .slice(0, 5)
 })
 
 // ==========================================
@@ -151,6 +224,7 @@ function handleActionRetail() {
 // --- 功能函數 ---
 function openAddModal() {
     newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
+    consumeMyGift.value = false // 重置
     showAddModal.value = true
 }
 
@@ -173,13 +247,37 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🟢 最關鍵的一步：不要用 ISOString，不要加 Z。
-  // input 給什麼字串，我們就原封不動送給 Supabase！
+  // 🟢 隔離字串
   dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
-  if (error) alert('新增失敗: ' + error.message)
-  else { showAddModal.value = false; store.syncAll(); alert('✅ 新增成功') }
+  if (error) return alert('新增失敗: ' + error.message)
+  
+  // 🎁 自動扣減介紹人的 MyGift
+  if (consumeMyGift.value && dataToInsert.referred_by_id) {
+    const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id);
+    if (referrer) {
+      const now = new Date();
+      const hkYMD = getLocalHKDate();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      const dummyTxn = {
+        type: 'expense', amount: 0,
+        note: `推薦新客: ${dataToInsert.name}`,
+        client_name: referrer.name,
+        category: 'MyGift消耗',
+        handled_by: store.currentUser || '系統自動',
+        own_email: user.email,
+        created_at: `${hkYMD}T${hh}:${mm}:${ss}`
+      };
+      await supabase.from('transactions').insert(dummyTxn);
+    }
+  }
+
+  showAddModal.value = false; 
+  store.syncAll(); 
+  alert('✅ 新增成功') 
 }
 
 async function handleUpdateClient() {
@@ -194,7 +292,6 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🟢 最關鍵的一步：不要用 ISOString，不要加 Z。原字串送出！
   dataToUpdate.trial_date = dataToUpdate.trial_date ? dataToUpdate.trial_date.slice(0, 16) : null
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
@@ -211,11 +308,9 @@ async function handleDeleteClient() {
 
 function openEditModal(client) {
   editingClient.value = { ...client }
-  
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
-  
   showEditModal.value = true
 }
 
@@ -323,6 +418,8 @@ async function handleImport(event) {
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
         <div class="v-line"></div>
         <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
+        <div class="v-line"></div>
+        <button class="f-btn mygift-btn" :class="{active: filterMyGiftExpiring}" @click="filterMyGiftExpiring = !filterMyGiftExpiring">🎁 MyGift 快過期</button>
       </div>
 
       <div class="sort-row">
@@ -364,6 +461,11 @@ async function handleImport(event) {
             <span class="pkg-tag t-10" v-if="getClientPackageStats(c.name).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg10 }}</b></span>
             <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
             <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0">尚未買卡</span>
+            
+            <span class="pkg-tag" style="background: #8b5cf6;" v-if="getMyGiftStats(c).available > 0">
+              🎁 MyGift: {{ getMyGiftStats(c).available }}張 
+              <b style="font-size:10px; margin-left:2px; opacity:0.9;">(至 {{ getMyGiftStats(c).closestExpiry }})</b>
+            </span>
           </div>
           
         </div>
@@ -491,6 +593,16 @@ async function handleImport(event) {
             </select>
         </div>
 
+        <div class="f-item" v-if="(newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹') && newClient.referred_by_id" style="margin-top: 15px; background: #faf5ff; border: 1px dashed #c4b5fd; padding: 15px; border-radius: 12px; animation: popIn 0.3s ease-out;">
+           <label style="color: #7c3aed; font-size: 14px;">🎁 是否消耗介紹人的 MyGift？</label>
+           <div style="font-size: 12px; color: #64748b; margin-bottom: 10px; font-weight: 700;">
+             該介紹人目前剩餘: <span style="color: #ef4444; font-size: 14px; font-weight: 900;">{{ getMyGiftStats(store.clients.find(c => c.id === newClient.referred_by_id)).available }}</span> 張
+           </div>
+           <div class="toggle-card" style="margin: 0;" :class="{active: consumeMyGift}" @click="consumeMyGift = !consumeMyGift">
+             {{ consumeMyGift ? '✅ 是，建立後自動扣減 1 張' : '❌ 否，不扣除' }}
+           </div>
+        </div>
+
         <div class="section-title">📅 關鍵日期</div>
         <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
           <label>⏰ 預約試堂日期與時間</label>
@@ -575,6 +687,8 @@ async function handleImport(event) {
 .filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; }
 .f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer;}
 .f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
+.mygift-btn { border-color: #8b5cf6; color: #8b5cf6; background: #faf5ff; }
+.mygift-btn.active { background: #8b5cf6; color: white; border-color: #8b5cf6; }
 .v-line { width: 1px; background: #e2e8f0; margin: 0 5px; }
 .sort-row { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0; }
 .sort-label { font-size: 13px; font-weight: 800; color: #64748b; }
@@ -590,7 +704,7 @@ async function handleImport(event) {
 .badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
 .trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; margin-left: 8px; font-size: 11px; }
-.c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center;}
+.c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;}
 .pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
 .t-10 { background: #3b82f6; }
 .t-35 { background: #ec4899; }
