@@ -347,18 +347,21 @@ function openTrialEdit(client) {
 }
 
 async function updateTrial() {
-  // 🛡️ 強制加上香港時區，不給資料庫算錯的機會
+  
+  // 🛡️ 終極防呆：無視瀏覽器有冇加秒數，強制裁切前 16 碼，再補上香港時區
   let finalTrialDate = editingClient.value.trial_date;
-  if (finalTrialDate && finalTrialDate.length === 16) {
-    finalTrialDate = finalTrialDate + ':00+08:00';
-  } else if (!finalTrialDate) {
+  if (finalTrialDate) {
+    // 例如 "2026-05-05T18:30:00" 會被切成 "2026-05-05T18:30"
+    // 然後硬生生加上 ":00+08:00"
+    finalTrialDate = finalTrialDate.slice(0, 16) + ':00+08:00';
+  } else {
     finalTrialDate = null;
   }
 
   const { error } = await supabase.from('clients').update({
     name: editingClient.value.name, 
     phone: editingClient.value.phone,
-    trial_date: finalTrialDate, // ✅ 使用已經加上時區的變數
+    trial_date: finalTrialDate, 
     status: editingClient.value.status,
     branch: editingClient.value.branch 
   }).eq('id', editingClient.value.id)
