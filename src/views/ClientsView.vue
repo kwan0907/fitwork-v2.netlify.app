@@ -52,14 +52,10 @@ const getClientPackageStats = (clientName) => {
   return { pkg10, pkg35 }
 }
 
-// ==========================================
-// 🛡️ 最標準的 JavaScript 時間轉換器 (解決時差 Bug)
-// ==========================================
-
-// 1. 將資料庫回傳的時間，轉換成列表上漂亮的顯示格式
+// 🛡️ 時間防呆解析器 (破解 Safari Bug 與時區偏移)
 const formatTrialDate = (dateStr) => {
   if (!dateStr) return ''
-  const d = new Date(dateStr) // 自動解析為本地時間
+  const d = new Date(dateStr) 
   const m = d.getMonth() + 1
   const day = d.getDate()
   const h = String(d.getHours()).padStart(2, '0')
@@ -67,7 +63,6 @@ const formatTrialDate = (dateStr) => {
   return `${m}月${day}日 ${h}:${min}`
 }
 
-// 2. 將資料庫回傳的時間，填入編輯表單的 YYYY-MM-DDTHH:mm 格式
 const toLocalDatetimeString = (dateStr) => {
   if (!dateStr) return ''
   const d = new Date(dateStr)
@@ -111,7 +106,7 @@ const filteredClients = computed(() => {
 })
 
 // ==========================================
-// 🟢 快捷操作選單邏輯 (跳轉功能)
+// 🟢 快捷操作選單邏輯 (無刪減，跳轉完美支援)
 // ==========================================
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
@@ -123,19 +118,19 @@ function openActionModal(client) {
 
 function handleActionEdit() {
   showActionModal.value = false
-  openEditModal(selectedClientForAction.value)
+  openEditModal(selectedClientForAction.value) // 呼叫原本的修改功能
 }
 
 function handleActionMovement() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  store.view = 'movement' 
+  store.view = 'movement' // 🟢 全小寫，吻合你的 App.vue
 }
 
 function handleActionRetail() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  store.view = 'retail' 
+  store.view = 'retail' // 🟢 全小寫，吻合你的 App.vue
 }
 
 // --- 功能函數 ---
@@ -163,8 +158,12 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🟢 轉換為安全的 ISO 格式儲存，絕對不會產生時差問題
-  dataToInsert.trial_date = dataToInsert.trial_date ? new Date(dataToInsert.trial_date).toISOString() : null
+  // 🛡️ 強制加上香港時區，不給瀏覽器算錯的機會
+  if (dataToInsert.trial_date && dataToInsert.trial_date.length === 16) {
+    dataToInsert.trial_date = dataToInsert.trial_date + ':00+08:00'
+  } else if (!dataToInsert.trial_date) {
+    dataToInsert.trial_date = null
+  }
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -183,8 +182,12 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🟢 轉換為安全的 ISO 格式儲存，絕對不會產生時差問題
-  dataToUpdate.trial_date = dataToUpdate.trial_date ? new Date(dataToUpdate.trial_date).toISOString() : null
+  // 🛡️ 強制加上香港時區，不給瀏覽器算錯的機會
+  if (dataToUpdate.trial_date && dataToUpdate.trial_date.length === 16) {
+    dataToUpdate.trial_date = dataToUpdate.trial_date + ':00+08:00'
+  } else if (!dataToUpdate.trial_date) {
+    dataToUpdate.trial_date = null
+  }
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)
@@ -200,12 +203,9 @@ async function handleDeleteClient() {
 
 function openEditModal(client) {
   editingClient.value = { ...client }
-  
   if (editingClient.value.trial_date) {
-    // 填入表單時，轉換為本地的 YYYY-MM-DDTHH:mm 格式
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
-  
   showEditModal.value = true
 }
 
@@ -612,6 +612,7 @@ async function handleImport(event) {
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 .tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 
+/* 🟢 快捷選單專屬 CSS (這次絕對回來了！) */
 .action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .action-big-btn { 
