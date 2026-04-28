@@ -27,7 +27,7 @@ const defaultNewClient = {
   is_vip: false, is_marathon: false, join_date: todayStr, 
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
   referred_by_id: null, vip_tier: '銅級(88折)', 
-  trial_date: '', remark: '' // 🟢 新增備註欄位
+  trial_date: '', remark: '' 
 }
 
 const newClient = ref({ ...defaultNewClient })
@@ -102,10 +102,7 @@ const getMyGiftStats = (client) => {
   });
   
   earnedTickets.sort((a, b) => a - b);
-  
-  if (consumedCount > 0) {
-    earnedTickets.splice(0, consumedCount);
-  }
+  if (consumedCount > 0) earnedTickets.splice(0, consumedCount);
   
   const todayYMD = getLocalHKDate();
   const [ty, tm, td] = todayYMD.split('-').map(Number);
@@ -120,7 +117,6 @@ const getMyGiftStats = (client) => {
   
   const closest = validTickets[0];
   const cYMD = `${closest.getFullYear()}-${String(closest.getMonth()+1).padStart(2,'0')}-${String(closest.getDate()).padStart(2,'0')}`;
-  
   return { available: validTickets.length, closestExpiry: cYMD };
 }
 
@@ -142,10 +138,8 @@ const filteredClients = computed(() => {
       if(!c) return false;
       const stats = getMyGiftStats(c);
       if (stats.available === 0 || !stats.closestExpiry) return false;
-      
       const [ey, em, ed] = stats.closestExpiry.split('-').map(Number);
       const expObj = new Date(ey, em - 1, ed);
-      
       const diffDays = (expObj - todayObj) / 86400000;
       return diffDays >= 0 && diffDays <= 30;
     });
@@ -227,14 +221,16 @@ async function handleAddClient() {
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) return alert('新增失敗: ' + error.message)
   
+  const now = new Date();
+  const hkYMD = getLocalHKDate();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+
+  // 🎁 如果是朋友介紹且使用了 MyGift，自動扣減介紹人的 MyGift
   if (consumeMyGift.value && dataToInsert.referred_by_id) {
     const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id);
     if (referrer) {
-      const now = new Date();
-      const hkYMD = getLocalHKDate();
-      const hh = String(now.getHours()).padStart(2, '0');
-      const mm = String(now.getMinutes()).padStart(2, '0');
-      const ss = String(now.getSeconds()).padStart(2, '0');
       const dummyTxn = {
         type: 'expense', amount: 0,
         note: `推薦新客: ${dataToInsert.name}`,
@@ -246,6 +242,19 @@ async function handleAddClient() {
       };
       await supabase.from('transactions').insert(dummyTxn);
     }
+  } 
+  // 🟢 如果是新增「預約客戶」且「沒有使用 MyGift」，自動產生 98 元帳單 (成本 52 / 利潤 46)
+  else if (dataToInsert.status === 'prospect') {
+    const trialIncomeTxn = {
+      type: 'income', amount: 98, cost: 52, profit: 46,
+      note: `預約試堂收費: ${dataToInsert.name}`,
+      client_name: dataToInsert.name,
+      category: '試堂',
+      handled_by: dataToInsert.handled_by || store.currentUser || '系統',
+      own_email: user.email,
+      created_at: `${hkYMD}T${hh}:${mm}:${ss}`
+    };
+    await supabase.from('transactions').insert(trialIncomeTxn);
   }
 
   showAddModal.value = false; 
@@ -696,10 +705,26 @@ async function handleImport(event) {
 .pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
-.center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
-.scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; }
+
+/* 🟢 解決手機卡住：徹底改寫 Modal 排版 */
+.modal-overlay { 
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; 
+  display: flex; align-items: flex-start; justify-content: center; 
+  padding-top: 8vh; padding-bottom: 8vh;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.center-modal { 
+  background: white; width: 90%; max-width: 450px; border-radius: 24px; 
+  padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); 
+  animation: popIn 0.3s ease-out; margin: auto; position: relative;
+}
+.scrollable-modal { 
+  max-height: 80vh; overflow-y: auto; padding-right: 5px; 
+  overscroll-behavior: contain;
+}
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center;}
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
@@ -719,9 +744,8 @@ async function handleImport(event) {
 .btn-confirm { flex: 1; background: #6366f1; color: white; border: none; padding: 16px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px rgba(99,102,241,0.2); cursor: pointer;}
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
-.tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 
-.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 20vh; }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .action-big-btn { 
   display: flex; align-items: center; gap: 15px; 

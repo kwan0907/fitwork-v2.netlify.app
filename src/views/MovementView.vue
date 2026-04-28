@@ -17,7 +17,7 @@ const checkoutDate = ref(new Date().toISOString().split('T')[0])
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 const packages = {
-  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 0 },
+  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 52 }, // 🟢 修正：成本52，利潤會自動算成46
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
   'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
   'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
@@ -37,21 +37,13 @@ function selectClient(c) {
   isNewCustomer.value = c.status === 'prospect'
 }
 
-// ==========================================
-// 🟢 頁面載入時，自動抓取並填入客戶名字
-// ==========================================
 onMounted(() => {
   if (store.quickActionClient) {
     const targetName = store.quickActionClient
-    store.quickActionClient = null // 讀取完就清空，避免下次進來又被填入
-    // 在客戶資料庫中尋找這位客戶
+    store.quickActionClient = null 
     const foundClient = store.clients.find(c => c.name === targetName)
-    
-    if (foundClient) {
-      selectClient(foundClient) // 如果找到了，直接自動幫你選好！
-    } else {
-      searchClient.value = targetName // 如果剛好沒找到完全匹配的，至少幫你填在搜尋框裡
-    }
+    if (foundClient) selectClient(foundClient) 
+    else searchClient.value = targetName 
   }
 })
 
@@ -74,7 +66,6 @@ const exCalc = computed(() => {
 async function handleCheckout(staff) {
   if (!selectedClient.value) return alert('請先搜尋並選擇客戶！')
 
-  // 💡 自動抓取登入者的 Email 綁定專屬權限
   const { data: authData } = await supabase.auth.getSession()
   const userEmail = authData?.session?.user?.email
   if (!userEmail) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
@@ -104,7 +95,7 @@ async function handleCheckout(staff) {
     staff: staff, 
     handled_by: staff,
     created_at: fullIsoCreatedAt,
-    own_email: userEmail, // ✅ 寫入私人 Email
+    own_email: userEmail, 
     note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`
   }])
 
