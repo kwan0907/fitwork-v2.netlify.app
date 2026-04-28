@@ -9,29 +9,26 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
-// 🛡️ 終極防呆：拆開字串變數字，強迫瀏覽器認作本地時間
-const toSafeUTCString = (dateStr) => {
-  if (!dateStr) return null;
-  const cleanStr = dateStr.slice(0, 16);
-  const [dPart, tPart] = cleanStr.split('T');
-  const [yyyy, mm, dd] = dPart.split('-');
-  const [hh, min] = tPart.split(':');
-  const d = new Date(yyyy, mm - 1, dd, hh, min);
-  return d.toISOString();
-}
+// 🛡️ 終極防護罩：強制轉換所有時間為「香港標準時間 (Asia/Hong Kong)」
+const getHKParts = (dateInput) => {
+  if (!dateInput || dateInput === '無紀錄') return null;
+  const d = new Date(dateInput);
+  if (isNaN(d)) return null;
 
-// ✅ 新增：統一處理 Supabase 回傳的 UTC 無時區標記字串
-// Supabase 回傳格式如 "2026-05-05T10:30:00"，沒有 Z，JS 會當本地時間解析
-// 加上 Z 才能正確當 UTC 解析，再由 JS 轉換成本地時間（香港 +8）
-const parseLocalDate = (dateStr) => {
-  if (!dateStr) return new Date(NaN)
-  let str = String(dateStr).split('.')[0].replace(' ', 'T')
-  // 去除所有時區後綴，強制瀏覽器當本地時間（香港 +8）解析
-  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '')
-  return new Date(str) // 沒有時區 = 瀏覽器用本地時間 = 香港時間 ✓
-}
-  
-
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Hong Kong',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  const parts = formatter.formatToParts(d);
+  return {
+    y: parts.find(p => p.type === 'year').value,
+    m: parts.find(p => p.type === 'month').value,
+    d: parts.find(p => p.type === 'day').value,
+    hr: parts.find(p => p.type === 'hour').value,
+    min: parts.find(p => p.type === 'minute').value
+  };
+};
 
 const filterTime = ref('month')
 const customStart = ref('')
@@ -45,39 +42,60 @@ const showFunnelModal = ref(false)
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
-// ✅ 修復：使用 parseUTCDate 正確解析 Supabase UTC 時間
+// ✅ 修復：全部統一使用香港時間解析，不再報錯
 const getMonthStr = (d) => {
-  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
-  return months[parseLocalDate(d).getMonth()]
+  const p = getHKParts(d);
+  return p ? `${parseInt(p.m)}月` : '';
 }
-const getDayStr = (d) => parseUTCDate(d).getDate().toString().padStart(2, '0')
-const getTimeStr = (d) => parseUTCDate(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
+const getDayStr = (d) => {
+  const p = getHKParts(d);
+  return p ? p.d : '';
+}
+const getTimeStr = (d) => {
+  const p = getHKParts(d);
+  return p ? `${p.hr}:${p.min}` : '';
+}
 
-// ✅ 修復：使用 parseUTCDate 正確解析顯示日期
+// ✅ 修復：傳入正確的變數，並轉為香港顯示
 const formatTrialDateDisplay = (dateStr) => {
-  if (!dateStr || dateStr === '無紀錄') return '無紀錄'
-  const d = parseLocalDate(editingClient.value.trial_date) 
-  if (isNaN(d)) return dateStr
-  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  if (!dateStr || dateStr === '無紀錄') return '無紀錄';
+  const p = getHKParts(dateStr);
+  return p ? `${parseInt(p.m)}/${parseInt(p.d)} ${p.hr}:${p.min}` : dateStr;
 }
 
 const isDateInRange = (dateStr) => {
   if (!dateStr) return false
   const d = new Date(dateStr)
-  const now = new Date()
+  if (isNaN(d)) return false
+
+  // 🛡️ 確保「今日/本月」是用香港的今天來算，不怕出國時區干擾
+  const hkNow = getHKParts(new Date());
+  const target = getHKParts(d);
+  
+  const nowMonth = parseInt(hkNow.m) - 1;
+  const nowYear = parseInt(hkNow.y);
+  const targetMonth = parseInt(target.m) - 1;
+  const targetYear = parseInt(target.y);
+  const targetDate = parseInt(target.d);
+
+  const targetYMD = `${target.y}-${target.m}-${target.d}`;
+  const nowYMD = `${hkNow.y}-${hkNow.m}-${hkNow.d}`;
+
   if (filterTime.value === 'all') return true
-  if (filterTime.value === 'today') return d.toDateString() === now.toDateString()
-  if (filterTime.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  if (filterTime.value === 'half_1') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 1 && d.getDate() <= 14
-  if (filterTime.value === 'half_2') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && d.getDate() >= 15
+  if (filterTime.value === 'today') return targetYMD === nowYMD
+  if (filterTime.value === 'month') return targetMonth === nowMonth && targetYear === nowYear
+  if (filterTime.value === 'half_1') return targetMonth === nowMonth && targetYear === nowYear && targetDate >= 1 && targetDate <= 14
+  if (filterTime.value === 'half_2') return targetMonth === nowMonth && targetYear === nowYear && targetDate >= 15
   if (filterTime.value === 'week') {
+    const now = new Date();
     const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
     return d >= weekAgo && d <= now;
   }
   if (filterTime.value === 'custom') {
     if (!customStart.value || !customEnd.value) return true
-    const start = new Date(customStart.value); start.setHours(0,0,0,0)
-    const end = new Date(customEnd.value); end.setHours(23,59,59,999)
+    // 強制設定為香港時區的開頭與結尾
+    const start = new Date(`${customStart.value}T00:00:00+08:00`); 
+    const end = new Date(`${customEnd.value}T23:59:59+08:00`);
     return d >= start && d <= end
   }
   return true
@@ -95,10 +113,19 @@ const branchCounts = computed(() => {
 })
 
 const upcomingTrials = computed(() => {
-  const now = new Date(); now.setHours(0,0,0,0);
+  const hkNow = getHKParts(new Date());
+  const todayYMD = `${hkNow.y}-${hkNow.m}-${hkNow.d}`;
+
   return prospectClients.value
     .filter(c => c.trial_date)
-    .filter(c => { const tDate = new Date(c.trial_date); return tDate >= now || tDate.toDateString() === now.toDateString(); })
+    .filter(c => { 
+       const p = getHKParts(c.trial_date);
+       if(!p) return false;
+       const targetYMD = `${p.y}-${p.m}-${p.d}`;
+       const d = new Date(c.trial_date);
+       // 只顯示今天以後的試堂
+       return targetYMD >= todayYMD || d >= new Date();
+    })
     .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
     .sort((a,b) => new Date(a.trial_date) - new Date(b.trial_date))
     .slice(0, 5)
@@ -113,7 +140,10 @@ const financialStats = computed(() => {
     if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
     const amt = Number(t.amount) || 0;
     const noteStr = t.note || '';
-    const txDate = new Date(t.created_at).getDate();
+    
+    // 取出香港日期來判斷上下半月
+    const p = getHKParts(t.created_at);
+    const txDate = p ? parseInt(p.d) : 1;
     
     if (t.type === 'income') { 
       revenue += amt; 
@@ -183,9 +213,13 @@ const clientStats = computed(() => {
     if (isNewByJoinDate || isNewByFirstTxn) {
         if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
             if (!newClientsList.find(x => x.id === c.id)) {
-                const displayDate = (isNewByJoinDate && c.join_date) 
-                                  ? c.join_date 
-                                  : (firstTxnMap[c.id] ? firstTxnMap[c.id].toISOString().split('T')[0] : '無紀錄');
+                // ✅ 防護：顯示日期也轉為香港格式，不再受 UTC 影響
+                let txnDateStr = '無紀錄';
+                if (firstTxnMap[c.id]) {
+                   const p = getHKParts(firstTxnMap[c.id]);
+                   if(p) txnDateStr = `${p.y}-${p.m}-${p.d}`;
+                }
+                const displayDate = (isNewByJoinDate && c.join_date) ? c.join_date : txnDateStr;
                 
                 newClientsList.push({ ...c, display_join_date: displayDate });
 
@@ -321,11 +355,14 @@ const packageStats = computed(() => {
            if (match) cName = match[1];
         }
         
+        // ✅ 防護：售出日期也用香港時間抓，不怕 UTC 跨日
+        const p = getHKParts(t.created_at);
+        
         list.push({
           ...t,
           display_client_name: cName || '未記錄',
           pkg_type: typeStr,
-          display_date: new Date(t.created_at).toISOString().split('T')[0]
+          display_date: p ? `${p.y}-${p.m}-${p.d}` : '無紀錄'
         });
       }
     }
@@ -365,30 +402,24 @@ const marketingStats = computed(() => {
   return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c.status === 'active').length }
 })
 
-// ✅ 修復核心：使用 parseUTCDate 正確把 Supabase UTC 時間轉成香港本地時間顯示
+// ✅ 修復：打開編輯時，強制以香港時間轉換為 input 的格式
 function openTrialEdit(client) {
   editingClient.value = { ...client }
   if (editingClient.value.trial_date) {
-    // parseUTCDate 會加上 Z，令 JS 正確把 UTC 轉換成本地時間（香港 +8）
-    const d = parseUTCDate(editingClient.value.trial_date)
-    const yyyy = d.getFullYear()
-    const MM = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    const hh = String(d.getHours()).padStart(2, '0')
-    const mm = String(d.getMinutes()).padStart(2, '0')
-    editingClient.value.trial_date = `${yyyy}-${MM}-${dd}T${hh}:${mm}`
+    const p = getHKParts(editingClient.value.trial_date);
+    if (p) {
+      editingClient.value.trial_date = `${p.y}-${p.m}-${p.d}T${p.hr}:${p.min}`;
+    }
   }
   showEditModal.value = true
 }
 
 async function updateTrial() {
   
-  // 🛡️ 終極防呆：無視瀏覽器有冇加秒數，強制裁切前 16 碼，再補上香港時區
   let finalTrialDate = editingClient.value.trial_date;
   if (finalTrialDate) {
-    // 例如 "2026-05-05T18:30:00" 會被切成 "2026-05-05T18:30"
-    // 然後硬生生加上 ":00+08:00"
-    finalTrialDate = finalTrialDate.slice(0, 16) + ':00'
+    // 🛡️ 終極防呆：確保儲存時附加上香港時區 (+08:00)，讓 Supabase 存入標準 UTC 時間
+    finalTrialDate = new Date(`${finalTrialDate.slice(0, 16)}:00+08:00`).toISOString();
   } else {
     finalTrialDate = null;
   }
@@ -414,11 +445,14 @@ const trendChartData = computed(() => {
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+    // ✅ 圖表標籤使用香港日期
+    const hk = getHKParts(d);
+    labels.push(`${parseInt(hk.m)}/${parseInt(hk.d)}`)
     
     const dailyTxns = store.transactions.filter(t => {
-      const td = new Date(t.created_at)
-      const isSameDay = td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear()
+      const p = getHKParts(t.created_at);
+      if(!p) return false;
+      const isSameDay = p.d === hk.d && p.m === hk.m && p.y === hk.y;
       const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
       return isSameDay && isBranchMatch
     })

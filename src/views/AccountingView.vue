@@ -6,11 +6,17 @@ import BaseModal from '../components/BaseModal.vue'
 
 const store = useMainStore()
 
-// 🚀 新增：取得本地時區的 YYYY-MM-DD 字串，避免早上 8 點前被判定為昨天的問題
-const getLocalDateString = () => {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-  return d.toISOString().split('T')[0]
+// 🛡️ 終極防護：鎖定香港時間的轉換函數 (不管人在哪國，都強制轉換為香港時間)
+const getHKDateString = (dateObj = new Date()) => {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Hong Kong',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  })
+  const parts = formatter.formatToParts(dateObj)
+  const y = parts.find(p => p.type === 'year').value
+  const m = parts.find(p => p.type === 'month').value
+  const d = parts.find(p => p.type === 'day').value
+  return `${y}-${m}-${d}` // 確保輸出完美格式 YYYY-MM-DD
 }
 
 const showExpModal = ref(false)
@@ -28,7 +34,7 @@ const expForm = ref({
   category: '廣告費用',
   ad_inquiries: 0,
   ad_phones: 0,
-  date: getLocalDateString() // ✅ 修正：使用安全的本地日期
+  date: getHKDateString() // 🛡️ 確保一打開表單就是標準香港日期
 })
 
 const activeClientsOptions = computed(() => {
@@ -54,11 +60,17 @@ const getDisplayData = (t) => {
 const groupedTxns = computed(() => {
   const g = {}
   store.transactions.forEach(t => {
-    const d = new Date(t.created_at).toLocaleDateString('zh-HK')
+    // 🛡️ 強制將歷史紀錄以「香港時區」分組顯示，不怕半夜結帳跨日的 Bug
+    const d = new Date(t.created_at).toLocaleDateString('zh-HK', { timeZone: 'Asia/Hong Kong' })
     if (!g[d]) g[d] = []
     g[d].push(t)
   })
-  return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>new Date(b.date)-new Date(a.date))
+  return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>{
+    // 解析 DD/MM/YYYY 排序
+    const [d1, m1, y1] = a.date.split('/')
+    const [d2, m2, y2] = b.date.split('/')
+    return new Date(`${y2}-${m2}-${d2}`) - new Date(`${y1}-${m1}-${d1}`)
+  })
 })
 
 // 🚀 功能：複刻訂單 (再來一套)
@@ -96,19 +108,14 @@ function openExpForm() {
   editingTxn.value = null
   expForm.value = {
     type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
-    category: '廣告費用', ad_inquiries: 0, ad_phones: 0, date: getLocalDateString() // ✅ 修正：使用安全的本地日期
+    category: '廣告費用', ad_inquiries: 0, ad_phones: 0, 
+    date: getHKDateString() // 🛡️ 重置時依然獲取標準香港日期
   }
   showExpModal.value = true
 }
 
 function openEditTransaction(t) {
   editingTxn.value = t.id
-  
-  // ✅ 修正：安全的取得本地 YYYY-MM-DD，不直接修改 Date 物件本身
-  const d = new Date(t.created_at)
-  const localDateStr = d.getFullYear() + '-' + 
-                       String(d.getMonth() + 1).padStart(2, '0') + '-' + 
-                       String(d.getDate()).padStart(2, '0')
 
   let extractedClient = t.client_name || ''
   let extractedNote = t.note || ''
@@ -127,7 +134,7 @@ function openEditTransaction(t) {
     client_name: extractedClient, 
     staff: t.staff || t.handled_by || '',
     category: t.category, ad_inquiries: t.ad_inquiries || 0, ad_phones: t.ad_phones || 0,
-    date: localDateStr // ✅ 修正：帶入正確的日期字串
+    date: getHKDateString(new Date(t.created_at)) // 🛡️ 讀取舊紀錄時，強制轉換為香港日期 YYYY-MM-DD
   }
   showExpModal.value = true
 }
@@ -160,13 +167,12 @@ async function saveTransaction() {
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
-  // ✅ 核心修正：拆解 YYYY-MM-DD，避免被解析為 UTC 導致 +8 小時的 Bug
-  const [yyyy, mm, dd] = expForm.value.date.split('-')
-  const now = new Date()
-  const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
-  const createdAt = txnDate.toISOString()
+  // 🛡️ 寫入資料庫：組合你選擇的日期 + 鎖定取得香港的當下時間 (HH:MM:SS) + 香港時區 (+08:00)
+  const hkTimeString = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Hong Kong', hour12: false })
+  // 將它們組合成 ISO 國際絕對時間 (例如 2026-04-28T14:30:00+08:00)，然後轉換為標準格式給 Supabase
+  const finalISOString = new Date(`${expForm.value.date}T${hkTimeString}+08:00`).toISOString()
 
-  const updatePayload = { ...data, created_at: createdAt }
+  const updatePayload = { ...data, created_at: finalISOString }
 
   let error
   if (editingTxn.value) {
