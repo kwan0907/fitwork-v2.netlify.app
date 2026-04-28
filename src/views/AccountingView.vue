@@ -6,6 +6,13 @@ import BaseModal from '../components/BaseModal.vue'
 
 const store = useMainStore()
 
+// 🚀 新增：取得本地時區的 YYYY-MM-DD 字串，避免早上 8 點前被判定為昨天的問題
+const getLocalDateString = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().split('T')[0]
+}
+
 const showExpModal = ref(false)
 const editingTxn = ref(null)
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
@@ -21,7 +28,7 @@ const expForm = ref({
   category: '廣告費用',
   ad_inquiries: 0,
   ad_phones: 0,
-  date: new Date().toISOString().split('T')[0]
+  date: getLocalDateString() // ✅ 修正：使用安全的本地日期
 })
 
 const activeClientsOptions = computed(() => {
@@ -89,15 +96,19 @@ function openExpForm() {
   editingTxn.value = null
   expForm.value = {
     type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
-    category: '廣告費用', ad_inquiries: 0, ad_phones: 0, date: new Date().toISOString().split('T')[0]
+    category: '廣告費用', ad_inquiries: 0, ad_phones: 0, date: getLocalDateString() // ✅ 修正：使用安全的本地日期
   }
   showExpModal.value = true
 }
 
 function openEditTransaction(t) {
   editingTxn.value = t.id
+  
+  // ✅ 修正：安全的取得本地 YYYY-MM-DD，不直接修改 Date 物件本身
   const d = new Date(t.created_at)
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  const localDateStr = d.getFullYear() + '-' + 
+                       String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+                       String(d.getDate()).padStart(2, '0')
 
   let extractedClient = t.client_name || ''
   let extractedNote = t.note || ''
@@ -116,7 +127,7 @@ function openEditTransaction(t) {
     client_name: extractedClient, 
     staff: t.staff || t.handled_by || '',
     category: t.category, ad_inquiries: t.ad_inquiries || 0, ad_phones: t.ad_phones || 0,
-    date: d.toISOString().split('T')[0]
+    date: localDateStr // ✅ 修正：帶入正確的日期字串
   }
   showExpModal.value = true
 }
@@ -149,9 +160,10 @@ async function saveTransaction() {
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
-  const txnDate = new Date(expForm.value.date)
+  // ✅ 核心修正：拆解 YYYY-MM-DD，避免被解析為 UTC 導致 +8 小時的 Bug
+  const [yyyy, mm, dd] = expForm.value.date.split('-')
   const now = new Date()
-  txnDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds())
+  const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const createdAt = txnDate.toISOString()
 
   const updatePayload = { ...data, created_at: createdAt }
