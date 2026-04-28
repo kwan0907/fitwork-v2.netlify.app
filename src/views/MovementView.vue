@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue' // 🟢 新增：引入 onMounted
-import { useRoute } from 'vue-router' // 🟢 新增：引入 useRoute 來接收網址參數
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
