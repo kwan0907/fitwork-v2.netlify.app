@@ -347,16 +347,28 @@ function openTrialEdit(client) {
 }
 
 async function updateTrial() {
+  // 🛡️ 強制加上香港時區，不給資料庫算錯的機會
+  let finalTrialDate = editingClient.value.trial_date;
+  if (finalTrialDate && finalTrialDate.length === 16) {
+    finalTrialDate = finalTrialDate + ':00+08:00';
+  } else if (!finalTrialDate) {
+    finalTrialDate = null;
+  }
+
   const { error } = await supabase.from('clients').update({
     name: editingClient.value.name, 
     phone: editingClient.value.phone,
-    trial_date: editingClient.value.trial_date, 
+    trial_date: finalTrialDate, // ✅ 使用已經加上時區的變數
     status: editingClient.value.status,
     branch: editingClient.value.branch 
   }).eq('id', editingClient.value.id)
 
   if (error) alert('更新失敗: ' + error.message)
-  else { alert('✅ 預約資料已更新'); showEditModal.value = false; store.syncAll() }
+  else { 
+    alert('✅ 預約資料已更新'); 
+    showEditModal.value = false; 
+    store.syncAll() 
+  }
 }
 
 const trendChartData = computed(() => {
