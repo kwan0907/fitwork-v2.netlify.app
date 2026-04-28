@@ -158,10 +158,10 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🛡️ 強制加上香港時區，不給瀏覽器算錯的機會
-  if (dataToInsert.trial_date && dataToInsert.trial_date.length === 16) {
-    dataToInsert.trial_date = dataToInsert.trial_date + ':00+08:00'
-  } else if (!dataToInsert.trial_date) {
+  // 🛡️ 終極時區防呆：無視瀏覽器格式，強制切出前16碼，再硬生生加上香港時區
+  if (dataToInsert.trial_date) {
+    dataToInsert.trial_date = dataToInsert.trial_date.substring(0, 16) + ':00+08:00'
+  } else {
     dataToInsert.trial_date = null
   }
 
@@ -182,10 +182,10 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🛡️ 強制加上香港時區，不給瀏覽器算錯的機會
-  if (dataToUpdate.trial_date && dataToUpdate.trial_date.length === 16) {
-    dataToUpdate.trial_date = dataToUpdate.trial_date + ':00+08:00'
-  } else if (!dataToUpdate.trial_date) {
+  // 🛡️ 終極時區防呆：無視瀏覽器格式，強制切出前16碼，再硬生生加上香港時區
+  if (dataToUpdate.trial_date) {
+    dataToUpdate.trial_date = dataToUpdate.trial_date.substring(0, 16) + ':00+08:00'
+  } else {
     dataToUpdate.trial_date = null
   }
 
