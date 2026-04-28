@@ -58,7 +58,6 @@ const getClientPackageStats = (clientName) => {
 
 // ==========================================
 // 🛡️ 終極防護大絕招：字串絕對隔離法
-// 完全不經過 new Date() 轉換，確保不被瀏覽器 +8
 // ==========================================
 const parseLocal = (dateStr) => {
   if (!dateStr) return new Date(NaN);
@@ -67,7 +66,6 @@ const parseLocal = (dateStr) => {
   return new Date(str); 
 }
 
-// 1. 將資料庫回傳的文字，切割成列表上漂亮的顯示格式
 const formatTrialDate = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return ''
   const str = String(dateStr).slice(0, 16) 
@@ -77,7 +75,6 @@ const formatTrialDate = (dateStr) => {
   return `${parseInt(m)}月${parseInt(day)}日 ${t}`
 }
 
-// 2. 將資料庫回傳的文字，填入編輯表單的 input
 const toLocalDatetimeString = (dateStr) => {
   if (!dateStr) return ''
   return String(dateStr).slice(0, 16)
@@ -105,7 +102,6 @@ const getMyGiftStats = (client) => {
       if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('35點'))) earn = 5;
       
       if (earn > 0) {
-        // 計算 3 個月後的到期日
         const expDate = parseLocal(t.created_at);
         if (!isNaN(expDate)) {
           expDate.setMonth(expDate.getMonth() + 3);
@@ -117,15 +113,12 @@ const getMyGiftStats = (client) => {
     }
   });
   
-  // 按照到期日排序 (先進先出)
   earnedTickets.sort((a, b) => a - b);
   
-  // 扣除已使用的張數
   if (consumedCount > 0) {
     earnedTickets.splice(0, consumedCount);
   }
   
-  // 過濾掉已經過期的張數
   const todayYMD = getLocalHKDate();
   const [ty, tm, td] = todayYMD.split('-').map(Number);
   const todayObj = new Date(ty, tm - 1, td);
@@ -137,30 +130,29 @@ const getMyGiftStats = (client) => {
   
   if (validTickets.length === 0) return { available: 0, closestExpiry: null };
   
-  // 取得最快過期的日期
   const closest = validTickets[0];
   const cYMD = `${closest.getFullYear()}-${String(closest.getMonth()+1).padStart(2,'0')}-${String(closest.getDate()).padStart(2,'0')}`;
   
   return { available: validTickets.length, closestExpiry: cYMD };
 }
 
-// --- 篩選與排序邏輯 (純字串比對) ---
+// --- 篩選與排序邏輯 (純字串比對 + 萬無一失的問號防護盾) ---
 const filteredClients = computed(() => {
   let list = [...store.clients] 
   
   const q = clientSearch.value.toLowerCase()
-  if (q) list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q)))
-  if (filterBranch.value) list = list.filter(c => c.branch === filterBranch.value)
-  if (filterStatus.value === 'active') list = list.filter(c => c.status !== 'prospect')
-  else list = list.filter(c => c.status === 'prospect')
+  if (q) list = list.filter(c => (c?.name && c?.name.toLowerCase().includes(q)) || (c?.phone && c?.phone.includes(q)))
+  if (filterBranch.value) list = list.filter(c => c?.branch === filterBranch.value)
+  if (filterStatus.value === 'active') list = list.filter(c => c?.status !== 'prospect')
+  else list = list.filter(c => c?.status === 'prospect')
 
-  // 🎁 過濾出 MyGift 30天內即將過期的客戶
   if (filterMyGiftExpiring.value) {
     const todayYMD = getLocalHKDate();
     const [ty, tm, td] = todayYMD.split('-').map(Number);
     const todayObj = new Date(ty, tm - 1, td);
 
     list = list.filter(c => {
+      if(!c) return false;
       const stats = getMyGiftStats(c);
       if (stats.available === 0 || !stats.closestExpiry) return false;
       
@@ -172,10 +164,11 @@ const filteredClients = computed(() => {
     });
   }
 
+  // 🛡️ 這裡加上了 ? 防護盾，確保打包絕對不會失敗
   if (sortBy.value === 'name') {
-    list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-HK'))
+    list.sort((a, b) => (a?.name || '').localeCompare(b?.name || '', 'zh-HK'))
   } else if (sortBy.value === 'phone') {
-    list.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''))
+    list.sort((a, b) => (a?.phone || '').localeCompare(b?.phone || ''))
   } else if (sortBy.value === 'expiry_asc') {
     list.sort((a, b) => {
       const d1 = String(a?.expiry_date || '9999-99-99')
@@ -194,7 +187,7 @@ const filteredClients = computed(() => {
 })
 
 // ==========================================
-// 🟢 快捷操作選單邏輯 (跳轉功能)
+// 🟢 快捷操作選單邏輯
 // ==========================================
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
@@ -224,7 +217,7 @@ function handleActionRetail() {
 // --- 功能函數 ---
 function openAddModal() {
     newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
-    consumeMyGift.value = false // 重置
+    consumeMyGift.value = false 
     showAddModal.value = true
 }
 
@@ -247,7 +240,6 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🟢 隔離字串
   dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
