@@ -1,11 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router' // 🟢 新增：引入路由功能
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
-const route = useRoute() // 🟢 新增：啟用路由功能
 
 const searchClient = ref('')
 const selectedClient = ref(null)
