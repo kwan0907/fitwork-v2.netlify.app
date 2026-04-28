@@ -46,7 +46,13 @@ const getTimeStr = (d) => new Date(d).toLocaleTimeString('zh-HK', {hour:'2-digit
 
 const formatTrialDateDisplay = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '無紀錄'
-  const d = new Date(dateStr)
+  
+  // 【關鍵修復】把 "-" 換成 "/"，把 "T" 換成空格
+  const safeStr = dateStr.includes('T') && !dateStr.includes('Z') && !dateStr.includes('+') 
+      ? dateStr.replace(/-/g, '/').replace('T', ' ').split('.')[0] 
+      : dateStr;
+      
+  const d = new Date(safeStr)
   if (isNaN(d)) return dateStr
   return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
@@ -358,9 +364,17 @@ const marketingStats = computed(() => {
 function openTrialEdit(client) {
   editingClient.value = { ...client }
   if (editingClient.value.trial_date) {
-    const d = new Date(editingClient.value.trial_date)
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-    editingClient.value.trial_date = d.toISOString().slice(0,16)
+    // 【關鍵修復】不要再減 timezone offset，直接替換字元讀取
+    const safeStr = editingClient.value.trial_date.replace(/-/g, '/').replace('T', ' ').split('.')[0];
+    const d = new Date(safeStr);
+    
+    // 手動重組成 YYYY-MM-DDTHH:mm 給 input 顯示
+    const yyyy = d.getFullYear()
+    const MM = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    editingClient.value.trial_date = `${yyyy}-${MM}-${dd}T${hh}:${mm}`
   }
   showEditModal.value = true
 }

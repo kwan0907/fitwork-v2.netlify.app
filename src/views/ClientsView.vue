@@ -70,10 +70,15 @@ const getClientPackageStats = (clientName) => {
   return { pkg10, pkg35 }
 }
 
-// 🛡️ 時間防呆解析器 (破解 Safari Bug 與時區偏移)
+// 🛡️ 時間防呆解析器 (破解 Safari 終極 Bug)
 const formatTrialDate = (dateStr) => {
   if (!dateStr) return ''
-  const d = new Date(dateStr) 
+  // 【關鍵修復】把 "-" 換成 "/"，把 "T" 換成空格
+  const safeStr = dateStr.includes('T') && !dateStr.includes('Z') && !dateStr.includes('+') 
+      ? dateStr.replace(/-/g, '/').replace('T', ' ').split('.')[0] 
+      : dateStr;
+      
+  const d = new Date(safeStr) 
   const m = d.getMonth() + 1
   const day = d.getDate()
   const h = String(d.getHours()).padStart(2, '0')
@@ -81,9 +86,15 @@ const formatTrialDate = (dateStr) => {
   return `${m}月${day}日 ${h}:${min}`
 }
 
+// 🛡️ 表單回填解析器 (破解 Safari 終極 Bug)
 const toLocalDatetimeString = (dateStr) => {
   if (!dateStr) return ''
-  const d = new Date(dateStr)
+  // 【關鍵修復】把 "-" 換成 "/"，把 "T" 換成空格
+  const safeStr = dateStr.includes('T') && !dateStr.includes('Z') && !dateStr.includes('+') 
+      ? dateStr.replace(/-/g, '/').replace('T', ' ').split('.')[0] 
+      : dateStr;
+      
+  const d = new Date(safeStr)
   const yyyy = d.getFullYear()
   const MM = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
