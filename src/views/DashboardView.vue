@@ -24,7 +24,7 @@ const showEditModal = ref(false)
 const showNewClientsModal = ref(false) 
 const showPackageSalesModal = ref(false)
 const showFunnelModal = ref(false) 
-const showMyGiftModal = ref(false) // 🟢 MyGift 名單 Modal
+const showMyGiftModal = ref(false) 
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 
@@ -334,9 +334,6 @@ const packageStats = computed(() => {
   return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
 })
 
-// ==========================================
-// 🟢 智能計算系統 - 抓取未使用 MyGift 的客戶
-// ==========================================
 const parseLocal = (dateStr) => {
   if (!dateStr) return new Date(NaN);
   let str = String(dateStr).split('.')[0].replace(' ', 'T');
@@ -391,7 +388,6 @@ const getMyGiftStats = (client) => {
   return { available: validTickets.length, closestExpiry: cYMD };
 }
 
-// 產生清單：還有未使用 MyGift 的客戶
 const clientsWithMyGift = computed(() => {
   let list = [];
   store.clients.forEach(c => {
@@ -552,7 +548,10 @@ const chartOptions = {
       <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
         <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
         <div class="p-info">
-          <div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div>
+          <div class="name">
+            {{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span>
+            <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn" @click.stop>💬 Wts</a>
+          </div>
           <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
         </div>
       </div>
@@ -698,7 +697,7 @@ const chartOptions = {
         <div class="m-header">🎁 未消耗 MyGift 客戶名單 <button class="close-x" @click="showMyGiftModal=false">✕</button></div>
 
         <div style="margin-bottom: 15px; font-size: 12px; color: #7c3aed; font-weight: 700; background: #faf5ff; padding: 10px; border-radius: 8px; border-left: 3px solid #8b5cf6;">
-          💡 <b>系統自動排序：</b> 名單已依照「最快過期日」由近到遠排序。你可以主動聯繫排在最前面的客戶！
+          💡 <b>聯絡快過期客戶：</b> 點擊綠色的 WhatsApp 按鈕可以直接跳轉聯絡該客戶！
         </div>
 
         <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
@@ -712,8 +711,9 @@ const chartOptions = {
                 {{ idx + 1 }}. {{ c.name }}
                 <span style="font-size: 11px; color: #8b5cf6; background: #ede9fe; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
               </div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                 📞 {{ c.phone || '無' }}
+                <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn">💬 WhatsApp</a>
               </div>
             </div>
             <div style="text-align: right;">
@@ -763,8 +763,9 @@ const chartOptions = {
                 {{ idx + 1 }}. {{ c.name }}
                 <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
               </div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
-                📞 {{ c.phone || '無' }} · 來源: {{ c.source || '無' }}
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                📞 {{ c.phone || '無' }}
+                <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn-large" @click.stop>💬 WhatsApp</a>
               </div>
             </div>
             <div style="text-align: right;">
@@ -869,6 +870,8 @@ const chartOptions = {
 .text-green { color: #10b981; }
 .text-white { color: white; }
 .text-purple { color: #8b5cf6; }
+.wts-btn { background: #25D366; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; text-decoration: none; box-shadow: 0 2px 5px rgba(37, 211, 102, 0.3); transition: 0.2s; }
+.wts-btn:active { transform: scale(0.95); }
 
 @media (max-width: 600px) {
   .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }
@@ -935,8 +938,14 @@ const chartOptions = {
 .sp-title { font-size: 14px; font-weight: 900; color: #b45309; }
 .sp-sub { font-size: 11px; font-weight: 700; color: #d97706; margin-top: 2px; }
 .sp-val { font-size: 24px; font-weight: 900; color: #b45309; }
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
-.edit-modal { background: white; width: 90%; max-width: 400px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
+
+/* 修改 Modal 讓手機可以順滑滾動 */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-start; justify-content: center; padding-top: 5vh; padding-bottom: 5vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.edit-modal { background: white; width: 90%; max-width: 480px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); margin: auto; position: relative; max-height: 85vh; overflow-y: auto; overscroll-behavior: contain; }
+/* WhatsApp 綠色按鈕樣式 */
+.wts-btn { background: #25D366; color: white; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; text-decoration: none; margin-left: 8px; box-shadow: 0 2px 4px rgba(37,211,102,0.2); }
+.wts-btn-large { background: #25D366; color: white; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.2); }
+
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center; }
