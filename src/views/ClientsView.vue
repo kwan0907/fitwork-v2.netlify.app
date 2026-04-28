@@ -23,15 +23,15 @@ const toSafeUTCString = (dateStr) => {
 // ✅ 新增：統一處理 Supabase 回傳的 UTC 無時區標記字串
 // Supabase 回傳格式如 "2026-05-05T10:30:00"，沒有 Z，JS 會當本地時間解析
 // 加上 Z 才能正確當 UTC 解析，再由 JS 轉換成本地時間（香港 +8）
-const parseUTCDate = (dateStr) => {
+const parseLocalDate = (dateStr) => {
   if (!dateStr) return new Date(NaN)
-  let str = String(dateStr).split('.')[0] // 移除毫秒部分
-  // 如果字串末尾沒有時區標記（Z 或 +HH:MM），就補上 Z 當 UTC
-  if (!str.includes('Z') && !str.match(/[+-]\d{2}:\d{2}$/)) {
-    str += 'Z'
-  }
-  return new Date(str)
+  let str = String(dateStr).split('.')[0].replace(' ', 'T')
+  // 去除所有時區後綴，強制瀏覽器當本地時間（香港 +8）解析
+  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '')
+  return new Date(str) // 沒有時區 = 瀏覽器用本地時間 = 香港時間 ✓
 }
+  
+
 
 const filterTime = ref('month')
 const customStart = ref('')
@@ -48,7 +48,7 @@ const editingClient = ref(null)
 // ✅ 修復：使用 parseUTCDate 正確解析 Supabase UTC 時間
 const getMonthStr = (d) => {
   const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
-  return months[parseUTCDate(d).getMonth()]
+  return months[parseLocalDate(d).getMonth()]
 }
 const getDayStr = (d) => parseUTCDate(d).getDate().toString().padStart(2, '0')
 const getTimeStr = (d) => parseUTCDate(d).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})
@@ -56,7 +56,7 @@ const getTimeStr = (d) => parseUTCDate(d).toLocaleTimeString('zh-HK', {hour:'2-d
 // ✅ 修復：使用 parseUTCDate 正確解析顯示日期
 const formatTrialDateDisplay = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '無紀錄'
-  const d = parseUTCDate(dateStr)
+  const d = parseLocalDate(editingClient.value.trial_date) 
   if (isNaN(d)) return dateStr
   return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
@@ -388,7 +388,7 @@ async function updateTrial() {
   if (finalTrialDate) {
     // 例如 "2026-05-05T18:30:00" 會被切成 "2026-05-05T18:30"
     // 然後硬生生加上 ":00+08:00"
-    finalTrialDate = finalTrialDate.slice(0, 16) + ':00+08:00';
+    finalTrialDate = finalTrialDate.slice(0, 16) + ':00'
   } else {
     finalTrialDate = null;
   }
