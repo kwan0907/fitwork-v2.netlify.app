@@ -386,7 +386,7 @@ async function updateTrial() {
   if (finalTrialDate) {
     // 例如 "2026-05-05T18:30:00" 會被切成 "2026-05-05T18:30"
     // 然後硬生生加上 ":00+08:00"
-    finalTrialDate = finalTrialDate.slice(0, 16) + ':00+08:00';
+    finalTrialDate = finalTrialDate.slice(0, 16) + ':00';
   } else {
     finalTrialDate = null;
   }
