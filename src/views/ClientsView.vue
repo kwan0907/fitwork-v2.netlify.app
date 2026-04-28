@@ -15,7 +15,7 @@ const filterStatus = ref('active')
 // 💡 排序狀態
 const sortBy = ref('default') 
 
-// 計算正確的香港本地時區日期
+// 計算正確的香港本地時區日期 (僅用於產生今天的預設值)
 const getLocalHKDate = () => {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -53,48 +53,29 @@ const getClientPackageStats = (clientName) => {
 }
 
 // ==========================================
-// 🍎 終極防護：破除 Safari 自動 +8 小時魔咒
+// 🛡️ 終極防護大絕招：字串絕對隔離法
+// 完全不經過 new Date()，只操作純文字，瀏覽器絕對無法干涉！
 // ==========================================
-const parseLocal = (dateStr) => {
-  if (!dateStr) return new Date();
-  if (dateStr instanceof Date) return dateStr;
-  
-  // 1. 擷取字串前 19 位 (YYYY-MM-DDTHH:mm:ss)
-  let cleanStr = String(dateStr).slice(0, 19);
-  
-  // 2. 破除 Safari 魔咒：把 "-" 換成 "/"，把 "T" 換成空格
-  // 變成 "YYYY/MM/DD HH:mm:ss" 後，所有設備都會強制判定為本地時間！
-  cleanStr = cleanStr.replace(/-/g, '/').replace('T', ' ');
-  
-  return new Date(cleanStr); 
-}
 
-// 1. 將資料庫回傳的時間，轉換成列表上漂亮的顯示格式
+// 1. 將資料庫回傳的文字，切割成列表上漂亮的顯示格式
 const formatTrialDate = (dateStr) => {
-  if (!dateStr) return ''
-  const d = parseLocal(dateStr)
-  if (isNaN(d)) return ''
-  const m = d.getMonth() + 1
-  const day = d.getDate()
-  const h = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  return `${m}月${day}日 ${h}:${min}`
+  if (!dateStr || dateStr === '無紀錄') return ''
+  // 直接擷取字串的前 16 個字元 "YYYY-MM-DDTHH:mm"
+  const str = String(dateStr).slice(0, 16) 
+  if (str.length < 16) return dateStr
+  const [d, t] = str.split('T')
+  const [y, m, day] = d.split('-')
+  return `${parseInt(m)}月${parseInt(day)}日 ${t}`
 }
 
-// 2. 將資料庫回傳的時間，填入編輯表單的 YYYY-MM-DDTHH:mm 格式
+// 2. 將資料庫回傳的文字，填入編輯表單的 input
 const toLocalDatetimeString = (dateStr) => {
   if (!dateStr) return ''
-  const d = parseLocal(dateStr)
-  if (isNaN(d)) return ''
-  const yyyy = d.getFullYear()
-  const MM = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`
+  // input 需要的格式剛好就是前 16 碼 "YYYY-MM-DDTHH:mm"，直接切給它！
+  return String(dateStr).slice(0, 16)
 }
 
-// --- 篩選與排序邏輯 ---
+// --- 篩選與排序邏輯 (全部改用字串比對) ---
 const filteredClients = computed(() => {
   let list = [...store.clients] 
   
@@ -110,19 +91,33 @@ const filteredClients = computed(() => {
     list.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''))
   } else if (sortBy.value === 'expiry_asc') {
     list.sort((a, b) => {
-      if (!a.expiry_date) return 1 
-      if (!b.expiry_date) return -1
-      return new Date(a.expiry_date) - new Date(b.expiry_date)
+      const d1 = String(a.expiry_date || '9999-99-99')
+      const d2 = String(b.expiry_date || '9999-99-99')
+      return d1.localeCompare(d2)
     })
   } else if (sortBy.value === 'expiry_desc') {
     list.sort((a, b) => {
-      if (!a.expiry_date) return 1
-      if (!b.expiry_date) return -1
-      return new Date(b.expiry_date) - new Date(a.expiry_date)
+      const d1 = String(a.expiry_date || '0000-00-00')
+      const d2 = String(b.expiry_date || '0000-00-00')
+      return d2.localeCompare(d1)
     })
   }
 
   return list
+})
+
+const upcomingTrials = computed(() => {
+  const todayYMD = getLocalHKDate(); // "2026-04-28"
+  return prospectClients.value
+    .filter(c => c.trial_date)
+    .filter(c => { 
+       // 擷取 YYYY-MM-DD 進行純字串比較，大於等於今天就顯示
+       const tDateStr = String(c.trial_date).slice(0, 10);
+       return tDateStr >= todayYMD; 
+    })
+    .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
+    .sort((a,b) => String(a.trial_date).localeCompare(String(b.trial_date)))
+    .slice(0, 5)
 })
 
 // ==========================================
@@ -178,8 +173,9 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🟢 儲存時硬加 Z 偽裝成 UTC，騙過 Supabase 讓它記下你輸入的原始數字
-  dataToInsert.trial_date = dataToInsert.trial_date ? `${dataToInsert.trial_date.slice(0, 16)}:00Z` : null
+  // 🟢 最關鍵的一步：不要用 ISOString，不要加 Z。
+  // input 給什麼字串，我們就原封不動送給 Supabase！
+  dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -198,8 +194,8 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🟢 儲存時硬加 Z 偽裝成 UTC，騙過 Supabase 讓它記下你輸入的原始數字
-  dataToUpdate.trial_date = dataToUpdate.trial_date ? `${dataToUpdate.trial_date.slice(0, 16)}:00Z` : null
+  // 🟢 最關鍵的一步：不要用 ISOString，不要加 Z。原字串送出！
+  dataToUpdate.trial_date = dataToUpdate.trial_date ? dataToUpdate.trial_date.slice(0, 16) : null
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)
@@ -229,14 +225,23 @@ const getClientGen = (id) => {
   return g
 }
 
-const getExpiryClass = (date) => {
-  if (!date) return ''
-  const d = (new Date(date) - new Date()) / 86400000
-  return d < 0 ? 'tag-red' : (d < 14 ? 'tag-orange' : 'tag-green')
+const getExpiryClass = (dateStr) => {
+  if (!dateStr) return ''
+  const targetStr = String(dateStr).slice(0, 10)
+  const todayYMD = getLocalHKDate()
+  if (targetStr < todayYMD) return 'tag-red'
+  
+  const [ty, tm, td] = targetStr.split('-').map(Number)
+  const [ny, nm, nd] = todayYMD.split('-').map(Number)
+  const tDate = new Date(ty, tm-1, td)
+  const today = new Date(ny, nm-1, nd)
+  const diffDays = (tDate - today) / 86400000
+  
+  return diffDays < 14 ? 'tag-orange' : 'tag-green'
 }
 
 // ==========================================
-// 🚀 終極強化：客戶資料 CSV 真實批量匯入
+// 🚀 客戶資料 CSV 批量匯入
 // ==========================================
 function downloadCSVTemplate() {
     const BOM = "\uFEFF"; 
@@ -276,24 +281,15 @@ async function handleImport(event) {
 
             for (let i = 1; i < lines.length; i++) {
                 const cols = lines[i].split(',')
-                
                 const name = cols[0]?.trim()
                 if (!name) continue 
-
-                const phone = cols[1]?.trim() || ''
-                const branch = cols[2]?.trim() || '觀塘'
-                const status = cols[3]?.trim() === 'prospect' ? 'prospect' : 'active'
-                const join_date = cols[4]?.trim() || null
-                const source = cols[5]?.trim() || '其他'
-                const expiry_date = cols[6]?.trim() || null
-
                 insertData.push({
-                    name, phone, branch, status, join_date, source, expiry_date,
-                    own_email: user.email,
-                    user_id: user.id
+                    name, phone: cols[1]?.trim() || '', branch: cols[2]?.trim() || '觀塘', 
+                    status: cols[3]?.trim() === 'prospect' ? 'prospect' : 'active', 
+                    join_date: cols[4]?.trim() || null, source: cols[5]?.trim() || '其他', 
+                    expiry_date: cols[6]?.trim() || null, own_email: user.email, user_id: user.id
                 })
             }
-
             if (insertData.length === 0) return alert('❌ 沒有找到有效的客戶資料！請檢查格式。')
 
             const { error } = await supabase.from('clients').insert(insertData)

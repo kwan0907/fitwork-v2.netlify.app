@@ -7,21 +7,15 @@ import BaseModal from '../components/BaseModal.vue'
 const store = useMainStore()
 
 // ==========================================
-// 🛡️ 終極防護：斬斷時區法 (與 Dashboard / Clients 統一)
+// 🛡️ 終極防護大絕招：字串絕對隔離法
+// 完全不經過 new Date() 轉換 Supabase 資料，直接切割文字！
 // ==========================================
 
-const parseLocal = (dateStr) => {
-  if (!dateStr) return new Date();
-  if (dateStr instanceof Date) return dateStr;
-  
-  let cleanStr = String(dateStr).slice(0, 19);
-  cleanStr = cleanStr.replace(/-/g, '/').replace('T', ' ');
-  return new Date(cleanStr); 
-}
-
-// 取得本地的 YYYY-MM-DD (用於表單預設值)
-const getLocalYMD = (d = new Date()) => {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+// 取得本地的 YYYY-MM-DD (僅用於新增表單的預設值)
+const getLocalYMD = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().split('T')[0]
 }
 
 const showExpModal = ref(false)
@@ -31,15 +25,9 @@ const incCategories = ['公司票', '其他收入']
 const expCategories = ['廣告費用', '觀塘租金', '中環租金', '馬拉松費用', '產品採購', '支付30%', '其他支出']
 
 const expForm = ref({
-  type: 'expense',
-  amount: '',
-  note: '',
-  client_name: '', 
-  staff: staffList.value[0],
-  category: '廣告費用',
-  ad_inquiries: 0,
-  ad_phones: 0,
-  date: getLocalYMD() // 🛡️ 確保一打開表單就是無時差的本地日期
+  type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
+  category: '廣告費用', ad_inquiries: 0, ad_phones: 0,
+  date: getLocalYMD() // 🛡️ 確保一打開表單就是本地日期
 })
 
 const activeClientsOptions = computed(() => {
@@ -65,21 +53,26 @@ const getDisplayData = (t) => {
 const groupedTxns = computed(() => {
   const g = {}
   store.transactions.forEach(t => {
-    // 🛡️ 讀取時，使用 parseLocal 斬斷時區，並手動組成 DD/MM/YYYY
-    const dObj = parseLocal(t.created_at)
-    const dd = String(dObj.getDate()).padStart(2, '0')
-    const mm = String(dObj.getMonth() + 1).padStart(2, '0')
-    const yyyy = dObj.getFullYear()
-    const d = `${dd}/${mm}/${yyyy}`
+    // 🛡️ 字串隔離：直接從 "2026-05-05T14:30:00" 切出前 10 碼 "2026-05-05"
+    const dateStr = String(t.created_at || '').slice(0, 10)
+    if (!dateStr || dateStr.length < 10) return
     
-    if (!g[d]) g[d] = []
-    g[d].push(t)
+    // 手動重組為香港習慣的 DD/MM/YYYY
+    const [yyyy, mm, dd] = dateStr.split('-')
+    const displayDate = `${dd}/${mm}/${yyyy}`
+    
+    if (!g[displayDate]) g[displayDate] = []
+    g[displayDate].push(t)
   })
+  
   return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>{
     // 解析 DD/MM/YYYY 排序
     const [d1, m1, y1] = a.date.split('/')
     const [d2, m2, y2] = b.date.split('/')
-    return new Date(`${y2}-${m2}-${d2}`) - new Date(`${y1}-${m1}-${d1}`)
+    // 這裡用純字串比較 YYYY-MM-DD
+    const strA = `${y1}-${m1}-${d1}`
+    const strB = `${y2}-${m2}-${d2}`
+    return strB.localeCompare(strA)
   })
 })
 
@@ -88,7 +81,6 @@ function handleRepeatOrder(t) {
   const { client, text } = getDisplayData(t)
   let items = []
   
-  // 智能解析格式：(蛋白素(士多啤梨)x2, 蘆薈汁(芒果)x1)
   const match = t.note.match(/\((.*?)\)$/)
   if (match) {
     const parts = match[1].split(', ')
@@ -103,14 +95,7 @@ function handleRepeatOrder(t) {
     })
   }
 
-  // 將資料存入 Store，通知零售頁面
-  store.pendingRepeatOrder = {
-    clientName: client,
-    branch: t.branch,
-    items: items
-  }
-
-  // 透過 store.view 跳轉到零售頁面
+  store.pendingRepeatOrder = { clientName: client, branch: t.branch, items: items }
   store.view = 'retail'
 }
 
@@ -119,7 +104,7 @@ function openExpForm() {
   expForm.value = {
     type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
     category: '廣告費用', ad_inquiries: 0, ad_phones: 0, 
-    date: getLocalYMD() // 🛡️ 重置時依然獲取本地日期
+    date: getLocalYMD() 
   }
   showExpModal.value = true
 }
@@ -144,7 +129,8 @@ function openEditTransaction(t) {
     client_name: extractedClient, 
     staff: t.staff || t.handled_by || '',
     category: t.category, ad_inquiries: t.ad_inquiries || 0, ad_phones: t.ad_phones || 0,
-    date: getLocalYMD(parseLocal(t.created_at)) // 🛡️ 讀取舊紀錄時，斬斷時區再提取 YYYY-MM-DD
+    // 🛡️ 編輯時：直接把 Supabase 傳來的字串切前 10 碼 (YYYY-MM-DD) 塞進表單！
+    date: String(t.created_at).slice(0, 10) 
   }
   showExpModal.value = true
 }
@@ -177,17 +163,18 @@ async function saveTransaction() {
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
-  // 🛡️ 寫入資料庫：終極防呆！偽裝成 UTC！
-  // 取得當下的本地時分秒
+  // 🛡️ 寫入資料庫：終極字串法！
+  // 取得當下的本地時分秒字串
   const now = new Date()
   const hh = String(now.getHours()).padStart(2, '0')
   const mm = String(now.getMinutes()).padStart(2, '0')
   const ss = String(now.getSeconds()).padStart(2, '0')
   
-  // 組合：你選的日期 + 現在的時分秒 + "Z" (騙過 Supabase，讓它直接存下這組數字)
-  const finalISOString = `${expForm.value.date}T${hh}:${mm}:${ss}Z`
+  // 組合：你選的日期 + 現在的時分秒
+  // 不加上 Z，不加時區，純純的字串丟給 Supabase！
+  const finalString = `${expForm.value.date}T${hh}:${mm}:${ss}`
 
-  const updatePayload = { ...data, created_at: finalISOString }
+  const updatePayload = { ...data, created_at: finalString }
 
   let error
   if (editingTxn.value) {
@@ -206,24 +193,20 @@ async function saveTransaction() {
   }
 }
 
-// 🚀 終極強化：刪除流水帳並「自動智能退回庫存」 (支援零售退貨 與 採購退貨)
+// 🚀 終極強化：刪除流水帳並「自動智能退回庫存」
 async function handleDeleteTransaction(t) {
   if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用/採購紀錄，系統將自動同步校正庫存)')) return
 
-  // 1. 取得使用者資訊 (補庫存需要 user_id)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
 
-  // 2. 智能解析備註，尋找需要處理的產品
   let itemsToRefund = []
-  let isProcurement = false // 標記是否為採購退貨
+  let isProcurement = false 
   
   if (t.category === '零售收入' && t.note) {
-    // 💡 解析零售格式：王小明 (蛋白素(士多啤梨)x2, 蘆薈汁(芒果)x1) -> 刪除要補回庫存 (+)
     const match = t.note.match(/\((.*?)\)$/)
     if (match) {
-      const itemsStr = match[1]
-      const parts = itemsStr.split(', ')
+      const parts = match[1].split(', ')
       parts.forEach(p => {
         const lastXIndex = p.lastIndexOf('x')
         if (lastXIndex !== -1) {
@@ -234,18 +217,15 @@ async function handleDeleteTransaction(t) {
       })
     }
   } else if (t.category === '自用消耗' && t.note) {
-    // 💡 解析自用格式：提取自用: 蛋白素(士多啤梨) x2 -> 刪除要補回庫存 (+)
     const match = t.note.match(/提取自用:\s*(.*?)\s*x(\d+)$/)
     if (match) {
       itemsToRefund.push({ name: match[1].trim(), qty: parseInt(match[2]) })
     }
   } else if (t.category === '產品採購' && t.note) {
-    // 💡 解析採購格式：批量採購 (蛋白素(士多啤梨)x10, 茶x5) -> 刪除要扣除庫存 (-)
     isProcurement = true
     const match = t.note.match(/\((.*?)\)$/)
     if (match) {
-      const itemsStr = match[1]
-      const parts = itemsStr.split(', ')
+      const parts = match[1].split(', ')
       parts.forEach(p => {
         const lastXIndex = p.lastIndexOf('x')
         if (lastXIndex !== -1) {
@@ -257,66 +237,39 @@ async function handleDeleteTransaction(t) {
     }
   }
 
-  // 3. 刪除資料庫中的該筆交易紀錄
   const { error } = await supabase.from('transactions').delete().eq('id', t.id)
   if (error) return alert('刪除失敗: ' + error.message)
 
-  // 4. 自動退回 / 扣減庫存程序
   if (itemsToRefund.length > 0) {
     let stockUpdateFailed = false
     
     for (const item of itemsToRefund) {
-      // 查詢現在真實的庫存
       const { data: stockData } = await supabase.from('stock')
-        .select('quantity')
-        .eq('prod_name', item.name)
-        .eq('branch', t.branch || '觀塘')
-        .eq('user_id', user.id)
-        .maybeSingle()
+        .select('quantity').eq('prod_name', item.name).eq('branch', t.branch || '觀塘').eq('user_id', user.id).maybeSingle()
 
       const currentQty = stockData ? stockData.quantity : 0
-      
-      // 🚀 核心邏輯判斷：如果是採購退貨就減掉，如果是零售退貨就加回來
-      const newQty = isProcurement 
-                     ? currentQty - item.qty 
-                     : currentQty + item.qty 
+      const newQty = isProcurement ? currentQty - item.qty : currentQty + item.qty 
 
       if (stockData) {
-        const { error: updateErr } = await supabase.from('stock')
-          .update({ quantity: newQty })
-          .eq('prod_name', item.name)
-          .eq('branch', t.branch || '觀塘')
-          .eq('user_id', user.id)
+        const { error: updateErr } = await supabase.from('stock').update({ quantity: newQty }).eq('prod_name', item.name).eq('branch', t.branch || '觀塘').eq('user_id', user.id)
         if (updateErr) stockUpdateFailed = true
       } else {
-        // 如果原本沒資料，就建立並寫入退回數量
-        const { error: insertErr } = await supabase.from('stock')
-          .insert({
-            prod_name: item.name,
-            branch: t.branch || '觀塘',
-            quantity: newQty,
-            user_id: user.id,
-            own_email: user.email
-          })
+        const { error: insertErr } = await supabase.from('stock').insert({
+            prod_name: item.name, branch: t.branch || '觀塘', quantity: newQty, user_id: user.id, own_email: user.email
+        })
         if (insertErr) stockUpdateFailed = true
       }
     }
 
-    if (stockUpdateFailed) {
-      alert('⚠️ 流水帳已刪除，但部分庫存校正失敗！請手動至「庫存管理」確認。')
-    } else {
-      if (isProcurement) {
-        alert('✅ 採購紀錄已刪除，剛剛進的貨已經從庫存中自動扣除了！')
-      } else {
-        alert('✅ 紀錄已成功刪除，扣除的庫存已自動補回！')
-      }
+    if (stockUpdateFailed) alert('⚠️ 流水帳已刪除，但部分庫存校正失敗！請手動至「庫存管理」確認。')
+    else {
+      if (isProcurement) alert('✅ 採購紀錄已刪除，剛剛進的貨已經從庫存中自動扣除了！')
+      else alert('✅ 紀錄已成功刪除，扣除的庫存已自動補回！')
     }
   } else {
-    // 如果不是零售或自用或採購，就一般刪除
     alert('✅ 紀錄已成功刪除')
   }
 
-  // 5. 重新同步最新數據到畫面
   await store.syncAll()
 }
 </script>
