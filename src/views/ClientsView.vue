@@ -4,6 +4,24 @@ import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase' 
 
 const store = useMainStore()
+// 🛡️ 終極防呆：拆開字串變數字，強迫瀏覽器認作本地時間
+const toSafeUTCString = (dateStr) => {
+  if (!dateStr) return null;
+  // 1. 確保只攞前 16 碼 (YYYY-MM-DDTHH:mm)
+  const cleanStr = dateStr.slice(0, 16);
+  
+  // 2. 斬件拆開年月日、時分
+  const [dPart, tPart] = cleanStr.split('T');
+  const [yyyy, mm, dd] = dPart.split('-');
+  const [hh, min] = tPart.split(':');
+  
+  // 3. 用「數字」建立 Date (JavaScript 見到數字，必定會用你手機嘅本地時區)
+  // 注意：月份要減 1，因為 JS 月份係 0-11
+  const d = new Date(yyyy, mm - 1, dd, hh, min);
+  
+  // 4. 轉換成 UTC 標準格式 (結尾有 Z) 俾 Supabase
+  return d.toISOString();
+}
 
 // --- 狀態定義 ---
 const showAddModal = ref(false)
@@ -158,12 +176,7 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🛡️ 終極時區防呆：無視瀏覽器格式，強制切出前16碼，再硬生生加上香港時區
-  if (dataToInsert.trial_date) {
-    dataToInsert.trial_date = dataToInsert.trial_date.substring(0, 16) + ':00+08:00'
-  } else {
-    dataToInsert.trial_date = null
-  }
+  dataToInsert.trial_date = toSafeUTCString(dataToInsert.trial_date)
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -182,12 +195,7 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🛡️ 終極時區防呆：無視瀏覽器格式，強制切出前16碼，再硬生生加上香港時區
-  if (dataToUpdate.trial_date) {
-    dataToUpdate.trial_date = dataToUpdate.trial_date.substring(0, 16) + ':00+08:00'
-  } else {
-    dataToUpdate.trial_date = null
-  }
+  dataToUpdate.trial_date = toSafeUTCString(dataToUpdate.trial_date)
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)

@@ -9,6 +9,25 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
+// 🛡️ 終極防呆：拆開字串變數字，強迫瀏覽器認作本地時間
+const toSafeUTCString = (dateStr) => {
+  if (!dateStr) return null;
+  // 1. 確保只攞前 16 碼 (YYYY-MM-DDTHH:mm)
+  const cleanStr = dateStr.slice(0, 16);
+  
+  // 2. 斬件拆開年月日、時分
+  const [dPart, tPart] = cleanStr.split('T');
+  const [yyyy, mm, dd] = dPart.split('-');
+  const [hh, min] = tPart.split(':');
+  
+  // 3. 用「數字」建立 Date (JavaScript 見到數字，必定會用你手機嘅本地時區)
+  // 注意：月份要減 1，因為 JS 月份係 0-11
+  const d = new Date(yyyy, mm - 1, dd, hh, min);
+  
+  // 4. 轉換成 UTC 標準格式 (結尾有 Z) 俾 Supabase
+  return d.toISOString();
+}
+
 const filterTime = ref('month')
 const customStart = ref('')
 const customEnd = ref('')
