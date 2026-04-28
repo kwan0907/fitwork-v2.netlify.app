@@ -10,12 +10,13 @@ const store = useMainStore()
 // 🛡️ 終極防護：斬斷時區法 (與 Dashboard / Clients 統一)
 // ==========================================
 
-// 解析 Supabase 傳來的時間，強制砍掉時區標記，讓瀏覽器乖乖當作本地時間
 const parseLocal = (dateStr) => {
   if (!dateStr) return new Date();
-  let str = String(dateStr).split('.')[0].replace(' ', 'T');
-  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
-  return new Date(str); 
+  if (dateStr instanceof Date) return dateStr;
+  
+  let cleanStr = String(dateStr).slice(0, 19);
+  cleanStr = cleanStr.replace(/-/g, '/').replace('T', ' ');
+  return new Date(cleanStr); 
 }
 
 // 取得本地的 YYYY-MM-DD (用於表單預設值)

@@ -53,15 +53,20 @@ const getClientPackageStats = (clientName) => {
 }
 
 // ==========================================
-// 🛡️ 終極防護：斬斷時區法 (與 Dashboard 統一)
+// 🍎 終極防護：破除 Safari 自動 +8 小時魔咒
 // ==========================================
-
-// 解析 Supabase 傳來的時間，強制砍掉時區標記，讓瀏覽器乖乖當作本地時間
 const parseLocal = (dateStr) => {
-  if (!dateStr) return new Date(NaN);
-  let str = String(dateStr).split('.')[0].replace(' ', 'T');
-  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
-  return new Date(str); 
+  if (!dateStr) return new Date();
+  if (dateStr instanceof Date) return dateStr;
+  
+  // 1. 擷取字串前 19 位 (YYYY-MM-DDTHH:mm:ss)
+  let cleanStr = String(dateStr).slice(0, 19);
+  
+  // 2. 破除 Safari 魔咒：把 "-" 換成 "/"，把 "T" 換成空格
+  // 變成 "YYYY/MM/DD HH:mm:ss" 後，所有設備都會強制判定為本地時間！
+  cleanStr = cleanStr.replace(/-/g, '/').replace('T', ' ');
+  
+  return new Date(cleanStr); 
 }
 
 // 1. 將資料庫回傳的時間，轉換成列表上漂亮的顯示格式
@@ -173,7 +178,7 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🟢 終極防呆：硬加 Z 偽裝成 UTC，讓 Supabase 原封不動存下你輸入的數字
+  // 🟢 儲存時硬加 Z 偽裝成 UTC，騙過 Supabase 讓它記下你輸入的原始數字
   dataToInsert.trial_date = dataToInsert.trial_date ? `${dataToInsert.trial_date.slice(0, 16)}:00Z` : null
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
@@ -193,7 +198,7 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🟢 終極防呆：硬加 Z 偽裝成 UTC，讓 Supabase 原封不動存下你輸入的數字
+  // 🟢 儲存時硬加 Z 偽裝成 UTC，騙過 Supabase 讓它記下你輸入的原始數字
   dataToUpdate.trial_date = dataToUpdate.trial_date ? `${dataToUpdate.trial_date.slice(0, 16)}:00Z` : null
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
@@ -212,7 +217,6 @@ function openEditModal(client) {
   editingClient.value = { ...client }
   
   if (editingClient.value.trial_date) {
-    // 填入表單時，轉換為本地的 YYYY-MM-DDTHH:mm 格式
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
   

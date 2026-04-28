@@ -9,17 +9,13 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
-// 🔪 核心解法 (斬斷時區法)：把 Supabase 的 UTC 標記砍掉，強迫瀏覽器當成本地時間
 const parseLocal = (dateStr) => {
-  if (!dateStr || dateStr === '無紀錄') return new Date(NaN);
+  if (!dateStr) return new Date();
   if (dateStr instanceof Date) return dateStr;
   
-  // 砍掉 Z 或 +00:00，例如 "2026-05-05T14:00:00Z" 會變成 "2026-05-05T14:00:00"
-  let str = String(dateStr).split('.')[0].replace(' ', 'T');
-  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
-  
-  // 這樣 JS 就會乖乖當作本地時間，絕對不會再 +8
-  return new Date(str); 
+  let cleanStr = String(dateStr).slice(0, 19);
+  cleanStr = cleanStr.replace(/-/g, '/').replace('T', ' ');
+  return new Date(cleanStr); 
 }
 
 // 輔助函數：將 Date 轉為 YYYY-MM-DD，避免 toISOString 又加回時區
