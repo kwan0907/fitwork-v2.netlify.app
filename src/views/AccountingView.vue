@@ -6,17 +6,21 @@ import BaseModal from '../components/BaseModal.vue'
 
 const store = useMainStore()
 
-// 🛡️ 終極防護：鎖定香港時間的轉換函數 (不管人在哪國，都強制轉換為香港時間)
-const getHKDateString = (dateObj = new Date()) => {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Hong Kong',
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  })
-  const parts = formatter.formatToParts(dateObj)
-  const y = parts.find(p => p.type === 'year').value
-  const m = parts.find(p => p.type === 'month').value
-  const d = parts.find(p => p.type === 'day').value
-  return `${y}-${m}-${d}` // 確保輸出完美格式 YYYY-MM-DD
+// ==========================================
+// 🛡️ 終極防護：斬斷時區法 (與 Dashboard / Clients 統一)
+// ==========================================
+
+// 解析 Supabase 傳來的時間，強制砍掉時區標記，讓瀏覽器乖乖當作本地時間
+const parseLocal = (dateStr) => {
+  if (!dateStr) return new Date();
+  let str = String(dateStr).split('.')[0].replace(' ', 'T');
+  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
+  return new Date(str); 
+}
+
+// 取得本地的 YYYY-MM-DD (用於表單預設值)
+const getLocalYMD = (d = new Date()) => {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
 const showExpModal = ref(false)
@@ -34,7 +38,7 @@ const expForm = ref({
   category: '廣告費用',
   ad_inquiries: 0,
   ad_phones: 0,
-  date: getHKDateString() // 🛡️ 確保一打開表單就是標準香港日期
+  date: getLocalYMD() // 🛡️ 確保一打開表單就是無時差的本地日期
 })
 
 const activeClientsOptions = computed(() => {
@@ -60,8 +64,13 @@ const getDisplayData = (t) => {
 const groupedTxns = computed(() => {
   const g = {}
   store.transactions.forEach(t => {
-    // 🛡️ 強制將歷史紀錄以「香港時區」分組顯示，不怕半夜結帳跨日的 Bug
-    const d = new Date(t.created_at).toLocaleDateString('zh-HK', { timeZone: 'Asia/Hong Kong' })
+    // 🛡️ 讀取時，使用 parseLocal 斬斷時區，並手動組成 DD/MM/YYYY
+    const dObj = parseLocal(t.created_at)
+    const dd = String(dObj.getDate()).padStart(2, '0')
+    const mm = String(dObj.getMonth() + 1).padStart(2, '0')
+    const yyyy = dObj.getFullYear()
+    const d = `${dd}/${mm}/${yyyy}`
+    
     if (!g[d]) g[d] = []
     g[d].push(t)
   })
@@ -109,7 +118,7 @@ function openExpForm() {
   expForm.value = {
     type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
     category: '廣告費用', ad_inquiries: 0, ad_phones: 0, 
-    date: getHKDateString() // 🛡️ 重置時依然獲取標準香港日期
+    date: getLocalYMD() // 🛡️ 重置時依然獲取本地日期
   }
   showExpModal.value = true
 }
@@ -134,7 +143,7 @@ function openEditTransaction(t) {
     client_name: extractedClient, 
     staff: t.staff || t.handled_by || '',
     category: t.category, ad_inquiries: t.ad_inquiries || 0, ad_phones: t.ad_phones || 0,
-    date: getHKDateString(new Date(t.created_at)) // 🛡️ 讀取舊紀錄時，強制轉換為香港日期 YYYY-MM-DD
+    date: getLocalYMD(parseLocal(t.created_at)) // 🛡️ 讀取舊紀錄時，斬斷時區再提取 YYYY-MM-DD
   }
   showExpModal.value = true
 }
@@ -167,10 +176,15 @@ async function saveTransaction() {
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
-  // 🛡️ 寫入資料庫：組合你選擇的日期 + 鎖定取得香港的當下時間 (HH:MM:SS) + 香港時區 (+08:00)
-  const hkTimeString = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Hong Kong', hour12: false })
-  // 將它們組合成 ISO 國際絕對時間 (例如 2026-04-28T14:30:00+08:00)，然後轉換為標準格式給 Supabase
-  const finalISOString = new Date(`${expForm.value.date}T${hkTimeString}+08:00`).toISOString()
+  // 🛡️ 寫入資料庫：終極防呆！偽裝成 UTC！
+  // 取得當下的本地時分秒
+  const now = new Date()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  
+  // 組合：你選的日期 + 現在的時分秒 + "Z" (騙過 Supabase，讓它直接存下這組數字)
+  const finalISOString = `${expForm.value.date}T${hh}:${mm}:${ss}Z`
 
   const updatePayload = { ...data, created_at: finalISOString }
 

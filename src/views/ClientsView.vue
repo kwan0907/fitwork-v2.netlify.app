@@ -1,771 +1,563 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
-import { supabase } from '../supabase'
-
-import { Line } from 'vue-chartjs'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+import { supabase } from '../supabase' 
 
 const store = useMainStore()
 
-// 🛡️ 終極防護罩：強制轉換所有時間為「香港標準時間 (Asia/Hong Kong)」
-const getHKParts = (dateInput) => {
-  if (!dateInput || dateInput === '無紀錄') return null;
-  const d = new Date(dateInput);
-  if (isNaN(d)) return null;
-
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Hong Kong',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false
-  });
-  const parts = formatter.formatToParts(d);
-  return {
-    y: parts.find(p => p.type === 'year').value,
-    m: parts.find(p => p.type === 'month').value,
-    d: parts.find(p => p.type === 'day').value,
-    hr: parts.find(p => p.type === 'hour').value,
-    min: parts.find(p => p.type === 'minute').value
-  };
-};
-
-const filterTime = ref('month')
-const customStart = ref('')
-const customEnd = ref('')
-const filterBranch = ref('全部分店')
-
+// --- 狀態定義 ---
+const showAddModal = ref(false)
 const showEditModal = ref(false)
-const showNewClientsModal = ref(false) 
-const showPackageSalesModal = ref(false)
-const showFunnelModal = ref(false) 
-const funnelViewType = ref('booked') 
-const editingClient = ref(null)
+const clientSearch = ref('') 
+const filterBranch = ref('')
+const filterStatus = ref('active')
 
-// ✅ 修復：全部統一使用香港時間解析，不再報錯
-const getMonthStr = (d) => {
-  const p = getHKParts(d);
-  return p ? `${parseInt(p.m)}月` : '';
-}
-const getDayStr = (d) => {
-  const p = getHKParts(d);
-  return p ? p.d : '';
-}
-const getTimeStr = (d) => {
-  const p = getHKParts(d);
-  return p ? `${p.hr}:${p.min}` : '';
-}
+// 💡 排序狀態
+const sortBy = ref('default') 
 
-// ✅ 修復：傳入正確的變數，並轉為香港顯示
-const formatTrialDateDisplay = (dateStr) => {
-  if (!dateStr || dateStr === '無紀錄') return '無紀錄';
-  const p = getHKParts(dateStr);
-  return p ? `${parseInt(p.m)}/${parseInt(p.d)} ${p.hr}:${p.min}` : dateStr;
+// 計算正確的香港本地時區日期
+const getLocalHKDate = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().split('T')[0]
+}
+const todayStr = getLocalHKDate()
+
+const defaultNewClient = { 
+  name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
+  is_vip: false, is_marathon: false, join_date: todayStr, 
+  package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
+  referred_by_id: null, vip_tier: '銅級(88折)', 
+  trial_date: '' 
 }
 
-const isDateInRange = (dateStr) => {
-  if (!dateStr) return false
-  const d = new Date(dateStr)
-  if (isNaN(d)) return false
+const newClient = ref({ ...defaultNewClient })
+const editingClient = ref({})
 
-  // 🛡️ 確保「今日/本月」是用香港的今天來算，不怕出國時區干擾
-  const hkNow = getHKParts(new Date());
-  const target = getHKParts(d);
-  
-  const nowMonth = parseInt(hkNow.m) - 1;
-  const nowYear = parseInt(hkNow.y);
-  const targetMonth = parseInt(target.m) - 1;
-  const targetYear = parseInt(target.y);
-  const targetDate = parseInt(target.d);
-
-  const targetYMD = `${target.y}-${target.m}-${target.d}`;
-  const nowYMD = `${hkNow.y}-${hkNow.m}-${hkNow.d}`;
-
-  if (filterTime.value === 'all') return true
-  if (filterTime.value === 'today') return targetYMD === nowYMD
-  if (filterTime.value === 'month') return targetMonth === nowMonth && targetYear === nowYear
-  if (filterTime.value === 'half_1') return targetMonth === nowMonth && targetYear === nowYear && targetDate >= 1 && targetDate <= 14
-  if (filterTime.value === 'half_2') return targetMonth === nowMonth && targetYear === nowYear && targetDate >= 15
-  if (filterTime.value === 'week') {
-    const now = new Date();
-    const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
-    return d >= weekAgo && d <= now;
-  }
-  if (filterTime.value === 'custom') {
-    if (!customStart.value || !customEnd.value) return true
-    // 強制設定為香港時區的開頭與結尾
-    const start = new Date(`${customStart.value}T00:00:00+08:00`); 
-    const end = new Date(`${customEnd.value}T23:59:59+08:00`);
-    return d >= start && d <= end
-  }
-  return true
-}
-
-const prospectClients = computed(() => store.clients.filter(c => c.status === 'prospect'))
-const activeClients = computed(() => store.clients.filter(c => c.status === 'active'))
-
-const branchCounts = computed(() => {
-  return {
-    kwunTong: activeClients.value.filter(c => c.branch === '觀塘').length,
-    central: activeClients.value.filter(c => c.branch === '中環').length,
-    jordan: activeClients.value.filter(c => c.branch === '佐敦').length
-  }
+const allClientsOptions = computed(() => {
+    return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
 })
 
-const upcomingTrials = computed(() => {
-  const hkNow = getHKParts(new Date());
-  const todayYMD = `${hkNow.y}-${hkNow.m}-${hkNow.d}`;
+// 💡 智能計算套票購買次數 (10點 / 35點)
+const getClientPackageStats = (clientName) => {
+  if (!clientName) return { pkg10: 0, pkg35: 0 }
+  let pkg10 = 0, pkg35 = 0
+  
+  store.transactions.forEach(t => {
+    if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(clientName)) {
+      if (t.amount === 850 || t.note.includes('10點') || t.note.includes('pkg_10')) pkg10++
+      if (t.amount === 2550 || t.amount === 2800 || t.note.includes('35點') || t.note.includes('pkg_35')) pkg35++
+    }
+  })
+  return { pkg10, pkg35 }
+}
 
-  return prospectClients.value
-    .filter(c => c.trial_date)
-    .filter(c => { 
-       const p = getHKParts(c.trial_date);
-       if(!p) return false;
-       const targetYMD = `${p.y}-${p.m}-${p.d}`;
-       const d = new Date(c.trial_date);
-       // 只顯示今天以後的試堂
-       return targetYMD >= todayYMD || d >= new Date();
+// ==========================================
+// 🛡️ 終極防護：斬斷時區法 (與 Dashboard 統一)
+// ==========================================
+
+// 解析 Supabase 傳來的時間，強制砍掉時區標記，讓瀏覽器乖乖當作本地時間
+const parseLocal = (dateStr) => {
+  if (!dateStr) return new Date(NaN);
+  let str = String(dateStr).split('.')[0].replace(' ', 'T');
+  str = str.replace(/Z$/i, '').replace(/[+-]\d{2}:\d{2}$/, '');
+  return new Date(str); 
+}
+
+// 1. 將資料庫回傳的時間，轉換成列表上漂亮的顯示格式
+const formatTrialDate = (dateStr) => {
+  if (!dateStr) return ''
+  const d = parseLocal(dateStr)
+  if (isNaN(d)) return ''
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const h = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${m}月${day}日 ${h}:${min}`
+}
+
+// 2. 將資料庫回傳的時間，填入編輯表單的 YYYY-MM-DDTHH:mm 格式
+const toLocalDatetimeString = (dateStr) => {
+  if (!dateStr) return ''
+  const d = parseLocal(dateStr)
+  if (isNaN(d)) return ''
+  const yyyy = d.getFullYear()
+  const MM = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`
+}
+
+// --- 篩選與排序邏輯 ---
+const filteredClients = computed(() => {
+  let list = [...store.clients] 
+  
+  const q = clientSearch.value.toLowerCase()
+  if (q) list = list.filter(c => (c.name && c.name.toLowerCase().includes(q)) || (c.phone && c.phone.includes(q)))
+  if (filterBranch.value) list = list.filter(c => c.branch === filterBranch.value)
+  if (filterStatus.value === 'active') list = list.filter(c => c.status !== 'prospect')
+  else list = list.filter(c => c.status === 'prospect')
+
+  if (sortBy.value === 'name') {
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-HK'))
+  } else if (sortBy.value === 'phone') {
+    list.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''))
+  } else if (sortBy.value === 'expiry_asc') {
+    list.sort((a, b) => {
+      if (!a.expiry_date) return 1 
+      if (!b.expiry_date) return -1
+      return new Date(a.expiry_date) - new Date(b.expiry_date)
     })
-    .filter(c => filterBranch.value === '全部分店' ? true : c.branch === filterBranch.value)
-    .sort((a,b) => new Date(a.trial_date) - new Date(b.trial_date))
-    .slice(0, 5)
+  } else if (sortBy.value === 'expiry_desc') {
+    list.sort((a, b) => {
+      if (!a.expiry_date) return 1
+      if (!b.expiry_date) return -1
+      return new Date(b.expiry_date) - new Date(a.expiry_date)
+    })
+  }
+
+  return list
 })
 
-const financialStats = computed(() => {
-  let revenue = 0, cost = 0, profit = 0;
-  let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
-  let inventoryCost = 0; 
+// ==========================================
+// 🟢 快捷操作選單邏輯 (跳轉功能)
+// ==========================================
+const showActionModal = ref(false)
+const selectedClientForAction = ref(null)
 
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return;
-    const amt = Number(t.amount) || 0;
-    const noteStr = t.note || '';
-    
-    // 取出香港日期來判斷上下半月
-    const p = getHKParts(t.created_at);
-    const txDate = p ? parseInt(p.d) : 1;
-    
-    if (t.type === 'income') { 
-      revenue += amt; 
-      profit += Number(t.profit ?? amt); 
-      
-      let owed = 0;
-      if (t.category === '運動套票' || t.category === '試堂' || t.category === '運動') {
-        if (noteStr.includes('35點') || amt === 2550 || amt === 2452) owed = 800;
-        else if (noteStr.includes('10點') || amt === 850 || amt === 752) owed = 250;
-        else if (noteStr.includes('體驗卡30人次')) owed = 750;
-        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) owed = 25;
-      }
-      
-      if (txDate <= 14) shopOwed1 += owed;
-      else shopOwed2 += owed;
-    } 
-    else if (t.type === 'expense') { 
-      if (t.category === '支付30%') {
-        cost += amt;
-        shopPaid += amt; 
-      } else if (t.category === '自用消耗') {
-        inventoryCost += amt; 
-      } else {
-        cost += amt;
-        profit -= amt; 
-      }
-    }
-  })
-  
-  let p1 = shopOwed1;
-  let p2 = shopOwed2;
-  let paid = shopPaid;
-  
-  if (paid >= p1) { paid -= p1; p1 = 0; p2 -= paid; } else { p1 -= paid; }
-  
-  return { 
-      revenue, cost, profit, inventoryCost, 
-      shopPending: shopOwed1 + shopOwed2 - shopPaid,
-      pending1: p1,
-      pending2: p2
-  };
-})
-
-const clientStats = computed(() => {
-  let newClientsList = [];
-  const sourceCount = { '廣告': 0, '廣告+朋友介紹': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
-
-  const firstTxnMap = {};
-  store.transactions.forEach(t => {
-    if (t.type === 'income' && t.client_id) {
-      const tDate = new Date(t.created_at);
-      if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = tDate;
-      }
-    }
-  });
-
-  store.clients.forEach(c => {
-    if (c.status !== 'active') return;
-
-    let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
-    let isNewByFirstTxn = false;
-    if (firstTxnMap[c.id]) {
-        isNewByFirstTxn = isDateInRange(firstTxnMap[c.id].toISOString());
-    }
-
-    if (isNewByJoinDate || isNewByFirstTxn) {
-        if (filterBranch.value === '全部分店' || c.branch === filterBranch.value) {
-            if (!newClientsList.find(x => x.id === c.id)) {
-                // ✅ 防護：顯示日期也轉為香港格式，不再受 UTC 影響
-                let txnDateStr = '無紀錄';
-                if (firstTxnMap[c.id]) {
-                   const p = getHKParts(firstTxnMap[c.id]);
-                   if(p) txnDateStr = `${p.y}-${p.m}-${p.d}`;
-                }
-                const displayDate = (isNewByJoinDate && c.join_date) ? c.join_date : txnDateStr;
-                
-                newClientsList.push({ ...c, display_join_date: displayDate });
-
-                const src = c.source || '其他';
-                if (sourceCount[src] !== undefined) sourceCount[src]++;
-                else sourceCount['其他']++;
-            }
-        }
-    }
-  })
-
-  newClientsList.sort((a,b) => new Date(b.display_join_date) - new Date(a.display_join_date));
-
-  return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
-})
-
-const trialFunnelStats = computed(() => {
-  let bookedList = [];
-  let completedList = [];
-  let convertedList = [];
-  let notConvertedList = [];
-
-  const now = new Date();
-  const firstTxnMap = {};
-  store.transactions.forEach(t => {
-    if (t.type === 'income' && t.client_id) {
-      const tDate = new Date(t.created_at);
-      if (!firstTxnMap[t.client_id] || tDate < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = tDate;
-      }
-    }
-  });
-
-  store.clients.forEach(c => {
-    if (filterBranch.value !== '全部分店' && c.branch !== filterBranch.value) return;
-
-    let hasTrialInDate = c.trial_date && isDateInRange(c.trial_date);
-    let isDirectConvert = false;
-    let displayTrialDate = c.trial_date;
-
-    if (!hasTrialInDate && c.status === 'active') {
-        let isNewByJoinDate = c.join_date && isDateInRange(c.join_date);
-        let isNewByFirstTxn = false;
-        let firstTxnDateStr = null;
-        if (firstTxnMap[c.id]) {
-            firstTxnDateStr = firstTxnMap[c.id].toISOString();
-            isNewByFirstTxn = isDateInRange(firstTxnDateStr);
-        }
-
-        if (isNewByJoinDate || isNewByFirstTxn) {
-            isDirectConvert = true;
-            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c.join_date ? c.join_date + 'T12:00:00Z' : null);
-        }
-    }
-
-    if (hasTrialInDate || isDirectConvert) {
-      const clientData = { ...c, virtual_trial_date: displayTrialDate, is_direct: isDirectConvert };
-      
-      bookedList.push(clientData);
-
-      let hasRealTransaction = false;
-      store.transactions.forEach(t => {
-        if ((t.category === '運動套票' || t.category === '運動' || t.category === '零售收入') && t.note && t.note.includes(c.name)) {
-          hasRealTransaction = true;
-        }
-      });
-
-      if (isDirectConvert || c.status === 'active' || hasRealTransaction || c.expiry_date) {
-        completedList.push(clientData);
-        convertedList.push(clientData);     
-      } 
-      else {
-        const tDate = new Date(c.trial_date);
-        if (tDate <= now) {
-          completedList.push(clientData);
-          notConvertedList.push(clientData);
-        }
-      }
-    }
-  });
-
-  const sortByTrial = (a, b) => new Date(b.virtual_trial_date || 0) - new Date(a.virtual_trial_date || 0);
-  bookedList.sort(sortByTrial);
-  completedList.sort(sortByTrial);
-  convertedList.sort(sortByTrial);
-  notConvertedList.sort(sortByTrial);
-
-  const conversionRate = completedList.length > 0 ? ((convertedList.length / completedList.length) * 100).toFixed(1) : "0.0";
-
-  return { 
-    totalBooked: bookedList.length, 
-    completedTrials: completedList.length, 
-    converted: convertedList.length, 
-    notConverted: notConvertedList.length, 
-    conversionRate,
-    bookedList,
-    completedList,
-    convertedList,
-    notConvertedList
-  };
-})
-
-function openFunnelModal(type) {
-  funnelViewType.value = type
-  showFunnelModal.value = true
+function openActionModal(client) {
+  selectedClientForAction.value = client
+  showActionModal.value = true
 }
 
-const funnelModalData = computed(() => {
-  if (funnelViewType.value === 'booked') return { title: '📅 總預約 / 加入名單', list: trialFunnelStats.value.bookedList }
-  if (funnelViewType.value === 'completed') return { title: '🏃 已出席名單', list: trialFunnelStats.value.completedList }
-  if (funnelViewType.value === 'converted') return { title: '👑 成功開卡名單', list: trialFunnelStats.value.convertedList }
-  if (funnelViewType.value === 'notConverted') return { title: '👀 僅預約 (未買) 名單', list: trialFunnelStats.value.notConvertedList }
-  return { title: '', list: [] }
-})
+function handleActionEdit() {
+  showActionModal.value = false
+  openEditModal(selectedClientForAction.value)
+}
 
-const packageStats = computed(() => {
-  let pkg850 = 0, pkg2550 = 0;
-  let list = [];
+function handleActionMovement() {
+  showActionModal.value = false
+  store.quickActionClient = selectedClientForAction.value.name
+  store.view = 'movement' 
+}
+
+function handleActionRetail() {
+  showActionModal.value = false
+  store.quickActionClient = selectedClientForAction.value.name
+  store.view = 'retail' 
+}
+
+// --- 功能函數 ---
+function openAddModal() {
+    newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
+    showAddModal.value = true
+}
+
+async function handleAddClient() {
+  if (!newClient.value.name) return alert('請填寫姓名')
   
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (filterBranch.value !== '全部分店' && t.branch !== filterBranch.value) return; 
-    if (t.category === '運動套票' || t.category === '運動') {
-      let isPkg = false;
-      let typeStr = '';
-      
-      if (t.amount === 850 || (t.note && t.note.includes('pkg_10'))) { pkg850++; isPkg = true; typeStr = '10點套票'; }
-      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35'))) { pkg2550++; isPkg = true; typeStr = '35點套票'; }
-      
-      if (isPkg) {
-        let cName = t.client_name;
-        if (!cName && t.note) {
-           const match = t.note.match(/^【(.*?)】/);
-           if (match) cName = match[1];
-        }
-        
-        // ✅ 防護：售出日期也用香港時間抓，不怕 UTC 跨日
-        const p = getHKParts(t.created_at);
-        
-        list.push({
-          ...t,
-          display_client_name: cName || '未記錄',
-          pkg_type: typeStr,
-          display_date: p ? `${p.y}-${p.m}-${p.d}` : '無紀錄'
-        });
-      }
-    }
-  })
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
   
-  list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-  
-  return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
-})
-
-const marathonRate = computed(() => {
-  if (activeClients.value.length === 0) return "0.0"
-  const runners = activeClients.value.filter(c => c.is_marathon).length
-  return ((runners / activeClients.value.length) * 100).toFixed(1)
-})
-
-const cashSummary = computed(() => {
-  const summary = {}
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if (!t.handled_by && !t.staff) return
-    let person = t.handled_by || t.staff
-    if (person.toLowerCase() === 'kwan') person = 'kwan'
-
-    if (!summary[person]) summary[person] = { in: 0, out: 0 }
-    if (t.type === 'income') summary[person].in += Number(t.amount)
-    if (t.type === 'expense') summary[person].out += Number(t.amount)
-  })
-  return summary
-})
-
-const marketingStats = computed(() => {
-  let adSpend = 0, inquiries = 0
-  store.transactions.filter(t => isDateInRange(t.created_at)).forEach(t => {
-    if(t.type === 'expense' && t.category === '廣告費用') { adSpend += Number(t.amount); inquiries += (t.ad_inquiries || 0) }
-  })
-  const adClients = store.clients.filter(c => c.source === '廣告')
-  return { adSpend, inquiries, adCount: adClients.length, adActive: adClients.filter(c => c.status === 'active').length }
-})
-
-// ✅ 修復：打開編輯時，強制以香港時間轉換為 input 的格式
-function openTrialEdit(client) {
-  editingClient.value = { ...client }
-  if (editingClient.value.trial_date) {
-    const p = getHKParts(editingClient.value.trial_date);
-    if (p) {
-      editingClient.value.trial_date = `${p.y}-${p.m}-${p.d}T${p.hr}:${p.min}`;
-    }
+  const dataToInsert = { 
+    ...newClient.value, 
+    own_email: user.email,
+    user_id: user.id 
   }
+  
+  if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
+      dataToInsert.referred_by_id = null
+  }
+  
+  if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
+  if (!dataToInsert.join_date) dataToInsert.join_date = null
+  
+  // 🟢 終極防呆：硬加 Z 偽裝成 UTC，讓 Supabase 原封不動存下你輸入的數字
+  dataToInsert.trial_date = dataToInsert.trial_date ? `${dataToInsert.trial_date.slice(0, 16)}:00Z` : null
+
+  const { error } = await supabase.from('clients').insert([dataToInsert])
+  if (error) alert('新增失敗: ' + error.message)
+  else { showAddModal.value = false; store.syncAll(); alert('✅ 新增成功') }
+}
+
+async function handleUpdateClient() {
+  if (!editingClient.value.name) return alert('請填寫姓名')
+  
+  const dataToUpdate = { ...editingClient.value }
+  
+  if (dataToUpdate.source !== '朋友介紹' && dataToUpdate.source !== '廣告+朋友介紹') {
+      dataToUpdate.referred_by_id = null
+  }
+  
+  if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
+  if (!dataToUpdate.join_date) dataToUpdate.join_date = null
+
+  // 🟢 終極防呆：硬加 Z 偽裝成 UTC，讓 Supabase 原封不動存下你輸入的數字
+  dataToUpdate.trial_date = dataToUpdate.trial_date ? `${dataToUpdate.trial_date.slice(0, 16)}:00Z` : null
+
+  const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
+  if (error) alert('更新失敗: ' + error.message)
+  else { showEditModal.value = false; store.syncAll(); alert('✅ 修改已儲存') }
+}
+
+async function handleDeleteClient() {
+  if(!confirm(`⚠️ 徹底刪除「${editingClient.value.name}」？此操作不可還原！`)) return
+  const { error } = await supabase.from('clients').delete().eq('id', editingClient.value.id)
+  if (error) alert('刪除失敗')
+  else { showEditModal.value = false; store.syncAll(); alert('已刪除') }
+}
+
+function openEditModal(client) {
+  editingClient.value = { ...client }
+  
+  if (editingClient.value.trial_date) {
+    // 填入表單時，轉換為本地的 YYYY-MM-DDTHH:mm 格式
+    editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
+  }
+  
   showEditModal.value = true
 }
 
-async function updateTrial() {
-  
-  let finalTrialDate = editingClient.value.trial_date;
-  if (finalTrialDate) {
-    // 🛡️ 終極防呆：確保儲存時附加上香港時區 (+08:00)，讓 Supabase 存入標準 UTC 時間
-    finalTrialDate = new Date(`${finalTrialDate.slice(0, 16)}:00+08:00`).toISOString();
-  } else {
-    finalTrialDate = null;
-  }
-
-  const { error } = await supabase.from('clients').update({
-    name: editingClient.value.name, 
-    phone: editingClient.value.phone,
-    trial_date: finalTrialDate, 
-    status: editingClient.value.status,
-    branch: editingClient.value.branch 
-  }).eq('id', editingClient.value.id)
-
-  if (error) alert('更新失敗: ' + error.message)
-  else { 
-    alert('✅ 預約資料已更新'); 
-    showEditModal.value = false; 
-    store.syncAll() 
-  }
+const getClientGen = (id) => {
+  let g = 1; let c = store.clients.find(x => x.id === id); let count = 0
+  while (c && c.referred_by_id && count < 15) { g++; c = store.clients.find(x => x.id === c.referred_by_id); count++ }
+  return g
 }
 
-const trendChartData = computed(() => {
-  const labels = [], revData = [], profData = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    // ✅ 圖表標籤使用香港日期
-    const hk = getHKParts(d);
-    labels.push(`${parseInt(hk.m)}/${parseInt(hk.d)}`)
+const getExpiryClass = (date) => {
+  if (!date) return ''
+  const d = (new Date(date) - new Date()) / 86400000
+  return d < 0 ? 'tag-red' : (d < 14 ? 'tag-orange' : 'tag-green')
+}
+
+// ==========================================
+// 🚀 終極強化：客戶資料 CSV 真實批量匯入
+// ==========================================
+function downloadCSVTemplate() {
+    const BOM = "\uFEFF"; 
+    const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD)\n";
+    const sample1 = "王大明,98765432,觀塘,active,2024-01-01,廣告,\n";
+    const sample2 = "陳小美,91234567,中環,prospect,,,朋友介紹,\n";
     
-    const dailyTxns = store.transactions.filter(t => {
-      const p = getHKParts(t.created_at);
-      if(!p) return false;
-      const isSameDay = p.d === hk.d && p.m === hk.m && p.y === hk.y;
-      const isBranchMatch = filterBranch.value === '全部分店' || t.branch === filterBranch.value
-      return isSameDay && isBranchMatch
-    })
+    const csvContent = "data:text/csv;charset=utf-8," + BOM + header + sample1 + sample2;
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "fitwork_clients_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 
-    let dailyRev = 0, dailyProf = 0
-    dailyTxns.forEach(t => {
-      const amt = Number(t.amount) || 0
-      if (t.type === 'income') { dailyRev += amt; dailyProf += Number(t.profit ?? amt); } 
-      else if (t.type === 'expense') { 
-        if (t.category !== '支付30%' && t.category !== '自用消耗') dailyProf -= amt; 
-      }
-    })
-    revData.push(dailyRev); profData.push(dailyProf)
-  }
-  return {
-    labels,
-    datasets: [
-      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
-      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
-    ]
-  }
-})
+function triggerFileInput() {
+    document.getElementById('csvFileInput').click()
+}
 
-const chartOptions = {
-  responsive: true, maintainAspectRatio: false,
-  plugins: { legend: { position: 'top', labels: { usePointStyle: true, font: { weight: 'bold' } } } },
-  scales: {
-    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { weight: 'bold' } } },
-    x: { grid: { display: false }, ticks: { font: { weight: 'bold', color: '#64748b' } } }
-  },
-  interaction: { mode: 'nearest', axis: 'x', intersect: false }
+async function handleImport(event) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+        try {
+            const text = e.target.result
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
+            if (lines.length <= 1) return alert('❌ CSV 檔案沒有資料列！')
+
+            const insertData = []
+
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',')
+                
+                const name = cols[0]?.trim()
+                if (!name) continue 
+
+                const phone = cols[1]?.trim() || ''
+                const branch = cols[2]?.trim() || '觀塘'
+                const status = cols[3]?.trim() === 'prospect' ? 'prospect' : 'active'
+                const join_date = cols[4]?.trim() || null
+                const source = cols[5]?.trim() || '其他'
+                const expiry_date = cols[6]?.trim() || null
+
+                insertData.push({
+                    name, phone, branch, status, join_date, source, expiry_date,
+                    own_email: user.email,
+                    user_id: user.id
+                })
+            }
+
+            if (insertData.length === 0) return alert('❌ 沒有找到有效的客戶資料！請檢查格式。')
+
+            const { error } = await supabase.from('clients').insert(insertData)
+            if (error) throw error
+
+            alert(`✅ 成功匯入 ${insertData.length} 筆客戶資料！`)
+            store.syncAll() 
+        } catch (err) {
+            console.error('匯入失敗:', err)
+            alert('❌ 匯入發生錯誤: ' + err.message)
+        } finally {
+            event.target.value = ''
+        }
+    }
+    reader.readAsText(file)
 }
 </script>
 
 <template>
-  <div class="page" style="padding-bottom: 150px;">
-    <div class="d-header">
-      <h2 class="title">數據中心 2.0</h2>
-      <div class="filters">
-        <select v-model="filterTime" class="f-sel">
-          <option value="today">今日</option>
-          <option value="week">本週</option>
-          <option value="month">本月(全月)</option>
-          <option value="half_1">本月上半 (1-14日)</option>
-          <option value="half_2">本月下半 (15-月底)</option>
-          <option value="custom">自訂區間</option>
-          <option value="all">全部</option>
-        </select>
-        <select v-model="filterBranch" class="f-sel">
-          <option value="全部分店">全部分店</option><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
-        </select>
-      </div>
-    </div>
-
-    <div v-if="filterTime === 'custom'" class="custom-date-box">
-      <input type="date" v-model="customStart" class="d-inp"> <span>至</span> <input type="date" v-model="customEnd" class="d-inp">
-    </div>
-
-    <div class="section-title" style="margin-top: 10px;">📅 近期試堂預約 (點擊可修改)</div>
-    <div class="card p-list" style="margin-bottom: 20px; border-color: #a5b4fc; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);">
-      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
-      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
-        <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
-        <div class="p-info">
-          <div class="name">{{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span></div>
-          <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="chart-wrapper">
-      <div class="chart-header">📈 過去 7 天趨勢走勢</div>
-      <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
-    </div>
-
-    <div class="finance-grid" style="margin-top: 20px; grid-template-columns: 1fr 1fr 1fr;">
-      <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
-      <div class="f-card"><div class="f-val text-red">$ {{ financialStats.cost.toLocaleString() }}</div><div class="f-label">區間成本支出</div></div>
-      <div class="f-card"><div class="f-val" style="color: #f59e0b; font-weight: 900; font-size: 20px;">$ {{ financialStats.inventoryCost.toLocaleString() }}</div><div class="f-label">庫存產品成本</div></div>
+  <div class="page">
+    <div class="header-section">
+      <h2 class="page-title">FITWORK PRO 管理端</h2>
+      <p class="subtitle">數據即時同步中 ⚡️</p>
     </div>
     
-    <div class="profit-box"><div class="p-title">💎 區間實收淨利潤</div><div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div></div>
-
-    <div class="shop-pending-box" v-if="financialStats.shopPending !== 0">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <div class="sp-icon">🏠</div>
-        <div>
-          <div class="sp-title">預計需繳付舖頭 (30%)</div>
-          <div class="sp-sub" style="margin-top:6px; line-height:1.4;">
-            <div style="display:flex; justify-content:space-between; width:135px;">
-              <span>上半月 (1-14):</span> <span style="color:#b45309; font-weight:900;">${{ financialStats.pending1.toLocaleString() }}</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; width:135px;">
-              <span>下半月 (15-底):</span> <span style="color:#b45309; font-weight:900;">${{ financialStats.pending2.toLocaleString() }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="sp-val" :class="{'text-green': financialStats.shopPending < 0}">
-        $ {{ financialStats.shopPending.toLocaleString() }}
-      </div>
-    </div>
-
-    <div class="section-title" style="margin-top: 25px; color: #4f46e2;">🎯 區間試堂轉化漏斗 (Funnel)</div>
-    <div class="card" style="margin-bottom: 20px; padding: 20px; border: 2px solid #eef2ff;">
-      <div class="funnel-metrics">
-        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('booked')">
-          <div class="fm-lbl">📅 總預約數 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
-          <div class="fm-val">{{ trialFunnelStats.totalBooked }}</div>
-        </div>
-        <div class="fm-arrow">👉</div>
-        
-        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('completed')">
-          <div class="fm-lbl">🏃 已出席試堂 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
-          <div class="fm-val text-blue">{{ trialFunnelStats.completedTrials }}</div>
-          <div class="fm-sub" @click.stop="openFunnelModal('notConverted')" style="cursor: pointer;">僅試堂(未買): {{ trialFunnelStats.notConverted }} 🖱️</div>
-        </div>
-        <div class="fm-arrow">👉</div>
-        
-        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('converted')">
-          <div class="fm-lbl">👑 成功開卡 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
-          <div class="fm-val text-green">{{ trialFunnelStats.converted }}</div>
-        </div>
-        
-        <div class="fm-rate-box">
-          <div class="fm-lbl text-white" style="margin-bottom: 2px;">開卡轉換率</div>
-          <div class="fm-val text-white" style="font-size: 22px;">{{ trialFunnelStats.conversionRate }}%</div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="section-title" style="margin-top: 25px;">🌟 區間客戶增長與來源</div>
-    <div class="card" style="margin-bottom: 20px; padding: 20px;">
-      <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px;">
-        
-        <div @click="showNewClientsModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-left: -10px; border: 1px solid transparent; transition: 0.2s;">
-          <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; gap: 6px;">
-            新增客戶數
-            <span style="background: #eef2ff; color: #4f46e2; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
-          </div>
-          <div style="font-size: 36px; font-weight: 900; color: #4f46e2; line-height: 1.1; margin-top: 5px;">
-            {{ clientStats.total }} <span style="font-size: 14px; color: #64748b;">人</span>
-          </div>
-        </div>
-
-        <div @click="showPackageSalesModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-right: -10px; border: 1px solid transparent; transition: 0.2s; text-align: right;">
-          <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
-            <span style="background: #d1fae5; color: #10b981; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
-            售出 / 續卡數
-          </div>
-          <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1; margin-top: 5px;">
-            {{ packageStats.total }} <span style="font-size: 14px; color: #64748b;">張</span>
-          </div>
-        </div>
-
-      </div>
-
-      <div class="divider-dash"></div>
+    <div class="card search-box">
+      <input class="inp-clean" v-model="clientSearch" placeholder="🔍 即時搜尋姓名、電話、負責人...">
       
-      <div style="font-size: 13px; font-weight: 900; color: #1e293b; margin-bottom: 10px;">📊 新客戶來源分析</div>
-      <div class="source-grid">
-        <div class="src-item"><div class="src-lbl">廣告</div><div class="src-val">{{ clientStats.sources['廣告'] }}</div></div>
-        <div class="src-item" style="min-width: 75px;"><div class="src-lbl">廣告+介紹</div><div class="src-val text-p">{{ clientStats.sources['廣告+朋友介紹'] }}</div></div>
-        <div class="src-item"><div class="src-lbl">介紹</div><div class="src-val text-p">{{ clientStats.sources['朋友介紹'] }}</div></div>
-        <div class="src-item"><div class="src-lbl">傳單</div><div class="src-val">{{ clientStats.sources['傳單'] }}</div></div>
-        <div class="src-item"><div class="src-lbl">朋友</div><div class="src-val">{{ clientStats.sources['朋友'] }}</div></div>
-        <div class="src-item"><div class="src-lbl">IG</div><div class="src-val">{{ clientStats.sources['IG'] }}</div></div>
-        <div class="src-item"><div class="src-lbl">其他</div><div class="src-val">{{ clientStats.sources['其他'] }}</div></div>
+      <div class="filter-row">
+        <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
+        <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
+        <div class="v-line"></div>
+        <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
+      </div>
+
+      <div class="sort-row">
+        <span class="sort-label">排序方式：</span>
+        <select v-model="sortBy" class="sort-select">
+          <option value="default">🕒 預設 (最新加入)</option>
+          <option value="name">🔤 姓名 (A-Z)</option>
+          <option value="phone">📞 電話號碼</option>
+          <option value="expiry_asc">⏳ 到期日 (由近到遠)</option>
+          <option value="expiry_desc">📅 到期日 (由遠到近)</option>
+        </select>
       </div>
     </div>
 
-    <div class="section-title" style="margin-top: 25px;">👥 分店正式客戶人數</div>
-    <div class="grid-3">
-      <div class="b-card"><div class="num">{{ branchCounts.kwunTong }}</div><div class="loc">觀塘</div></div>
-      <div class="b-card"><div class="num">{{ branchCounts.central }}</div><div class="loc">中環</div></div>
-      <div class="b-card"><div class="num">{{ branchCounts.jordan }}</div><div class="loc">佐敦</div></div>
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;">
+        <button class="btn-outline" @click="downloadCSVTemplate">📥 下載匯入格式</button>
+        <button class="btn-outline" style="border-color:#4f46e2; color:#4f46e2; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
+        <input type="file" id="csvFileInput" accept=".csv" style="display: none;" @change="handleImport">
     </div>
 
-    <div class="marathon-card">
-      <div class="m-title">客戶轉馬拉松百分比</div>
-      <div class="m-val">{{ marathonRate }}% <span style="float:right; font-size:32px;">🏃</span></div>
-      <div class="m-foot"><span>活躍: {{ activeClients.filter(c=>c.is_marathon).length }} 人</span><span>正式會員: {{ activeClients.length }} 人</span></div>
-    </div>
-
-    <div class="section-title" v-if="Object.keys(cashSummary).length > 0">💰 經手人資金結算</div>
-    <div class="grid-2">
-      <div v-for="(data, name, index) in cashSummary" :key="name" class="cash-card" :class="'border-'+(index%2)">
-        <div class="c-name">{{ name }}</div>
-        <div class="c-total">$ {{ (data.in - data.out).toLocaleString() }}</div>
-        <div class="c-foot"><span>收: ${{ data.in }}</span><span>支: ${{ data.out }}</span></div>
-      </div>
-    </div>
-
-    <div class="section-title">📈 廣告與套票數據</div>
-    <div class="grid-2">
-      <div class="stat-card"><div class="s-val">{{ marketingStats.adCount }} 人</div><div class="s-label">廣告來源客戶</div><div class="s-sub">成功轉正式: {{ marketingStats.adActive }}</div></div>
-      <div class="stat-card"><div class="s-val">{{ packageStats.pkg850 }} / {{ packageStats.pkg2550 }}</div><div class="s-label">套票銷量</div><div class="s-sub">10點 / 35點</div></div>
-    </div>
-
-    <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-      <div class="edit-modal">
-        <div class="m-header">✏️ 編輯試堂預約 <button class="close-x" @click="showEditModal=false">✕</button></div>
-        <div v-if="editingClient">
-          <div class="form-item"><label>客戶姓名</label><input v-model="editingClient.name" class="mod-inp"></div>
-          <div class="form-item" style="margin-top:12px;"><label>聯絡電話</label><input v-model="editingClient.phone" class="mod-inp"></div>
-          <div class="form-item" style="margin-top:12px;"><label>預約日期與時間</label><input type="datetime-local" v-model="editingClient.trial_date" class="mod-inp"></div>
-          <div class="form-item" style="margin-top:12px;">
-            <label>📍 預約試堂地點</label>
-            <select v-model="editingClient.branch" class="mod-inp"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select>
+    <div class="list-container">
+      <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openActionModal(c)">
+        <div class="c-avatar">{{ (c.name || '?').charAt(0) }}</div>
+        <div class="c-main">
+          <div class="c-name-row">
+            <span class="c-name">{{ c.name }}</span>
+            <span v-if="c.is_vip" class="badge-vip">{{ c.vip_tier || 'VIP' }}</span>
+            <span v-if="c.is_marathon" class="badge-run">RUN</span>
           </div>
-          <div class="form-item" style="margin-top:12px;"><label>更改狀態</label>
-            <select v-model="editingClient.status" class="mod-inp"><option value="prospect">👀 維持預約狀態</option><option value="active">⭐️ 轉為正式會員</option></select>
+          <div class="c-meta">
+            {{ c.phone || '無電話' }} · {{ c.branch }}
+            <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
+              ⏰ {{ formatTrialDate(c.trial_date) }}
+            </span>
           </div>
-          <button class="btn-save" @click="updateTrial">確認儲存</button>
-        </div>
-      </div>
-    </div>
 
-    <div v-if="showNewClientsModal" class="modal-overlay" @click.self="showNewClientsModal = false">
-      <div class="edit-modal" style="max-width: 500px; width: 95%;">
-        <div class="m-header">👥 區間新增客戶名單 <button class="close-x" @click="showNewClientsModal=false">✕</button></div>
-        
-        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #4f46e2;">
-          💡 <b>系統抓取邏輯：</b> 客戶目前必須是「正式會員」，且其「登記加入日期」或「系統首筆消費日期」落在目前選擇的區間內。
-        </div>
-
-        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
-          <div v-if="clientStats.list.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
-            區間內尚無符合條件的新增客戶
+          <div class="c-packages" v-if="c.status !== 'prospect'">
+            🎟️ 買卡: 
+            <span class="pkg-tag t-10" v-if="getClientPackageStats(c.name).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg10 }}</b></span>
+            <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
+            <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0">尚未買卡</span>
           </div>
           
-          <div v-for="(c, idx) in clientStats.list" :key="c.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-            <div>
-              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
-                {{ idx + 1 }}. {{ c.name }}
-                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
-              </div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
-                📞 {{ c.phone || '無' }} · 來源: {{ c.source || '無' }}
-              </div>
-            </div>
-            <div style="text-align: right;">
-              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">判定日期</div>
-              <div style="font-size: 13px; font-weight: 900; color: #4f46e2;">{{ c.display_join_date }}</div>
-            </div>
+        </div>
+        <div class="c-side">
+          <div class="c-gen" v-if="c.status!=='prospect'">Gen {{ getClientGen(c.id) }}</div>
+          <div :class="['c-expiry', getExpiryClass(c.expiry_date)]">
+            {{ c.status==='prospect' ? '預約中' : (c.expiry_date || '無效期') }}
           </div>
         </div>
-
       </div>
     </div>
 
-    <div v-if="showPackageSalesModal" class="modal-overlay" @click.self="showPackageSalesModal = false">
-      <div class="edit-modal" style="max-width: 500px; width: 95%;">
-        <div class="m-header">🎟️ 區間售出 / 續卡名單 <button class="close-x" @click="showPackageSalesModal=false">✕</button></div>
+    <button class="main-fab" @click="openAddModal">+</button>
 
-        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #10b981;">
-          💡 <b>系統抓取邏輯：</b> 顯示區間內所有購買「10點套票」與「35點套票」的交易紀錄。
+    <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+      <div class="center-modal scrollable-modal">
+        <div class="m-header">🔧 客戶詳細設定 <button class="close-x" @click="showEditModal=false">✕</button></div>
+        
+        <div class="toggle-group" style="margin-bottom: 20px;">
+          <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
         </div>
 
-        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
-          <div v-if="packageStats.list.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
-            區間內尚無套票售出紀錄
-          </div>
+        <div class="section-title">👤 基本資料</div>
+        <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
+        <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
 
-          <div v-for="(t, idx) in packageStats.list" :key="t.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-            <div>
-              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
-                {{ idx + 1 }}. {{ t.display_client_name }}
-                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ t.pkg_type }}</span>
-              </div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
-                📍 分店: {{ t.branch || '無' }} · 收款: {{ t.staff || '無' }}
-              </div>
+        <div class="grid-2">
+          <div class="f-item"><label>分店</label><select v-model="editingClient.branch" class="modern-select"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
+          <div class="f-item">
+              <label>來源</label>
+              <select v-model="editingClient.source" class="modern-select">
+                  <option value="廣告">廣告</option>
+                  <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
+                  <option value="傳單">傳單</option>
+                  <option value="IG">IG</option>
+                  <option value="朋友介紹">朋友介紹</option>
+                  <option value="朋友">朋友</option>
+              </select>
             </div>
-            <div style="text-align: right;">
-              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">購買日期</div>
-              <div style="font-size: 13px; font-weight: 900; color: #10b981;">{{ t.display_date }}</div>
-            </div>
-          </div>
+        </div>
+        
+        <div class="f-item" v-if="editingClient.source === '朋友介紹' || editingClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
+            <label>介紹人</label>
+            <select v-model="editingClient.referred_by_id" class="modern-select">
+                <option :value="null">請選擇介紹人...</option>
+                <option v-for="c in allClientsOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+            </select>
         </div>
 
+        <div class="section-title">📅 關鍵日期</div>
+        <div class="f-item" v-if="editingClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
+          <label>⏰ 預約試堂日期與時間</label>
+          <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
+          <label>📍 預約試堂地點 (同步分店資料)</label>
+          <select v-model="editingClient.branch" class="modern-select">
+            <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+          </select>
+        </div>
+        <div class="grid-2">
+          <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
+          <div class="f-item"><label>套票到期日</label><input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空"></div>
+        </div>
+
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: editingClient.is_marathon}" @click="editingClient.is_marathon = !editingClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: editingClient.is_vip}" @click="editingClient.is_vip = !editingClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="f-item" v-if="editingClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+          <label>🎖️ 請選擇 VIP 等級</label>
+          <select v-model="editingClient.vip_tier" class="modern-select">
+            <option value="銅級(88折)">🥉 銅級 (88折)</option>
+            <option value="銀級(75折)">🥈 銀級 (75折)</option>
+            <option value="金級(65折)">🥇 金級 (65折)</option>
+            <option value="直接58折">💎 直接58折</option>
+            <option value="領班(半折)">👑 領班 (半折)</option>
+          </select>
+        </div>
+
+        <div class="action-row">
+          <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
+          <button class="btn-confirm" @click="handleUpdateClient">確認修改</button>
+        </div>
       </div>
     </div>
 
-    <div v-if="showFunnelModal" class="modal-overlay" @click.self="showFunnelModal = false">
-      <div class="edit-modal" style="max-width: 500px; width: 95%;">
-        <div class="m-header">{{ funnelModalData.title }} <button class="close-x" @click="showFunnelModal=false">✕</button></div>
-
-        <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
-          <div v-if="funnelModalData.list.length === 0" style="text-align: center; color: #94a3b8; padding: 20px; font-weight: 800;">
-            區間內尚無符合條件的紀錄
-          </div>
-
-          <div v-for="(c, idx) in funnelModalData.list" :key="c.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-            <div>
-              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
-                {{ idx + 1 }}. {{ c.name }}
-                <span v-if="c.is_direct" style="font-size: 10px; color: #fff; background: #ef4444; padding: 2px 6px; border-radius: 6px; margin-left: 6px; font-weight: 900;">⚡️ 直接購買</span>
-                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ c.branch }}</span>
-              </div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
-                📞 {{ c.phone || '無電話' }} · 狀態: {{ c.status === 'active' ? '⭐️ 正式' : '👀 預約' }}
-              </div>
-            </div>
-            <div style="text-align: right;">
-              <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">{{ c.is_direct ? '判定加入' : '預約日期' }}</div>
-              <div style="font-size: 13px; font-weight: 900; color: #4f46e2;">
-                {{ c.is_direct ? '免預約' : formatTrialDateDisplay(c.virtual_trial_date) }}
-              </div>
-            </div>
-          </div>
+    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
+      <div class="center-modal scrollable-modal">
+        <div class="m-header">➕ 登記新客戶 <button class="close-x" @click="showAddModal=false">✕</button></div>
+        
+        <div class="toggle-group" style="margin-bottom: 20px;">
+          <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
         </div>
 
+        <div class="section-title">👤 基本資料</div>
+        <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
+        <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話"></div>
+        
+        <div class="grid-2">
+            <div class="f-item"><label>分店</label>
+                <select v-model="newClient.branch" class="modern-select">
+                    <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+                </select>
+            </div>
+            <div class="f-item"><label>認識來源</label>
+                <select v-model="newClient.source" class="modern-select">
+                    <option value="廣告">廣告</option>
+                    <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
+                    <option value="傳單">傳單</option>
+                    <option value="朋友介紹">朋友介紹</option>
+                    <option value="IG">IG</option>
+                    <option value="朋友">朋友</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="f-item" v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
+            <label>是哪位朋友介紹的？(計算代數)</label>
+            <select v-model="newClient.referred_by_id" class="modern-select">
+                <option :value="null">請選擇...</option>
+                <option v-for="c in allClientsOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+            </select>
+        </div>
+
+        <div class="section-title">📅 關鍵日期</div>
+        <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
+          <label>⏰ 預約試堂日期與時間</label>
+          <input type="datetime-local" v-model="newClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
+          <label>📍 預約試堂地點 (同步分店資料)</label>
+          <select v-model="newClient.branch" class="modern-select">
+            <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+          </select>
+        </div>
+        <div class="grid-2">
+          <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>
+          <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
+        </div>
+
+        <div class="section-title">🏆 項目設定</div>
+        <div class="row-flex">
+          <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
+          <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
+        </div>
+
+        <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+          <label>🎖️ 請選擇 VIP 等級</label>
+          <select v-model="newClient.vip_tier" class="modern-select">
+            <option value="銅級(88折)">🥉 銅級 (88折)</option>
+            <option value="銀級(75折)">🥈 銀級 (75折)</option>
+            <option value="金級(65折)">🥇 金級 (65折)</option>
+            <option value="直接58折">💎 直接58折</option>
+            <option value="領班(半折)">👑 領班 (半折)</option>
+          </select>
+        </div>
+
+        <button class="btn-confirm" style="width:100%; margin-top:20px;" @click="handleAddClient">立即新增</button>
+      </div>
+    </div>
+
+    <div v-if="showActionModal" class="modal-overlay" @click.self="showActionModal = false">
+      <div class="center-modal action-modal" style="max-width: 350px;">
+        <div class="m-header">
+          ⚡ 快捷操作：{{ selectedClientForAction?.name }}
+          <button class="close-x" @click="showActionModal = false">✕</button>
+        </div>
+        
+        <div class="action-menu-list">
+          <button class="action-big-btn btn-edit-style" @click="handleActionEdit">
+            <span class="emoji-icon">✏️</span>
+            <div class="text-left">
+              <strong>修改客戶資料</strong>
+              <small>檢視或更新檔案、VIP狀態</small>
+            </div>
+          </button>
+
+          <button class="action-big-btn btn-move-style" @click="handleActionMovement">
+            <span class="emoji-icon">🏋️</span>
+            <div class="text-left">
+              <strong>購買運動 / 扣堂</strong>
+              <small>前往運動 SOP 處理</small>
+            </div>
+          </button>
+
+          <button class="action-big-btn btn-retail-style" @click="handleActionRetail">
+            <span class="emoji-icon">🛍️</span>
+            <div class="text-left">
+              <strong>購買產品</strong>
+              <small>前往零售 SOP 處理</small>
+            </div>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -773,102 +565,81 @@ const chartOptions = {
 </template>
 
 <style scoped>
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
-.d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.title { font-weight: 900; font-size: 24px; color: #1e293b; }
-.filters { display: flex; gap: 8px; }
-.f-sel { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; font-weight: 700; background: white; outline: none; }
-.custom-date-box { background: #eef2ff; padding: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border: 1px solid #c7d2fe; font-weight: 800; color: #4f46e2; }
-.d-inp { border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; outline: none; font-size: 16px;}
-.chart-wrapper { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; margin-bottom: 20px; margin-top: 10px; }
-.chart-header { font-weight: 900; color: #1e293b; font-size: 15px; margin-bottom: 15px; display: flex; align-items: center; }
-.canvas-container { position: relative; height: 220px; width: 100%; }
-.section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
-.card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
-.funnel-metrics { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-.fm-item { text-align: center; flex: 1; }
-.fm-lbl { font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; }
-.fm-val { font-size: 26px; font-weight: 900; color: #1e293b; line-height: 1; }
-.fm-sub { font-size: 11px; font-weight: 800; color: #f59e0b; margin-top: 6px; background: #fffbeb; padding: 3px 6px; border-radius: 6px; display: inline-block;}
-.fm-arrow { font-size: 20px; color: #cbd5e1; }
-.fm-rate-box { background: linear-gradient(135deg, #10b981, #059669); padding: 15px; border-radius: 16px; text-align: center; min-width: 90px; box-shadow: 0 10px 20px rgba(16, 185, 129, 0.2);}
-.text-blue { color: #3b82f6; }
-.text-green { color: #10b981; }
-.text-white { color: white; }
-
-@media (max-width: 600px) {
-  .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }
-  .funnel-metrics::-webkit-scrollbar { height: 4px; }
-  .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-  .fm-item { flex: 0 0 auto; min-width: 75px; }
-  .fm-lbl { font-size: 11px; margin-bottom: 2px; }
-  .fm-val { font-size: 20px; }
-  .fm-sub { font-size: 10px; padding: 2px 4px; }
-  .fm-arrow { transform: none; font-size: 14px; }
-  .fm-rate-box { width: auto; min-width: 85px; padding: 10px; margin-top: 0; flex: 0 0 auto;}
-  .fm-rate-box .fm-val { font-size: 18px !important; }
-}
-
-.p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
-.p-item:last-child { border-bottom: none; margin-bottom:0; padding-bottom:0; }
-.clickable { cursor: pointer; transition: background 0.2s; }
-.clickable:hover { background: #f8fafc; border-radius: 12px; padding: 10px; }
-.p-date { background: #fffbeb; color: #d97706; padding: 10px 12px; border-radius: 12px; text-align: center; }
-.p-date .m { font-size: 11px; font-weight: 800; text-transform: uppercase;}
-.p-date .d { font-size: 18px; font-weight: 900; line-height: 1.1; margin-top:2px; }
-.name { font-weight: 800; font-size: 16px; }
-.time { font-size: 12px; color: #d97706; background: #fff7ed; padding: 2px 8px; border-radius: 6px; margin-left: 8px; font-weight: 800;}
-.meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
-.empty { text-align: center; color: #94a3b8; font-weight: 700; padding: 20px; }
-.hover-bg:hover { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; }
-.source-grid { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 5px; }
-.source-grid::-webkit-scrollbar { height: 4px; }
-.source-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-.src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; flex: 1; min-width: 50px; }
-.src-lbl { font-size: 11px; color: #64748b; font-weight: 800; margin-bottom: 4px; white-space: nowrap; }
-.src-val { font-size: 18px; font-weight: 900; color: #1e293b; }
-.text-p { color: #4f46e2; }
-.divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 15px 0; }
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.b-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
-.b-card .num { font-size: 24px; font-weight: 900; color: #1e293b; }
-.b-card .loc { font-size: 12px; font-weight: 700; color: #64748b; margin-top: 5px; }
-.marathon-card { background: linear-gradient(135deg, #4f46e2, #4338ca); color: white; padding: 25px; border-radius: 20px; margin-top: 20px; box-shadow: 0 10px 25px rgba(79,70,229,0.3); }
-.m-title { font-size: 13px; font-weight: 800; opacity: 0.9; }
-.m-val { font-size: 42px; font-weight: 900; margin: 10px 0; border-bottom: 2px solid rgba(255,255,255,0.2); padding-bottom: 15px; }
-.m-foot { display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; opacity: 0.9; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.cash-card { background: white; padding: 20px; border-radius: 16px; border: 2px solid #e2e8f0; }
-.border-0 { border-color: #3b82f6; background: #eff6ff;} 
-.border-1 { border-color: #ec4899; background: #fdf2f8;} 
-.c-name { font-weight: 900; font-size: 16px; color: #4f46e2; }
-.border-1 .c-name { color: #ec4899; }
-.c-total { font-size: 24px; font-weight: 900; margin: 10px 0; color: #1e293b; }
-.c-foot { display: flex; justify-content: space-between; font-size: 11px; font-weight: 800; color: #64748b; }
-.stat-card { background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 16px; text-align: center; }
-.s-val { font-size: 24px; font-weight: 900; color: #f59e0b; }
-.s-label { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 5px; }
-.s-sub { font-size: 11px; color: #64748b; font-weight: 700; margin-top: 5px; }
-.finance-grid { display: grid; gap: 12px; margin-bottom: 15px; }
-.f-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
-.f-val { font-size: 20px; font-weight: 900; margin-bottom: 5px; }
-.f-label { font-size: 12px; color: #64748b; font-weight: 700; }
-.profit-box { background: #eef2ff; border: 1.5px solid #6366f1; padding: 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
-.p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }
-.shop-pending-box { background: #fffbeb; border: 1.5px solid #fcd34d; padding: 15px 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.sp-icon { font-size: 26px; }
-.sp-title { font-size: 14px; font-weight: 900; color: #b45309; }
-.sp-sub { font-size: 11px; font-weight: 700; color: #d97706; margin-top: 2px; }
-.sp-val { font-size: 24px; font-weight: 900; color: #b45309; }
+:host { --p: #6366f1; --pd: #4f46e2; --run: linear-gradient(135deg, #4f46e2, #9333ea); }
+.page { background: #f8fafc; min-height: 100vh; padding: 20px; padding-bottom: 120px; }
+.header-section { margin-bottom: 25px; }
+.page-title { font-weight: 900; font-size: 26px; color: #1e293b; margin: 0; }
+.subtitle { color: #64748b; font-size: 14px; font-weight: 600; }
+.search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
+.inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
+.filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; }
+.f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer;}
+.f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
+.v-line { width: 1px; background: #e2e8f0; margin: 0 5px; }
+.sort-row { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0; }
+.sort-label { font-size: 13px; font-weight: 800; color: #64748b; }
+.sort-select { background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #1e293b; outline: none; cursor: pointer; }
+.sort-select:focus { border-color: #6366f1; }
+.btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s;}
+.btn-outline:active { transform: scale(0.95); }
+.client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; cursor: pointer;}
+.client-card:active { transform: scale(0.97); }
+.c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
+.c-name { font-weight: 800; font-size: 17px; color: #1e293b; }
+.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
+.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
+.c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
+.trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; margin-left: 8px; font-size: 11px; }
+.c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center;}
+.pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
+.t-10 { background: #3b82f6; }
+.t-35 { background: #ec4899; }
+.pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
+.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
+.c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
-.edit-modal { background: white; width: 90%; max-width: 400px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
+.center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; }
+.scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
-.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center; }
-.form-item label { display: block; font-size: 13px; font-weight: 800; color: #475569; margin-bottom: 6px; }
-.mod-inp { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 10px; font-weight: 700; outline: none; color: #1e293b; font-size: 16px; appearance: none;}
-.mod-inp:focus { border-color: #4f46e2; }
-.btn-save { margin-top: 25px; width: 100%; padding: 16px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; transition: 0.2s;}
-.btn-save:active { transform: scale(0.96); }
+.close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center;}
+.section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
+.modern-inp:focus, .modern-select:focus { border-color: #6366f1; background: white; }
+.f-item { margin-bottom: 12px; }
+.f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
+.toggle-group { display: flex; gap: 8px; background: #f1f5f9; padding: 5px; border-radius: 15px; }
+.t-btn { flex: 1; border: none; padding: 10px; border-radius: 11px; font-weight: 800; color: #64748b; background: transparent; cursor: pointer;}
+.t-btn.active { background: white; color: #6366f1; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+.row-flex { display: flex; gap: 10px; }
+.toggle-card { flex: 1; padding: 15px; border-radius: 15px; border: 2px solid #f1f5f9; text-align: center; font-weight: 800; font-size: 14px; cursor: pointer;}
+.toggle-card.active { border-color: #6366f1; background: #eef2ff; color: #6366f1; }
+.toggle-card.active:first-child { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; border: none; }
+.action-row { display: flex; gap: 10px; margin-top: 30px; }
+.btn-confirm { flex: 1; background: #6366f1; color: white; border: none; padding: 16px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px rgba(99,102,241,0.2); cursor: pointer;}
+.btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
+.main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
+.tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
+
+.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.action-big-btn { 
+  display: flex; align-items: center; gap: 15px; 
+  width: 100%; padding: 18px; border-radius: 20px; 
+  border: none; cursor: pointer; transition: 0.2s all;
+  background: #f8fafc; text-align: left;
+}
+.action-big-btn:active { transform: scale(0.96); }
+.action-big-btn .emoji-icon { font-size: 28px; background: white; padding: 10px; border-radius: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+.action-big-btn .text-left { display: flex; flex-direction: column; gap: 4px; }
+.action-big-btn strong { font-size: 16px; color: #1e293b; font-weight: 800; }
+.action-big-btn small { font-size: 12px; color: #64748b; font-weight: 600; }
+
+.btn-edit-style:hover { background: #e0f2fe; }
+.btn-edit-style:hover strong { color: #0284c7; }
+.btn-move-style:hover { background: #ede9fe; }
+.btn-move-style:hover strong { color: #6366f1; }
+.btn-retail-style:hover { background: #fce7f3; }
+.btn-retail-style:hover strong { color: #db2777; }
 </style>
