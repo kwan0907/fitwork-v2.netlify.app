@@ -95,7 +95,7 @@ const filteredClients = computed(() => {
 })
 
 // ==========================================
-// 🟢 快捷操作選單邏輯 (使用 Store 進行頁面跳轉)
+// 🟢 快捷操作選單邏輯
 // ==========================================
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
@@ -113,14 +113,12 @@ function handleActionEdit() {
 function handleActionMovement() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  // 試著把這裡改成大寫 M，或者去你的 App.vue 看你到底是用什麼字串命名這個頁面的
   store.view = 'movement' 
 }
 
 function handleActionRetail() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  // 試著把這裡改成大寫 R
   store.view = 'retail' 
 }
 
@@ -147,8 +145,16 @@ async function handleAddClient() {
   }
   
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
-  if (!dataToInsert.trial_date) dataToInsert.trial_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
+  
+  // 🟢 修正：強制標記新增時的試堂時間為「香港時間 (UTC+8)」
+  if (!dataToInsert.trial_date) {
+    dataToInsert.trial_date = null
+  } else {
+    // 將 "YYYY-MM-DDTHH:mm" 加上秒數與時區，確保資料庫不會誤判
+    const timeStr = dataToInsert.trial_date.length === 16 ? dataToInsert.trial_date + ':00' : dataToInsert.trial_date
+    dataToInsert.trial_date = new Date(timeStr + '+08:00').toISOString()
+  }
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -165,8 +171,15 @@ async function handleUpdateClient() {
   }
   
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
-  if (!dataToUpdate.trial_date) dataToUpdate.trial_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
+
+  // 🟢 修正：修改資料時，一樣要強制保護試堂時間的時區
+  if (!dataToUpdate.trial_date) {
+    dataToUpdate.trial_date = null
+  } else if (dataToUpdate.trial_date.length === 16) { 
+    // 若為修改狀態下的 YYYY-MM-DDTHH:mm 格式，補上秒數與時區
+    dataToUpdate.trial_date = new Date(dataToUpdate.trial_date + ':00+08:00').toISOString()
+  }
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)
