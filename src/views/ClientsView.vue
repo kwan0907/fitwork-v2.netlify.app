@@ -53,24 +53,13 @@ const getClientPackageStats = (clientName) => {
 }
 
 // ==========================================
-// 🛡️ 終極時區防呆機制 (解決 19:30 變 03:30 的問題)
+// 🛡️ 最標準的 JavaScript 時間轉換器 (解決時差 Bug)
 // ==========================================
 
-// 1. 安全解析從資料庫回來的時間
-const safeParseHKDate = (dateStr) => {
-  if (!dateStr) return null
-  let safeDateStr = String(dateStr)
-  // 如果資料庫傳回的時間沒有時區標籤，強制視為香港時間 (+08:00)
-  if (!safeDateStr.includes('Z') && !safeDateStr.includes('+')) {
-      safeDateStr += '+08:00'
-  }
-  return new Date(safeDateStr)
-}
-
-// 2. 列表顯示用的時間格式化
+// 1. 將資料庫回傳的時間，轉換成列表上漂亮的顯示格式
 const formatTrialDate = (dateStr) => {
-  const d = safeParseHKDate(dateStr)
-  if (!d) return ''
+  if (!dateStr) return ''
+  const d = new Date(dateStr) // 自動解析為本地時間
   const m = d.getMonth() + 1
   const day = d.getDate()
   const h = String(d.getHours()).padStart(2, '0')
@@ -78,10 +67,10 @@ const formatTrialDate = (dateStr) => {
   return `${m}月${day}日 ${h}:${min}`
 }
 
-// 3. 彈出視窗(Modal) 編輯用的時間格式化
+// 2. 將資料庫回傳的時間，填入編輯表單的 YYYY-MM-DDTHH:mm 格式
 const toLocalDatetimeString = (dateStr) => {
-  const d = safeParseHKDate(dateStr)
-  if (!d) return ''
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
   const yyyy = d.getFullYear()
   const MM = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
@@ -89,16 +78,6 @@ const toLocalDatetimeString = (dateStr) => {
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}`
 }
-
-// 4. 儲存進資料庫前，強制加上香港時區標章
-function makeHKTimeSafe(dtStr) {
-  if (!dtStr) return null
-  let clean = String(dtStr).replace('T', ' ')
-  if (clean.length === 16) clean += ':00'
-  clean = clean.split('+')[0].split('Z')[0].trim()
-  return clean + '+08:00' // 強制告訴資料庫：這是香港時間！
-}
-
 
 // --- 篩選與排序邏輯 ---
 const filteredClients = computed(() => {
@@ -132,7 +111,7 @@ const filteredClients = computed(() => {
 })
 
 // ==========================================
-// 🟢 快捷操作選單邏輯 (使用全小寫，完美吻合 App.vue)
+// 🟢 快捷操作選單邏輯 (跳轉功能)
 // ==========================================
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
@@ -144,19 +123,19 @@ function openActionModal(client) {
 
 function handleActionEdit() {
   showActionModal.value = false
-  openEditModal(selectedClientForAction.value) // 呼叫原本的修改功能
+  openEditModal(selectedClientForAction.value)
 }
 
 function handleActionMovement() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  store.view = 'movement' // 🟢 全小寫
+  store.view = 'movement' 
 }
 
 function handleActionRetail() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  store.view = 'retail' // 🟢 全小寫
+  store.view = 'retail' 
 }
 
 // --- 功能函數 ---
@@ -184,8 +163,8 @@ async function handleAddClient() {
   if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
   if (!dataToInsert.join_date) dataToInsert.join_date = null
   
-  // 🛡️ 套用香港時區安全儲存
-  dataToInsert.trial_date = makeHKTimeSafe(dataToInsert.trial_date)
+  // 🟢 轉換為安全的 ISO 格式儲存，絕對不會產生時差問題
+  dataToInsert.trial_date = dataToInsert.trial_date ? new Date(dataToInsert.trial_date).toISOString() : null
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
   if (error) alert('新增失敗: ' + error.message)
@@ -204,8 +183,8 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🛡️ 套用香港時區安全儲存
-  dataToUpdate.trial_date = makeHKTimeSafe(dataToUpdate.trial_date)
+  // 🟢 轉換為安全的 ISO 格式儲存，絕對不會產生時差問題
+  dataToUpdate.trial_date = dataToUpdate.trial_date ? new Date(dataToUpdate.trial_date).toISOString() : null
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   if (error) alert('更新失敗: ' + error.message)
@@ -223,6 +202,7 @@ function openEditModal(client) {
   editingClient.value = { ...client }
   
   if (editingClient.value.trial_date) {
+    // 填入表單時，轉換為本地的 YYYY-MM-DDTHH:mm 格式
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
   
