@@ -63,6 +63,18 @@ const formatTrialDate = (dateStr) => {
   return `${m}月${day}日 ${h}:${min}`
 }
 
+// 🟢 新增：安全將資料庫時間轉換為 Input 表單格式，徹底避免時差加減錯誤
+const toLocalDatetimeString = (dateStr) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  const yyyy = d.getFullYear()
+  const MM = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`
+}
+
 // --- 篩選與排序邏輯 ---
 const filteredClients = computed(() => {
   let list = [...store.clients] 
@@ -95,7 +107,7 @@ const filteredClients = computed(() => {
 })
 
 // ==========================================
-// 🟢 快捷操作選單邏輯
+// 🟢 快捷操作選單邏輯 (跳轉字串已改回小寫)
 // ==========================================
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
@@ -107,19 +119,19 @@ function openActionModal(client) {
 
 function handleActionEdit() {
   showActionModal.value = false
-  openEditModal(selectedClientForAction.value) // 呼叫原本的修改功能
+  openEditModal(selectedClientForAction.value)
 }
 
 function handleActionMovement() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  store.view = 'movement' 
+  store.view = 'movement' // 🟢 全小寫，吻合 App.vue
 }
 
 function handleActionRetail() {
   showActionModal.value = false
   store.quickActionClient = selectedClientForAction.value.name
-  store.view = 'retail' 
+  store.view = 'retail' // 🟢 全小寫，吻合 App.vue
 }
 
 // --- 功能函數 ---
@@ -150,10 +162,9 @@ async function handleAddClient() {
   // 🟢 修正：強制標記新增時的試堂時間為「香港時間 (UTC+8)」
   if (!dataToInsert.trial_date) {
     dataToInsert.trial_date = null
-  } else {
-    // 將 "YYYY-MM-DDTHH:mm" 加上秒數與時區，確保資料庫不會誤判
-    const timeStr = dataToInsert.trial_date.length === 16 ? dataToInsert.trial_date + ':00' : dataToInsert.trial_date
-    dataToInsert.trial_date = new Date(timeStr + '+08:00').toISOString()
+  } else if (dataToInsert.trial_date.length === 16) {
+    // 加上秒數與 +08:00 香港時區，讓資料庫不會誤判
+    dataToInsert.trial_date = dataToInsert.trial_date + ':00+08:00'
   }
 
   const { error } = await supabase.from('clients').insert([dataToInsert])
@@ -173,12 +184,11 @@ async function handleUpdateClient() {
   if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
   if (!dataToUpdate.join_date) dataToUpdate.join_date = null
 
-  // 🟢 修正：修改資料時，一樣要強制保護試堂時間的時區
+  // 🟢 修正：強制標記修改時的試堂時間為「香港時間 (UTC+8)」
   if (!dataToUpdate.trial_date) {
     dataToUpdate.trial_date = null
   } else if (dataToUpdate.trial_date.length === 16) { 
-    // 若為修改狀態下的 YYYY-MM-DDTHH:mm 格式，補上秒數與時區
-    dataToUpdate.trial_date = new Date(dataToUpdate.trial_date + ':00+08:00').toISOString()
+    dataToUpdate.trial_date = dataToUpdate.trial_date + ':00+08:00'
   }
 
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
@@ -197,9 +207,8 @@ function openEditModal(client) {
   editingClient.value = { ...client }
   
   if (editingClient.value.trial_date) {
-    const d = new Date(editingClient.value.trial_date)
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-    editingClient.value.trial_date = d.toISOString().slice(0,16)
+    // 🟢 修正：改用安全格式化函數，不直接加減時差
+    editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
   
   showEditModal.value = true
