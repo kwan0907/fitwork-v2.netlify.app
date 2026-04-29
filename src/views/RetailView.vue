@@ -29,8 +29,9 @@ const tierMapping = {
 }
 
 const searchProduct = ref('')
+// 🟢 新增了「馬拉松套裝」作為分類
+const categories = ['全部', '馬拉松套裝', '內在營養', '外在保養']
 const selectedCategory = ref('全部')
-const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
 const showCheckoutModal = ref(false)
 
@@ -42,7 +43,6 @@ const selectedCombo = ref(null)
 const comboShakeFlavor = ref('雲呢拿')
 const comboAloeFlavor = ref('原味')
 
-// 🟢 替換為你提供的正確口味清單
 const shakeFlavors = ['雲呢拿', '野草莓', '朱古力', '曲奇妙趣', '薄荷朱古力', '鮮奶咖啡', '紅豆薏仁']
 const aloeFlavors = ['原味', '柑橘味', '葡萄味']
 
@@ -216,6 +216,9 @@ const sortedProducts = computed(() => {
 })
 
 const displayProducts = computed(() => {
+  // 🟢 如果選了「馬拉松套裝」，就不顯示下方的一般商品
+  if (selectedCategory.value === '馬拉松套裝') return []
+
   let list = sortedProducts.value.map(p => {
     const branchKey = selectedBranch.value.replace('店', '')
     const stockKey = `${p.name}_${branchKey}`
@@ -323,7 +326,7 @@ async function finalizeCheckout(payeeName) {
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  // 2. 🟢 精準扣庫存：使用無空格的 "-" 連接以對齊資料庫 (例如: 營養蛋白素-雲呢拿)
+  // 2. 🟢 精準扣庫存
   let stockDeductions = []
   cart.value.forEach(item => {
     if (item.isCombo) {
@@ -411,20 +414,19 @@ async function finalizeCheckout(payeeName) {
       </div>
     </div>
 
-    <div class="glass-card" style="padding: 15px; background: #f8fafc; border: 2px dashed #c7d2fe;">
-      <div style="font-weight: 900; color: #4338ca; margin-bottom: 10px; font-size: 14px;">🏃 馬拉松套裝快選 (自動帶入專屬利潤)</div>
-      <div class="combo-grid">
-         <div v-for="c in marathonCombos" :key="c.id" class="combo-card" @click="openCombo(c)">
-            <div class="c-name">{{ c.name }}</div>
-            <div class="c-price">${{ c.fixedPrice }}</div>
-            <div class="c-profit">利潤: ${{ c.fixedProfit }}</div>
-         </div>
+    <div class="filter-bar">
+      <div class="search-box"><span class="s-icon">🔍</span><input v-model="searchProduct" placeholder="支援中/英文搜尋..." class="s-inp"></div>
+      <div class="tags-row" style="margin-top:15px;">
+        <button v-for="cat in categories" :key="cat" class="cat-btn" :class="{active: selectedCategory === cat}" @click="selectedCategory = cat">{{ cat }}</button>
       </div>
     </div>
 
-    <div class="filter-bar">
-      <div class="search-box"><span class="s-icon">🔍</span><input v-model="searchProduct" placeholder="支援中/英文或代號搜尋..." class="s-inp"></div>
-      <div class="tags-row" style="margin-top:15px;"><button v-for="cat in categories" :key="cat" class="cat-btn" :class="{active: selectedCategory === cat}" @click="selectedCategory = cat">{{ cat }}</button></div>
+    <div v-if="selectedCategory === '全部' || selectedCategory === '馬拉松套裝'" class="combo-grid" style="margin-bottom: 20px;">
+       <div v-for="c in marathonCombos" :key="c.id" class="combo-card" @click="openCombo(c)">
+          <div class="c-name">{{ c.name }}</div>
+          <div class="c-price">${{ c.fixedPrice }}</div>
+          <div class="c-profit">利潤: ${{ c.fixedProfit }}</div>
+       </div>
     </div>
 
     <div v-for="p in displayProducts" :key="p.id" class="p-card" @click="addToCart(p)">
