@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
+import BaseModal from '../components/BaseModal.vue'
 
 const store = useMainStore()
 
@@ -13,7 +14,7 @@ const showDropdown = ref(false)
 
 const checkoutDate = ref(new Date().toISOString().split('T')[0])
 
-// 🚀 新增：刪除確定 Modal 狀態
+// 🚀 刪除確定 Modal 狀態
 const showDeleteConfirm = ref(false)
 const itemToDelete = ref(null)
 
@@ -33,51 +34,151 @@ const categories = ['全部', '內在營養', '外在保養']
 const cart = ref([])
 const showCheckoutModal = ref(false)
 
+// ==========================================
+// 🏃 馬拉松套裝快選設定 (完全對接你資料庫裡的正式名稱)
+// ==========================================
+const showComboModal = ref(false)
+const selectedCombo = ref(null)
+const comboShakeFlavor = ref('雲呢拿')
+const comboAloeFlavor = ref('原味')
+
+// 🟢 替換為你提供的正確口味清單
+const shakeFlavors = ['雲呢拿', '野草莓', '朱古力', '曲奇妙趣', '薄荷朱古力', '鮮奶咖啡', '紅豆薏仁']
+const aloeFlavors = ['原味', '柑橘味', '葡萄味']
+
+const marathonCombos = [
+  {
+    id: 'combo_m1', name: '慢跑計劃', fixedPrice: 1369, fixedProfit: 553.5,
+    needsShake: true, needsAloe: false,
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 1 },
+      { name: '佳能蛋白質粉', qty: 1 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 }
+    ]
+  },
+  {
+    id: 'combo_m2', name: '快跑計劃', fixedPrice: 2177, fixedProfit: 929,
+    needsShake: true, needsAloe: true,
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 1 },
+      { name: '佳能蛋白質粉', qty: 1 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 }
+    ]
+  },
+  {
+    id: 'combo_m3', name: '運動vip計劃', fixedPrice: 6996, fixedProfit: 2338,
+    needsShake: true, needsAloe: true,
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 5 },
+      { name: '佳能蛋白質粉', qty: 5 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 },
+      { name: '消脂片', qty: 1 },
+      { name: '抗脂片', qty: 1 }
+    ]
+  },
+  {
+    id: 'combo_m4', name: '運動vVip計劃', fixedPrice: 9998, fixedProfit: 3188,
+    needsShake: true, needsAloe: true,
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 5 },
+      { name: '佳能蛋白質粉', qty: 5 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 },
+      { name: '消脂片', qty: 1 },
+      { name: '抗脂片', qty: 1 },
+      { name: '夜寧新營養飲品', qty: 1 },
+      { name: '莓之寶', qty: 1 },
+      { name: '營養纖維粉(蘋果味)', qty: 1 },
+      { name: '膠原蛋白美肌飲料', qty: 1 },
+      { name: '深海魚油', qty: 1 } 
+    ]
+  }
+]
+
+function openCombo(c) {
+  selectedCombo.value = c
+  comboShakeFlavor.value = shakeFlavors[0]
+  comboAloeFlavor.value = aloeFlavors[0]
+  showComboModal.value = true
+}
+
+function addComboToCart() {
+  const c = selectedCombo.value
+  const uniqueId = `${c.id}_${c.needsShake ? comboShakeFlavor.value : 'none'}_${c.needsAloe ? comboAloeFlavor.value : 'none'}`
+  
+  const existing = cart.value.find(item => item.id === uniqueId)
+
+  if (existing) {
+    existing.qty++
+  } else {
+    cart.value.push({
+      isCombo: true,
+      id: uniqueId,
+      name: c.name,
+      fixedPrice: c.fixedPrice,
+      fixedProfit: c.fixedProfit,
+      shakeFlavor: c.needsShake ? comboShakeFlavor.value : null,
+      aloeFlavor: c.needsAloe ? comboAloeFlavor.value : null,
+      subItems: c.subItems,
+      qty: 1
+    })
+  }
+  showComboModal.value = false
+}
+// ==========================================
+
 // 🚀 核心邏輯：自動載入歷史訂單 與 🟢 快捷選單帶入客戶
 onMounted(() => {
-  // 🟢 從網址參數接收客戶名字 (來自 ClientsView 快捷按鈕)
   if (store.quickActionClient) {
     const targetName = store.quickActionClient
-    store.quickActionClient = null // 讀取完就清空，避免下次進來又被填入
+    store.quickActionClient = null 
     const foundClient = store.clients.find(c => c.name === targetName)
-    
-    if (foundClient) {
-      selectClient(foundClient) // 如果找到了，自動選定並套用專屬 VIP 折扣
-    } else {
-      searchClient.value = targetName // 沒完全比對到也幫忙填入搜尋框
-    }
+    if (foundClient) selectClient(foundClient) 
+    else searchClient.value = targetName 
   }
 
-  // 🚀 自動載入歷史訂單 ( pendingRepeatOrder )
   if (store.pendingRepeatOrder) {
     const data = store.pendingRepeatOrder
-    
-    // 1. 尋找並選定客戶
     const client = store.clients.find(c => c.name === data.clientName)
     if (client) selectClient(client)
-    
-    // 2. 設定分店
     if (data.branch) selectedBranch.value = data.branch.includes('店') ? data.branch : data.branch + '店'
 
-    // 3. 將產品加入購物車
     data.items.forEach(item => {
-      const product = store.products.find(p => p.name === item.name)
+      let flavor = ''
+      let baseName = item.name
+      // 🟢 智能拆解：支援以 "-" 分隔的舊訂單紀錄
+      if (item.name.includes('-')) {
+        const parts = item.name.split('-')
+        baseName = parts[0].trim()
+        flavor = parts.slice(1).join('-').trim()
+      }
+      
+      const product = store.products.find(p => p.name === baseName)
       if (product) {
-        cart.value.push({ ...product, qty: item.qty })
+        cart.value.push({
+           ...product, 
+           qty: item.qty,
+           selectedFlavor: flavor || (product.flavors ? product.flavors[0] : ''),
+           isCombo: false
+        })
       }
     })
 
-    // 清除任務
     store.pendingRepeatOrder = null
-    
-    // 自動打開結帳面板方便修改
     if (cart.value.length > 0) showCheckoutModal.value = true
   }
 })
 
+// 🟢 支援套裝的價格計算
 const cartWithPrices = computed(() => {
   const priceCol = tierMapping[selectedTier.value]
   return cart.value.map(item => {
+    if (item.isCombo) return { ...item, active_price: item.fixedPrice }
     const finalPrice = Number(item[priceCol]) || Number(item.retail_price) || 0
     return { ...item, active_price: finalPrice }
   })
@@ -119,66 +220,90 @@ const displayProducts = computed(() => {
     const branchKey = selectedBranch.value.replace('店', '')
     const stockKey = `${p.name}_${branchKey}`
     const currentQty = store.stock[stockKey] || 0
-    
     const currentPriceCol = tierMapping[selectedTier.value]
     const finalPrice = Number(p[currentPriceCol]) || Number(p.retail_price) || 0
     
     return { ...p, current_stock: currentQty, active_price: finalPrice }
   })
   
-  if (selectedCategory.value === '內在營養') {
-    list = list.filter(p => p.category && p.category.includes('內'))
-  } else if (selectedCategory.value === '外在保養') {
-    list = list.filter(p => p.category && p.category.includes('外'))
-  }
+  if (selectedCategory.value === '內在營養') list = list.filter(p => p.category && p.category.includes('內'))
+  else if (selectedCategory.value === '外在保養') list = list.filter(p => p.category && p.category.includes('外'))
 
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
-    list = list.filter(p => 
-      (p.name?.toLowerCase().includes(q)) || 
-      (p.name_en?.toLowerCase().includes(q)) ||
-      (p.id?.toLowerCase().includes(q))
-    )
+    list = list.filter(p => (p.name?.toLowerCase().includes(q)) || (p.name_en?.toLowerCase().includes(q)) || (p.id?.toLowerCase().includes(q)))
   }
   
   return list
 })
 
 const addToCart = (product) => {
-  const existing = cart.value.find(item => item.id === product.id)
+  const flavor = product.flavors ? product.flavors[0] : ''
+  const existing = cart.value.find(item => !item.isCombo && item.id === product.id && item.selectedFlavor === flavor)
   if (existing) existing.qty++ 
-  else cart.value.push({ ...product, qty: 1 })
+  else cart.value.push({ ...product, qty: 1, selectedFlavor: flavor, isCombo: false })
 }
 
 const decreaseQty = (item) => {
-  const found = cart.value.find(i => i.id === item.id)
+  const found = cart.value.find(i => i.id === item.id && (item.isCombo ? i.id === item.id : i.selectedFlavor === item.selectedFlavor))
   if (!found) return
   if (found.qty > 1) found.qty--
-  else confirmDelete(item) // 🚀 數量減到 0 也觸發二次確認
+  else confirmDelete(item)
 }
 
-// 🚀 新增：二次確定功能
+function updateFlavor(item, index, event) {
+  const newFlavor = event.target.value
+  const existingIndex = cart.value.findIndex((c, i) => i !== index && !c.isCombo && c.id === item.id && c.selectedFlavor === newFlavor)
+  if (existingIndex !== -1) {
+    cart.value[existingIndex].qty += item.qty
+    cart.value.splice(index, 1)
+  } else {
+    item.selectedFlavor = newFlavor
+  }
+}
+
 function confirmDelete(item) {
   itemToDelete.value = item
   showDeleteConfirm.value = true
 }
 
 function executeDelete() {
-  cart.value = cart.value.filter(i => i.id !== itemToDelete.value.id)
+  cart.value = cart.value.filter(i => {
+    if (i.isCombo) return i.id !== itemToDelete.value.id
+    return !(i.id === itemToDelete.value.id && i.selectedFlavor === itemToDelete.value.selectedFlavor)
+  })
   showDeleteConfirm.value = false
   itemToDelete.value = null
   if (cart.value.length === 0) showCheckoutModal.value = false
 }
 
+// 🟢 支援套裝的利潤計算
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
 const totalRevenue = computed(() => cartWithPrices.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
-const totalCost = computed(() => cart.value.reduce((sum, item) => sum + ((Number(item.price_50) || 0) * item.qty), 0))
+const totalCost = computed(() => cart.value.reduce((sum, item) => {
+  if (item.isCombo) return sum + ((item.fixedPrice - item.fixedProfit) * item.qty)
+  return sum + ((Number(item.price_50) || 0) * item.qty)
+}, 0))
 const netProfit = computed(() => totalRevenue.value - totalCost.value)
 
 async function finalizeCheckout(payeeName) {
-  if (!selectedClient.value) return alert('請在上方先選擇紀錄對象！')
-  const itemsStr = cart.value.map(i => `${i.name}x${i.qty}`).join(', ')
+  if (!selectedClient.value && !searchClient.value) return alert('請在上方先選擇紀錄對象！')
+  
+  // 🟢 智能轉換購物車文字，保持格式完美
+  const itemsStr = cart.value.map(i => {
+    if (i.isCombo) {
+      let f = []
+      if (i.shakeFlavor) f.push(`Shake:${i.shakeFlavor}`)
+      if (i.aloeFlavor) f.push(`蘆薈:${i.aloeFlavor}`)
+      const fStr = f.length > 0 ? ` (${f.join(', ')})` : ''
+      return `${i.name}${fStr} x${i.qty}`
+    }
+    const flavorText = i.selectedFlavor ? `-${i.selectedFlavor}` : ''
+    return `${i.name}${flavorText} x${i.qty}`
+  }).join(', ')
+
   const branchKey = selectedBranch.value.replace('店','')
+  const clientNameStr = selectedClient.value ? selectedClient.value.name : searchClient.value
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
@@ -188,73 +313,66 @@ async function finalizeCheckout(payeeName) {
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
+  // 1. 寫入流水帳
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', 
-    category: '零售收入', 
-    amount: totalRevenue.value, 
-    profit: netProfit.value,
-    branch: branchKey, 
-    client_id: selectedClient.value.id, 
-    client_name: selectedClient.value.name, 
-    handled_by: payeeName, 
-    staff: payeeName,
-    created_at: fullIsoCreatedAt,
-    own_email: user.email, 
-    note: `${selectedClient.value.name} (${itemsStr})`
+    type: 'income', category: '零售收入', amount: totalRevenue.value, profit: netProfit.value, cost: totalCost.value,
+    branch: branchKey, client_id: selectedClient.value?.id || null, client_name: clientNameStr, 
+    handled_by: payeeName, staff: payeeName, created_at: fullIsoCreatedAt,
+    own_email: user.email, note: `${clientNameStr} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
+  // 2. 🟢 精準扣庫存：使用無空格的 "-" 連接以對齊資料庫 (例如: 營養蛋白素-雲呢拿)
+  let stockDeductions = []
+  cart.value.forEach(item => {
+    if (item.isCombo) {
+      item.subItems.forEach(sub => {
+        let sName = sub.name;
+        if (sub.isShake) sName = `${sName}-${item.shakeFlavor}`
+        if (sub.isAloe) sName = `${sName}-${item.aloeFlavor}`
+        
+        const existing = stockDeductions.find(x => x.name === sName)
+        if (existing) existing.qty += sub.qty * item.qty
+        else stockDeductions.push({ name: sName, qty: sub.qty * item.qty })
+      })
+    } else {
+      const sName = item.selectedFlavor ? `${item.name}-${item.selectedFlavor}` : item.name
+      const existing = stockDeductions.find(x => x.name === sName)
+      if (existing) existing.qty += item.qty
+      else stockDeductions.push({ name: sName, qty: item.qty })
+    }
+  })
+
+  // 3. 執行庫存扣除
   let stockUpdateFailed = false;
-  for (const item of cart.value) {
+  for (const d of stockDeductions) {
     const { data: stockData, error: selectError } = await supabase.from('stock')
-      .select('quantity')
-      .eq('prod_name', item.name)
-      .eq('branch', branchKey)
-      .eq('user_id', user.id)
-      .maybeSingle()
+      .select('quantity').eq('prod_name', d.name).eq('branch', branchKey).eq('user_id', user.id).maybeSingle()
       
     if (selectError) {
-      console.error(`庫存查詢失敗 (${item.name}):`, selectError)
-      stockUpdateFailed = true;
-      continue;
+      stockUpdateFailed = true; continue;
     }
 
     const currentDbQty = stockData ? stockData.quantity : 0;
-    const newQty = currentDbQty - item.qty;
+    const newQty = currentDbQty - d.qty;
 
     if (stockData) {
       const { error: updateError } = await supabase.from('stock')
         .update({ quantity: newQty, own_email: user.email })
-        .eq('prod_name', item.name)
-        .eq('branch', branchKey)
-        .eq('user_id', user.id)
-        
-      if (updateError) {
-        console.error(`庫存扣減失敗 (${item.name}):`, updateError)
-        stockUpdateFailed = true;
-      }
+        .eq('prod_name', d.name).eq('branch', branchKey).eq('user_id', user.id)
+      if (updateError) stockUpdateFailed = true;
     } else {
       const { error: insertError } = await supabase.from('stock')
-        .insert({ 
-          prod_name: item.name, 
-          branch: branchKey, 
-          quantity: newQty,
-          user_id: user.id,
-          own_email: user.email  
-        })
-        
-      if (insertError) {
-        console.error(`庫存新增失敗 (${item.name}):`, insertError)
-        stockUpdateFailed = true;
-      }
+        .insert({ prod_name: d.name, branch: branchKey, quantity: newQty, user_id: user.id, own_email: user.email })
+      if (insertError) stockUpdateFailed = true;
     }
   }
 
   if (stockUpdateFailed) {
-      alert(`⚠️ 結帳成功，但部分私人庫存扣減失敗！請手動至「庫存管理」確認。\n日期: ${checkoutDate.value}\n收現金 $${totalRevenue.value}`)
+      alert(`⚠️ 結帳成功，但部分私人庫存扣減失敗！請手動至「庫存管理」確認。\n(可能是因為部分組合品項您尚未建立庫存紀錄)\n日期: ${checkoutDate.value}\n收現金 $${totalRevenue.value}`)
   } else {
-      alert(`✅ 結帳成功！(您的私人庫存已自動扣除)\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
+      alert(`✅ 結帳成功！(您的私人庫存及套裝內含物已自動扣除)\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
   }
   
   cart.value = []; selectedClient.value = null; searchClient.value = ''; showCheckoutModal.value = false; 
@@ -293,6 +411,17 @@ async function finalizeCheckout(payeeName) {
       </div>
     </div>
 
+    <div class="glass-card" style="padding: 15px; background: #f8fafc; border: 2px dashed #c7d2fe;">
+      <div style="font-weight: 900; color: #4338ca; margin-bottom: 10px; font-size: 14px;">🏃 馬拉松套裝快選 (自動帶入專屬利潤)</div>
+      <div class="combo-grid">
+         <div v-for="c in marathonCombos" :key="c.id" class="combo-card" @click="openCombo(c)">
+            <div class="c-name">{{ c.name }}</div>
+            <div class="c-price">${{ c.fixedPrice }}</div>
+            <div class="c-profit">利潤: ${{ c.fixedProfit }}</div>
+         </div>
+      </div>
+    </div>
+
     <div class="filter-bar">
       <div class="search-box"><span class="s-icon">🔍</span><input v-model="searchProduct" placeholder="支援中/英文或代號搜尋..." class="s-inp"></div>
       <div class="tags-row" style="margin-top:15px;"><button v-for="cat in categories" :key="cat" class="cat-btn" :class="{active: selectedCategory === cat}" @click="selectedCategory = cat">{{ cat }}</button></div>
@@ -311,13 +440,32 @@ async function finalizeCheckout(payeeName) {
       <div class="float-btn">結帳 ➔</div>
     </div>
 
-    <div v-if="showCheckoutModal" class="modal-overlay" @click.self="showCheckoutModal = false">
-      <div class="checkout-modal">
-        <div class="m-header">🛒 結帳明細與總結 <button class="close-x" @click="showCheckoutModal=false">✕</button></div>
-        
+    <BaseModal :show="showComboModal" title="挑選套裝口味" @close="showComboModal = false">
+        <div v-if="selectedCombo">
+          <h3 style="margin-bottom: 5px; color: #1e293b; font-weight: 900;">{{ selectedCombo.name }}</h3>
+          <p style="font-size: 12px; color: #64748b; margin-bottom: 20px; line-height: 1.5; font-weight: 700;">
+             📦 包含：{{ selectedCombo.subItems.map(i => i.name + ' x' + i.qty).join(', ') }}
+          </p>
+          <div v-if="selectedCombo.needsShake" class="form-item">
+            <label>🥤 選擇 Shake 味道</label>
+            <select class="modern-select highlight-sel" v-model="comboShakeFlavor">
+              <option v-for="f in shakeFlavors" :key="f" :value="f">{{ f }}</option>
+            </select>
+          </div>
+          <div v-if="selectedCombo.needsAloe" class="form-item" style="margin-top: 15px;">
+            <label>💧 選擇 蘆薈汁 味道</label>
+            <select class="modern-select highlight-sel" v-model="comboAloeFlavor">
+              <option v-for="f in aloeFlavors" :key="f" :value="f">{{ f }}</option>
+            </select>
+          </div>
+          <button class="payee-btn style-0" style="width: 100%; margin-top: 25px; padding: 15px; border-radius: 12px;" @click="addComboToCart">➕ 加入購物車</button>
+        </div>
+    </BaseModal>
+
+    <BaseModal :show="showCheckoutModal" title="結帳確認" @close="showCheckoutModal = false">
         <div class="summary-box" style="margin-bottom: 20px; border-color: #4f46e2; background: #f5f3ff;">
           <div class="s-row">
-            <span style="color:#4f46e2; font-weight:800;">📅 購買日期 (補紀錄請修改)</span>
+            <span style="color:#4f46e2; font-weight:800;">📅 購買日期</span>
             <input type="date" v-model="checkoutDate" class="modern-select" style="width: 150px; padding: 5px 10px; background: white; border: 2px solid #4f46e2;">
           </div>
         </div>
@@ -328,14 +476,25 @@ async function finalizeCheckout(payeeName) {
         </div>
 
         <div class="cart-items">
-          <div v-for="item in cartWithPrices" :key="item.id" class="c-item">
+          <div v-for="(item, index) in cartWithPrices" :key="index" class="c-item">
             <button class="c-delete" @click="confirmDelete(item)">✕</button>
-            <div style="flex:1;"><div class="c-name">{{ item.name }}</div><div class="c-sub">單價 ${{ item.active_price }}</div></div>
+            <div style="flex:1;">
+              <div class="c-name">
+                {{ item.name }}
+                <span v-if="item.isCombo && item.shakeFlavor" class="flavor-tag">Shake: {{ item.shakeFlavor }}</span>
+                <span v-if="item.isCombo && item.aloeFlavor" class="flavor-tag">蘆薈: {{ item.aloeFlavor }}</span>
+              </div>
+              <div class="c-sub" v-if="!item.isCombo && item.flavors">
+                 <select :value="item.selectedFlavor" @change="updateFlavor(item, index, $event)" class="modern-select" style="padding: 4px; font-size: 11px; margin-top: 5px;">
+                   <option v-for="f in item.flavors" :key="f" :value="f">{{ f }}</option>
+                 </select>
+              </div>
+            </div>
             <div class="c-price">$ {{ item.active_price * item.qty }}</div>
             <div class="qty-control">
               <button @click="decreaseQty(item)">−</button>
               <span>{{ item.qty }}</span>
-              <button @click="addToCart(item)">＋</button>
+              <button @click="item.isCombo ? item.qty++ : addToCart(item)">＋</button>
             </div>
           </div>
         </div>
@@ -356,8 +515,7 @@ async function finalizeCheckout(payeeName) {
           </div>
           <button class="btn-back" @click="showCheckoutModal = false">← 返回繼續選購</button>
         </div>
-      </div>
-    </div>
+    </BaseModal>
 
     <div v-if="showDeleteConfirm" class="modal-overlay" style="z-index: 1000;" @click.self="showDeleteConfirm = false">
       <div class="confirm-modal">
@@ -392,6 +550,15 @@ async function finalizeCheckout(payeeName) {
 .selected-badge { background: #eef2ff; color: #4f46e2; padding: 10px 14px; border-radius: 10px; margin-top: 12px; font-weight: 800; font-size: 14px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
+/* 🟢 馬拉松套裝樣式 */
+.combo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.combo-card { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border: 1px solid #c7d2fe; border-radius: 14px; padding: 15px 10px; cursor: pointer; transition: 0.2s; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.combo-card:active { transform: scale(0.96); }
+.c-name { font-weight: 900; color: #4338ca; font-size: 14px; margin-bottom: 4px; }
+.c-price { font-weight: 900; color: #1e293b; font-size: 16px; margin-bottom: 4px; }
+.c-profit { font-size: 10px; color: #059669; font-weight: 800; background: #d1fae5; padding: 2px 6px; border-radius: 6px; }
+.flavor-tag { background: #c7d2fe; color: #4338ca; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 5px; font-weight: 800; }
+
 .search-box { background: white; display: flex; align-items: center; padding: 12px 15px; border-radius: 99px; border: 1px solid #e2e8f0; }
 .s-inp { border: none; outline: none; flex: 1; margin-left: 10px; font-weight: 700; }
 .tags-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 5px; }
@@ -420,7 +587,7 @@ async function finalizeCheckout(payeeName) {
 
 .cart-items { max-height: 250px; overflow-y: auto; margin-bottom: 20px; padding-right: 10px; }
 .c-item { display: flex; align-items: center; margin-bottom: 15px; background: #f8fafc; padding: 12px; border-radius: 16px; border: 1px solid #e2e8f0; }
-.c-name { font-weight: 800; font-size: 15px; color: #1e293b; }
+.c-name { font-weight: 800; font-size: 15px; color: #1e293b; display: flex; flex-wrap: wrap; align-items: center; }
 .c-sub { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 700; }
 .c-price { font-weight: 900; font-size: 18px; color: #4f46e2; margin-right: 15px; }
 .qty-control { display: flex; align-items: center; background: white; border-radius: 10px; border: 1px solid #cbd5e1; }
