@@ -17,7 +17,7 @@ const checkoutDate = ref(new Date().toISOString().split('T')[0])
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 const packages = {
-  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 52 }, // 🟢 修正：成本52，利潤會自動算成46
+  'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 52 }, 
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
   'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
   'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
@@ -83,12 +83,25 @@ async function handleCheckout(staff) {
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
+  // ==========================================
+  // 🟢 核心邏輯修正：免費贈堂轉化為實質「支出」
+  // ==========================================
+  let finalType = 'income'
+  let finalAmount = calc.price
+  let finalProfit = calc.profit
+
+  // 💡 如果客人付 $0，但我們有成本支出，直接記為「支出 (expense)」
+  if (calc.price === 0 && calc.cost > 0) {
+    finalType = 'expense'
+    finalAmount = calc.cost   // 把成本(52)當作這筆紀錄的金額，帳面就會顯示 -$52
+  }
+
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', 
+    type: finalType, 
     category: categoryStr, 
-    amount: calc.price, 
+    amount: finalAmount, 
     cost: calc.cost, 
-    profit: calc.profit,
+    profit: finalProfit,
     branch: branch, 
     client_id: selectedClient.value.id, 
     client_name: selectedClient.value.name, 
@@ -96,7 +109,7 @@ async function handleCheckout(staff) {
     handled_by: staff,
     created_at: fullIsoCreatedAt,
     own_email: userEmail, 
-    note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`
+    note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`.trim()
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
@@ -108,7 +121,16 @@ async function handleCheckout(staff) {
     }).eq('id', selectedClient.value.id)
   }
 
-  alert(`✅ 結帳成功！\n日期: ${checkoutDate.value}\n由 ${staff} 收取營業額 $${calc.price}\n(淨利潤: $${calc.profit})`)
+  // 💡 動態提示：讓結帳成功視窗更明確告訴你這是收入還是支出
+  let alertMsg = `✅ 結帳成功！\n日期: ${checkoutDate.value}\n處理人: ${staff}\n`
+  if (finalType === 'income') {
+     alertMsg += `\n💰 營業額: $${calc.price}\n(淨利潤: $${calc.profit})`
+  } else {
+     alertMsg += `\n🎁 客戶免費贈堂 ($0)\n⚠️ 紀錄為成本支出: -$${calc.cost}`
+  }
+
+  alert(alertMsg)
+  
   selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
   store.syncAll() 
 }
