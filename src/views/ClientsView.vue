@@ -417,28 +417,31 @@ function triggerFileInput() {
 }
 
 async function handleImport(e) {
-  const file = e.target.files[0]
-  if (!file) return
+  const file = e.target.files[0];
+  if (!file) return;
   
-  const reader = new FileReader()
+  const reader = new FileReader();
   reader.onload = async (evt) => {
     try {
-      const data = new Uint8Array(evt.target.result)
-      const workbook = XLSX.read(data, { type: 'array' })
+      // 🚀 改用二進位方式讀取
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
       
-      // 抓取第一個 Sheet 的內容並轉成 JSON
-      const firstSheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[firstSheetName]
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+      // 取得第一個工作表
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      
+      // 將 Excel 內容轉為 JSON 陣列
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      // 移除標題列 (第一列)
-      const rows = jsonData.slice(1)
+      // 過濾掉第一列標題，只保留數據
+      const rows = jsonData.slice(1);
       
-      let count = 0
+      let count = 0;
       for (const row of rows) {
-        // row[0]=姓名, row[1]=電話, row[2]=分店, row[3]=狀態, row[4]=加入日期, row[5]=來源, row[6]=到期日, row[7]=備註
-        if (!row[0]) continue // 沒姓名就跳過
+        if (!row[0]) continue; // 姓名為空則跳過
 
+        // 對應你的資料庫欄位
         const { error } = await supabase.from('clients').insert([{
           name: String(row[0] || '').trim(),
           phone: String(row[1] || '').trim(),
@@ -449,19 +452,19 @@ async function handleImport(e) {
           expiry_date: row[6] || null,
           remark: row[7] || '',
           owner_email: store.session?.user?.email
-        }])
-        if (!error) count++
+        }]);
+        if (!error) count++;
       }
       
-      alert(`✅ 成功匯入 ${count} 位客戶！`)
-      store.syncAll()
+      alert(`✅ 成功匯入 ${count} 位客戶！`);
+      store.syncAll();
     } catch (err) {
-      console.error('匯入失敗:', err)
-      alert('❌ 檔案格式錯誤或損毀，請確保使用下載的底稿填寫。')
+      console.error('匯入失敗:', err);
+      alert('❌ 無法解析此 Excel 檔案，請確保使用正確的底稿。');
     }
-  }
-  // 🚀 注意：這裡要改用 readAsArrayBuffer 才能讀取 Excel 二進位檔
-  reader.readAsArrayBuffer(file)
+  };
+  // 🚀 關鍵修改：使用 readAsArrayBuffer 以便處理 Excel 格式
+  reader.readAsArrayBuffer(file);
 }
 </script>
 
