@@ -559,7 +559,7 @@ const chartOptions = {
           </div>
           
           <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn-pill" @click.stop>
-            💬 WhatsApp
+            💬 Wts
           </a>
         </div>
         </div>
@@ -721,7 +721,7 @@ const chartOptions = {
               </div>
               <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
                 📞 {{ c.phone || '無' }}
-                <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn">💬 Wtsp</a>
+                <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn">💬 Wts</a>
               </div>
             </div>
             <div style="text-align: right;">
