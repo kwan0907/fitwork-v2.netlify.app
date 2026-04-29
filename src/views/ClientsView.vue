@@ -406,11 +406,13 @@ async function handleImport(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  // 1. 鎖定當前登入者的 Email
-  const currentUserEmail = store.session?.user?.email;
+  // 🚀 終極修復：不要從 store 拿，直接跟 Supabase 要最新的登入憑證！
+  // 這樣不管你怎麼重新整理，只要你是登入狀態，就一定抓得到 Email。
+  const { data: authData } = await supabase.auth.getSession();
+  const currentUserEmail = authData?.session?.user?.email;
+
   if (!currentUserEmail) {
-    alert('❌ 系統偵測不到登入狀態，請先登入後再執行匯入。');
-    // 清空 input，讓使用者下次可以重新選擇同一個檔案
+    alert('❌ 系統偵測不到登入狀態，請確認網路連線或重新登入。');
     e.target.value = ''; 
     return;
   }
@@ -421,17 +423,14 @@ async function handleImport(e) {
       const content = evt.target.result;
       const lines = content.split(/\r?\n/);
       
-      // 移除標題列 (第一行)，過濾掉多餘的空行
       const rows = lines.slice(1).filter(line => line.trim() !== '');
       
       let count = 0;
       for (const line of rows) {
         const row = line.split(',');
         
-        // 如果姓名欄位是空的，直接跳過
         if (!row[0]) continue; 
 
-        // 寫入資料庫，並強制綁定 currentUserEmail
         const { error } = await supabase.from('clients').insert([{
           name: String(row[0] || '').trim(),
           phone: String(row[1] || '').trim(),
@@ -441,27 +440,23 @@ async function handleImport(e) {
           source: (row[5] || '其他').trim(),
           expiry_date: row[6] ? row[6].trim() : null,
           remark: (row[7] || '').trim(),
-          owner_email: currentUserEmail 
+          owner_email: currentUserEmail // 👈 強制寫入剛剛跟 Supabase 要到的 Email
         }]);
 
         if (!error) count++;
       }
       
       alert(`✅ 匯入成功！共有 ${count} 位客戶已歸屬到您的帳號 (${currentUserEmail})。`);
-      
-      // 重新同步資料庫，更新畫面
       await store.syncAll(); 
       
     } catch (err) {
       console.error('匯入出錯:', err);
       alert('❌ 檔案讀取失敗，請確保使用正確的 CSV 格式。');
     } finally {
-      // 不管成功或失敗，都把檔案選擇器清空，避免下次選同一個檔案沒反應
       e.target.value = ''; 
     }
   };
   
-  // 讀取純文字 CSV
   reader.readAsText(file);
 }
 </script>
