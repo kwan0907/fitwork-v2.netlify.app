@@ -964,9 +964,23 @@ const chartOptions = {
 .sp-sub { font-size: 11px; font-weight: 700; color: #d97706; margin-top: 2px; }
 .sp-val { font-size: 24px; font-weight: 900; color: #b45309; }
 
-/* 修改 Modal 讓手機可以順滑滾動 */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-start; justify-content: center; padding-top: 5vh; padding-bottom: 5vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-.edit-modal { background: white; width: 90%; max-width: 480px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); margin: auto; position: relative; max-height: 85vh; overflow-y: auto; overscroll-behavior: contain; }
+/* 🟢 解決 Modal 頂部被遮住與拉動回彈的問題 */
+.modal-overlay { 
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); 
+  z-index: 99999; /* 1️⃣ 強制把層級拉到極限高，保證蓋過所有頂部選單！ */
+  display: flex; align-items: flex-start; justify-content: center; 
+  padding: 80px 15px 40px 15px; /* 2️⃣ 頂部強制留出 80px 的安全距離，躲開 FITWORK PRO 標題 */
+}
+
+.edit-modal, .center-modal { 
+  background: white; width: 100%; max-width: 480px; 
+  border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
+  animation: popIn 0.3s ease-out; position: relative; 
+  max-height: calc(100vh - 120px); /* 3️⃣ 高度自動扣除上下安全距離，不超出螢幕 */
+  overflow-y: auto; -webkit-overflow-scrolling: touch; 
+  overscroll-behavior: contain;
+}
 /* WhatsApp 綠色按鈕樣式 */
 /* 🟢 放大版的 WhatsApp 按鈕 (增加 padding 讓手機超好點) */
 .wts-btn { background: #25D366; color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 900; text-decoration: none; margin-left: 8px; box-shadow: 0 4px 10px rgba(37,211,102,0.3); display: inline-block; transition: 0.2s; }
