@@ -406,20 +406,32 @@ async function handleImport(e) {
   const file = e.target.files[0];
   if (!file) return;
 
+  // 1. 鎖定當前登入者的 Email
+  const currentUserEmail = store.session?.user?.email;
+  if (!currentUserEmail) {
+    alert('❌ 系統偵測不到登入狀態，請先登入後再執行匯入。');
+    // 清空 input，讓使用者下次可以重新選擇同一個檔案
+    e.target.value = ''; 
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = async (evt) => {
     try {
       const content = evt.target.result;
-      const lines = content.split('\n');
+      const lines = content.split(/\r?\n/);
       
-      // 移除標題列並過濾空行
+      // 移除標題列 (第一行)，過濾掉多餘的空行
       const rows = lines.slice(1).filter(line => line.trim() !== '');
       
       let count = 0;
       for (const line of rows) {
         const row = line.split(',');
-        if (!row[0]) continue; // 姓名為空則跳過
+        
+        // 如果姓名欄位是空的，直接跳過
+        if (!row[0]) continue; 
 
+        // 寫入資料庫，並強制綁定 currentUserEmail
         const { error } = await supabase.from('clients').insert([{
           name: String(row[0] || '').trim(),
           phone: String(row[1] || '').trim(),
@@ -429,19 +441,27 @@ async function handleImport(e) {
           source: (row[5] || '其他').trim(),
           expiry_date: row[6] ? row[6].trim() : null,
           remark: (row[7] || '').trim(),
-          owner_email: store.session?.user?.email
+          owner_email: currentUserEmail 
         }]);
+
         if (!error) count++;
       }
       
-      alert(`✅ 成功匯入 ${count} 位客戶！`);
-      store.syncAll();
+      alert(`✅ 匯入成功！共有 ${count} 位客戶已歸屬到您的帳號 (${currentUserEmail})。`);
+      
+      // 重新同步資料庫，更新畫面
+      await store.syncAll(); 
+      
     } catch (err) {
       console.error('匯入出錯:', err);
-      alert('❌ 匯入失敗，請確保使用正確的 CSV 底稿。');
+      alert('❌ 檔案讀取失敗，請確保使用正確的 CSV 格式。');
+    } finally {
+      // 不管成功或失敗，都把檔案選擇器清空，避免下次選同一個檔案沒反應
+      e.target.value = ''; 
     }
   };
-  // 🚀 變回 readAsText，這是讀取 CSV 的標準方式
+  
+  // 讀取純文字 CSV
   reader.readAsText(file);
 }
 </script>
