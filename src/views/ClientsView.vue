@@ -130,9 +130,42 @@ const getMyGiftStats = (client) => {
   return { available: validTickets.length, closestExpiry: cYMD };
 }
 
+// 🟢 新增：智能尋找該客戶最早購買套票/運動的日期
+const getEarliestTxnDate = (clientName) => {
+  if (!clientName) return null;
+  let earliest = null;
+  store.transactions.forEach(t => {
+    // 比對名字，並確認是買套票或運動
+    const isMatch = t.client_name === clientName || (t.note && t.note.includes(clientName));
+    if (isMatch && (t.category === '運動套票' || t.category === '運動')) {
+      const d = String(t.created_at).slice(0, 10);
+      if (!earliest || d < earliest) earliest = d;
+    }
+  });
+  return earliest;
+}
+
+// 🟢 替換原本的 filteredClients
 const filteredClients = computed(() => {
-  let list = [...store.clients] 
+  // 1️⃣ 智能修復：遍歷所有客戶，校正加入日期與狀態
+  let list = store.clients.map(c => {
+    let fixedClient = { ...c }
+    let earliest = getEarliestTxnDate(c.name)
+    
+    if (earliest) {
+        // 如果實際購買日 比 設定的加入日 還要早，系統自動往前修正為購買日
+        if (!fixedClient.join_date || fixedClient.join_date > earliest) {
+            fixedClient.join_date = earliest
+        }
+        // 只要有買過套票，就強制轉為「正式會員」，徹底解決套票次數被隱藏的問題！
+        if (fixedClient.status === 'prospect' || fixedClient.status === 'absent') {
+            fixedClient.status = 'active'
+        }
+    }
+    return fixedClient
+  })
   
+  // 2️⃣ 接下來走原本的搜尋與過濾邏輯
   const q = clientSearch.value.toLowerCase()
   if (q) {
     list = list.filter(c => (c?.name && c?.name.toLowerCase().includes(q)) || (c?.phone && c?.phone.includes(q)))
@@ -171,17 +204,9 @@ const filteredClients = computed(() => {
   } else if (sortBy.value === 'phone') {
     list.sort((a, b) => (a?.phone || '').localeCompare(b?.phone || ''))
   } else if (sortBy.value === 'expiry_asc') {
-    list.sort((a, b) => {
-      const d1 = String(a?.expiry_date || '9999-99-99')
-      const d2 = String(b?.expiry_date || '9999-99-99')
-      return d1.localeCompare(d2)
-    })
+    list.sort((a, b) => String(a?.expiry_date || '9999-99-99').localeCompare(String(b?.expiry_date || '9999-99-99')))
   } else if (sortBy.value === 'expiry_desc') {
-    list.sort((a, b) => {
-      const d1 = String(a?.expiry_date || '0000-00-00')
-      const d2 = String(b?.expiry_date || '0000-00-00')
-      return d2.localeCompare(d1)
-    })
+    list.sort((a, b) => String(b?.expiry_date || '0000-00-00').localeCompare(String(a?.expiry_date || '0000-00-00')))
   }
 
   return list
