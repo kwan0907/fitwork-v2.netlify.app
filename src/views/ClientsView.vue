@@ -549,19 +549,20 @@ async function handleImport(event) {
       <div class="center-modal scrollable-modal" style="padding-bottom: 0;">
         <div class="m-header">🔧 客戶詳細設定 <button class="close-x" @click="showEditModal=false">✕</button></div>
         
-        <div class="tab-nav">
+       <div class="tab-nav">
           <button class="tab-btn" :class="{active: activeTab === 'basic'}" @click="activeTab = 'basic'">👤 基本</button>
           <button class="tab-btn" :class="{active: activeTab === 'source'}" @click="activeTab = 'source'">📅 來源/預約</button>
           <button class="tab-btn" :class="{active: activeTab === 'advanced'}" @click="activeTab = 'advanced'">💎 進階設定</button>
         </div>
 
+        <div class="toggle-group sticky-toggle">
+          <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
+          <button class="t-btn" :class="{active: editingClient.status === 'absent'}" @click="editingClient.status = 'absent'" style="color: #ef4444;">缺席補堂</button>
+        </div>
+
         <div class="tab-content-area">
           <div v-show="activeTab === 'basic'" class="tab-pane">
-            <div class="toggle-group" style="margin-bottom: 20px;">
-              <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
-              <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
-              <button class="t-btn" :class="{active: editingClient.status === 'absent'}" @click="editingClient.status = 'absent'" style="color: #ef4444;">缺席補堂</button>
-            </div>
             <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
             <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
             <div class="f-item">
@@ -645,12 +646,13 @@ async function handleImport(event) {
           <button class="tab-btn" :class="{active: activeTab === 'advanced'}" @click="activeTab = 'advanced'">💎 進階設定</button>
         </div>
 
+        <div class="toggle-group sticky-toggle">
+          <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
+          <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
+        </div>
+
         <div class="tab-content-area">
           <div v-show="activeTab === 'basic'" class="tab-pane">
-            <div class="toggle-group" style="margin-bottom: 20px;">
-              <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
-              <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
-            </div>
             <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
             <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話"></div>
             <div class="f-item">
@@ -916,5 +918,70 @@ async function handleImport(event) {
   z-index: 10;
 }
 /* 覆蓋原本 action-row 的 margin，避免排版衝突 */
+.sticky-action-row .btn-del, .sticky-action-row .btn-confirm { margin-top: 0; }
+
+/* =========================================
+   🚀 專屬 Tabs 分頁與防跑版 Flexbox 終極樣式 
+   ========================================= */
+
+/* 1. 終極修復：改用 Flexbox 鎖死上下，解決 iOS 按鈕亂飄的問題 */
+.tabbed-modal {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0 !important; 
+  overflow: hidden !important;  /* 把外層的捲軸關掉 */
+  max-height: 85vh; /* 限制最大高度，保證不會超出螢幕 */
+}
+
+/* 2. 防止標題、頁籤、以及「狀態切換按鈕」被擠壓變形 */
+.tabbed-modal .m-header,
+.tabbed-modal .tab-nav,
+.tabbed-modal .sticky-toggle {
+  flex-shrink: 0; 
+}
+
+/* 3. 狀態切換按鈕 (正式/預約/缺席) 的專屬間距 */
+.sticky-toggle {
+  margin-bottom: 15px; 
+}
+
+/* 4. 頂部 Tabs 分頁按鈕樣式 */
+.tab-nav { 
+  display: flex; gap: 8px; margin-bottom: 15px; 
+  border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; 
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.tab-nav::-webkit-scrollbar { display: none; }
+.tab-btn { 
+  flex: 1; background: transparent; border: none; 
+  font-size: 13px; font-weight: 800; color: #94a3b8; 
+  padding: 10px 5px; cursor: pointer; white-space: nowrap; 
+  transition: 0.2s; border-radius: 10px; 
+}
+.tab-btn.active { 
+  background: #eef2ff; color: #4f46e2; 
+  box-shadow: 0 4px 10px rgba(79, 70, 226, 0.1); 
+}
+
+/* 5. 真正的捲動區域 (只有表單內容會滑動) */
+.tab-content-area {
+  flex: 1;
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -25px; /* 抵銷 Modal 的左右 padding，讓捲軸貼齊右邊緣 */
+  padding: 0 25px 20px 25px;
+}
+.tab-pane { animation: popIn 0.2s ease-out; }
+
+/* 6. 底部儲存按鈕區 (死死釘在最下面) */
+.sticky-action-row {
+  position: static; 
+  flex-shrink: 0; /* 防止按鈕區塊被擠壓 */
+  background: white;
+  padding: 15px 0 25px 0; /* 底部多留白，避開 iPhone 橫線 */
+  border-top: 1px solid #f1f5f9;
+  margin: 0;
+}
+/* 覆蓋原本按鈕的 margin */
 .sticky-action-row .btn-del, .sticky-action-row .btn-confirm { margin-top: 0; }
 </style>
