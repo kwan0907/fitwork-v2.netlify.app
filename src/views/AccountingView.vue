@@ -48,9 +48,31 @@ const getDisplayData = (t) => {
   return { client, text }
 }
 
+// ==========================================
+// 🟢 新增：智能分類過濾器邏輯
+// ==========================================
+const activeCategory = ref('全部')
+
+// 自動抓取資料庫內所有出現過的分類，並依照「使用頻率」從多到少排序
+const uniqueCategories = computed(() => {
+  const counts = {}
+  store.transactions.forEach(t => {
+    if (t?.category) counts[t.category] = (counts[t.category] || 0) + 1
+  })
+  const sortedCats = Object.keys(counts).sort((a, b) => counts[b] - counts[a])
+  return ['全部', ...sortedCats]
+})
+// ==========================================
+
 const groupedTxns = computed(() => {
   const g = {}
-  store.transactions.forEach(t => {
+  
+  // 🟢 根據選擇的分類過濾流水帳
+  const filteredList = activeCategory.value === '全部' 
+    ? store.transactions 
+    : store.transactions.filter(t => t?.category === activeCategory.value)
+
+  filteredList.forEach(t => {
     // 🛡️ 加上防護盾
     const dateStr = String(t?.created_at || '').slice(0, 10)
     if (!dateStr || dateStr.length < 10) return
@@ -267,16 +289,32 @@ async function handleDeleteTransaction(t) {
 
 <template>
   <div class="page" style="padding-bottom: 150px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <h2 class="page-title" style="margin:0;">收支流水帳</h2>
       <button class="btn-primary" style="padding:10px 16px; border-radius:12px; font-weight:800;" @click="openExpForm">+ 新增收支</button>
+    </div>
+
+    <div class="filter-row">
+      <button 
+        v-for="cat in uniqueCategories" 
+        :key="cat" 
+        class="f-btn" 
+        :class="{ active: activeCategory === cat }" 
+        @click="activeCategory = cat"
+      >
+        {{ cat }}
+      </button>
+    </div>
+
+    <div v-if="groupedTxns.length === 0" style="text-align: center; color: #94a3b8; font-weight: 800; margin-top: 50px;">
+      目前沒有「{{ activeCategory }}」的相關紀錄
     </div>
 
     <div v-for="group in groupedTxns" :key="group.date">
       <div class="date-header">📅 {{ group.date }}</div>
       <div class="card" style="padding:0 15px;">
         <div v-for="t in group.items" :key="t.id" class="txn-item">
-          <div style="flex:1;">
+          <div style="flex:1; min-width:0;">
             
             <div class="t-header-row">
               <div class="t-cat">{{ t.category }}</div>
@@ -302,7 +340,7 @@ async function handleDeleteTransaction(t) {
             </div>
           </div>
           
-          <div style="text-align:right;display:flex;align-items:center;gap:10px; margin-left: 10px;">
+          <div style="text-align:right;display:flex;align-items:center;gap:10px; margin-left: 10px; flex-shrink: 0;">
             <div class="t-amt" :class="t.type==='income'?'g':'r'">
               {{ t.type==='income'?'+':'-' }}${{ t.amount }}
             </div>
@@ -379,6 +417,13 @@ async function handleDeleteTransaction(t) {
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; }
+
+/* 🟢 新增：過濾列與按鈕樣式 */
+.filter-row { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
+.filter-row::-webkit-scrollbar { display: none; }
+.f-btn { padding: 8px 16px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
+.f-btn.active { background: #4f46e2; color: white; border-color: #4f46e2; box-shadow: 0 4px 10px rgba(79, 70, 226, 0.2); }
+
 .card { background: white; border-radius: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
 .date-header { font-size: 13px; font-weight: 900; color: #64748b; margin: 15px 0 8px; }
 .txn-item { display: flex; align-items: center; padding: 18px 0; border-bottom: 1px dashed #e2e8f0; }
@@ -387,17 +432,16 @@ async function handleDeleteTransaction(t) {
 .t-cat { font-weight: 900; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 8px; border: 1px solid #e2e8f0;}
 .t-client-highlight { font-weight: 900; font-size: 14px; color: #ec4899; background: #fdf2f8; padding: 4px 10px; border-radius: 8px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
 
-/* 🚀 新增按鈕樣式 */
 .repeat-btn { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center;}
 .repeat-btn:active { transform: scale(0.95); background: #c7d2fe; }
 
 .t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 12px; margin-bottom: 6px; }
 .t-desc { font-size: 13px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
 .icon-lbl { font-size: 12px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
-.t-desc-val { color: #1e293b; font-weight: 900; font-size: 15px; } 
+.t-desc-val { color: #1e293b; font-weight: 900; font-size: 15px; word-break: break-word; } 
 .t-staff { font-weight: 900; color: #4f46e2; font-size: 14px; } 
 .t-ad { font-size: 11px; color: #d97706; margin-top: 8px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 4px 8px; border-radius: 6px; }
-.t-amt { font-weight: 900; font-size: 22px; }
+.t-amt { font-weight: 900; font-size: 22px; white-space: nowrap;}
 .t-amt.g { color: #10b981; }
 .t-amt.r { color: #ef4444; }
 .icon-btn { background: #f1f5f9; border: none; font-size: 14px; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
@@ -411,6 +455,6 @@ async function handleDeleteTransaction(t) {
 .t-btn.activeE { background: #ef4444; color: white; box-shadow: 0 4px 10px rgba(239,68,68,0.2);}
 .ad-box { background: #fff7ed; border: 1px solid #fed7aa; padding: 15px; border-radius: 12px; margin-top: 15px; }
 .ad-title { font-weight: 900; color: #d97706; margin-bottom: 10px; font-size: 13px; }
-.btn-primary { background: #4f46e2; color: white; border: none; transition: 0.2s;}
+.btn-primary { background: #4f46e2; color: white; border: none; transition: 0.2s; cursor: pointer;}
 .btn-primary:active { transform: scale(0.96); }
 </style>
