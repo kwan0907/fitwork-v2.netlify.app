@@ -790,27 +790,28 @@ async function handleImport(event) {
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; margin-bottom: 4px;}
 .c-expiry { font-size: 11px; font-weight: 800; }
 
-/* 🟢 解決 Modal 頂部被遮住：強制往下推 */
+/* 🟢 解決 Modal 頂部與底部被遮住的終極完美版 */
 .modal-overlay { 
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; /* 使用 height:100% 自動適應手機的真實視窗 */
   background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); 
   z-index: 99999; 
-  /* 對齊上方，不使用 center */
   display: flex; align-items: flex-start; justify-content: center; 
+  
+  /* 1️⃣ 核心魔法：頂端推開 110px 避開標題，底端推開 60px 避開手機底線 */
+  padding: 110px 15px 60px 15px; 
+  box-sizing: border-box; /* 確保 padding 不會把整個畫面撐破 */
 }
 
 .edit-modal, .center-modal { 
   background: white; width: 100%; max-width: 480px; 
-  border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
+  border-radius: 24px; 
+  padding: 25px 25px 50px 25px; /* 內部底部多加一點 padding，讓按鈕有呼吸空間 */
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
   animation: popIn 0.3s ease-out; position: relative; 
   
-  /* 1️⃣ 核心修改：強制往下推 110px，完美避開 FITWORK PRO 頂部標題 */
-  margin-top: 110px; 
-  margin-bottom: 40px; 
-  
-  /* 2️⃣ 高度自動扣除上方空出的 110px 與下方留白，保證滾動順暢不破版 */
-  max-height: calc(100vh - 160px); 
-  
+  /* 2️⃣ 自動填滿剛剛設定的安全空間，只要內容超過，就會在內部產生順滑捲軸 */
+  margin: 0; 
+  max-height: 100%; 
   overflow-y: auto; -webkit-overflow-scrolling: touch; 
   overscroll-behavior: contain;
 }
