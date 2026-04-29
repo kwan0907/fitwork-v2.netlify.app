@@ -217,7 +217,6 @@ const displayProducts = computed(() => {
   // 🟢 1. 如果選了「馬拉松套裝」，下方就不顯示一般商品
   if (selectedCategory.value === '馬拉松套裝') return []
 
-  // 🟢 2. 準備基礎產品清單與計算最新價格、庫存
   let list = sortedProducts.value.map(p => {
     const branchKey = selectedBranch.value.replace('店', '')
     const stockKey = `${p.name}_${branchKey}`
@@ -225,39 +224,46 @@ const displayProducts = computed(() => {
     const currentPriceCol = tierMapping[selectedTier.value]
     const finalPrice = Number(p[currentPriceCol]) || Number(p.retail_price) || 0
     
-    // 🛡️ 確保 category 欄位一定是字串，方便後續比對，並清除前後空白
+    // 🛡️ 強制轉字串並去空白
     const safeCategory = typeof p.category === 'string' ? p.category.trim() : ''
     
     return { ...p, current_stock: currentQty, active_price: finalPrice, _safeCategory: safeCategory }
   })
   
-  // 🟢 3. 智能分類判斷機制
-  // 為了防呆，如果資料庫沒填 category，用關鍵字當最後防線
   const isOuter = (n) => {
      const name = n || '';
      return ['洗面', '爽膚水', '霜', '眼膠', '精華', '角質', '面膜', '沐浴', '潤膚', '髮', '護膚'].some(k => name.includes(k));
   }
 
-  // 🟢 4. 執行過濾 (比對 _safeCategory)
+  // 🟢 2. 繁簡通吃的分類過濾
   if (selectedCategory.value === '內在營養') {
     list = list.filter(p => {
-      // 優先看資料庫分類是否包含「內」或「營養」
-      if (p._safeCategory && (p._safeCategory.includes('內') || p._safeCategory.includes('營養'))) return true;
-      // 如果資料庫沒填，用關鍵字判斷
+      // 同時支援繁體「內/營養」與簡體「内/营养」
+      if (p._safeCategory && (
+          p._safeCategory.includes('內') || 
+          p._safeCategory.includes('内') || 
+          p._safeCategory.includes('營養') || 
+          p._safeCategory.includes('营养')
+      )) return true;
+      
+      // 沒填分類的防線：只要不是外在保養品名字，就當作內在
       if (!p._safeCategory && !isOuter(p.name)) return true;
       return false;
     })
   } else if (selectedCategory.value === '外在保養') {
     list = list.filter(p => {
-      // 優先看資料庫分類是否包含「外」或「保養」
-      if (p._safeCategory && (p._safeCategory.includes('外') || p._safeCategory.includes('保養'))) return true;
-      // 如果資料庫沒填，用關鍵字判斷
+      // 同時支援繁體「保養」與簡體「保养」 (「外」字繁簡長一樣)
+      if (p._safeCategory && (
+          p._safeCategory.includes('外') || 
+          p._safeCategory.includes('保養') || 
+          p._safeCategory.includes('保养')
+      )) return true;
+      
       if (!p._safeCategory && isOuter(p.name)) return true;
       return false;
     })
   }
 
-  // 🟢 5. 執行搜尋關鍵字過濾
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
     list = list.filter(p => (p.name?.toLowerCase().includes(q)) || (p.name_en?.toLowerCase().includes(q)) || (p.id?.toLowerCase().includes(q)))
