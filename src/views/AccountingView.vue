@@ -415,6 +415,19 @@ async function handleDeleteTransaction(t) {
       </div>
     </div>
 
+    <div v-if="store.hasMoreTxn" style="text-align: center; margin: 20px 0 40px 0;">
+  <button 
+    @click="store.loadMoreTransactions()" 
+    :disabled="store.isFetchingMore"
+    style="background: #eef2ff; color: #4f46e2; border: 1.5px solid #c7d2fe; padding: 12px 24px; border-radius: 12px; font-weight: 800; cursor: pointer; transition: 0.2s;"
+  >
+    {{ store.isFetchingMore ? '🔄 正在從資料庫拿取中...' : '📜 載入更舊的交易紀錄' }}
+  </button>
+</div>
+<div v-else style="text-align: center; margin: 20px 0 40px 0; color: #94a3b8; font-weight: 700; font-size: 13px;">
+  ✅ 已經到底了，所有歷史交易皆已載入
+</div>
+
     <div class="filter-row">
       <button 
         v-for="cat in uniqueCategories" 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
@@ -19,6 +19,16 @@ const filterTime = ref('month')
 const customStart = ref('')
 const customEnd = ref('')
 const filterBranch = ref('全部分店')
+
+// 🚀 新增：智能監聽「自訂區間」，一旦選擇且有日期，就自動去後台拿資料
+watch([filterTime, customStart, customEnd], async ([newTime, start, end]) => {
+  if (newTime === 'custom' && start && end) {
+    console.log(`🚀 智能補水：自動抓取 ${start} 至 ${end} 的歷史資料...`)
+    await store.fetchTransactionsByDateRange(start, end)
+  } else if (newTime === 'all') {
+    await store.loadMoreTransactions() // 如果選了「全部」，就手動載入一批舊資料
+  }
+})
 
 const showEditModal = ref(false)
 const showNewClientsModal = ref(false) 
