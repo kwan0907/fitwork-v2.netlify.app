@@ -381,31 +381,17 @@ const getExpiryClass = (dateStr) => {
 }
 
 function downloadCSVTemplate() {
-    // 🚀 改用 Excel 兼容的 HTML 格式輸出，直接生出 .xls 檔案
-    const htmlContent = `
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-        <head><meta charset="UTF-8"></head>
-        <body>
-            <table border="1">
-                <tr style="background-color: #4f46e2; color: white; font-weight: bold;">
-                    <th>姓名(必填)</th><th>電話</th><th>分店(觀塘/中環/佐敦)</th><th>狀態(active/prospect/absent)</th><th>加入日期(YYYY-MM-DD)</th><th>來源(廣告/傳單/朋友介紹等)</th><th>到期日(YYYY-MM-DD)</th><th>備註</th>
-                </tr>
-                <tr>
-                    <td>王大明</td><td>98765432</td><td>觀塘</td><td>active</td><td>2024-01-01</td><td>廣告</td><td></td><td>VIP客戶</td>
-                </tr>
-                <tr>
-                    <td>陳小美</td><td>91234567</td><td>中環</td><td>prospect</td><td></td><td>朋友介紹</td><td></td><td>需要多關心</td>
-                </tr>
-            </table>
-        </body>
-        </html>
-    `;
+    // 🚀 加入 \uFEFF 這是關鍵，它告訴 Excel 這是一個 UTF-8 的中文檔案，不會亂碼
+    const BOM = "\uFEFF"; 
+    const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect/absent),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD),備註\n";
+    const sample1 = "王大明,98765432,觀塘,active,2026-01-01,廣告,,範例客戶\n";
     
-    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
+    const csvContent = BOM + header + sample1;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = "fitwork_clients_template.xls"; // 🟢 變成 Excel 附檔名
+    link.setAttribute("href", url);
+    link.setAttribute("download", "fitwork_clients_template.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -419,38 +405,30 @@ function triggerFileInput() {
 async function handleImport(e) {
   const file = e.target.files[0];
   if (!file) return;
-  
+
   const reader = new FileReader();
   reader.onload = async (evt) => {
     try {
-      // 🚀 改用二進位方式讀取
-      const data = new Uint8Array(evt.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
+      const content = evt.target.result;
+      const lines = content.split('\n');
       
-      // 取得第一個工作表
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      
-      // 將 Excel 內容轉為 JSON 陣列
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-      // 過濾掉第一列標題，只保留數據
-      const rows = jsonData.slice(1);
+      // 移除標題列並過濾空行
+      const rows = lines.slice(1).filter(line => line.trim() !== '');
       
       let count = 0;
-      for (const row of rows) {
+      for (const line of rows) {
+        const row = line.split(',');
         if (!row[0]) continue; // 姓名為空則跳過
 
-        // 對應你的資料庫欄位
         const { error } = await supabase.from('clients').insert([{
           name: String(row[0] || '').trim(),
           phone: String(row[1] || '').trim(),
-          branch: row[2] || '觀塘',
-          status: row[3] || 'active',
-          join_date: row[4] || null,
-          source: row[5] || '其他',
-          expiry_date: row[6] || null,
-          remark: row[7] || '',
+          branch: (row[2] || '觀塘').trim(),
+          status: (row[3] || 'active').trim(),
+          join_date: row[4] ? row[4].trim() : null,
+          source: (row[5] || '其他').trim(),
+          expiry_date: row[6] ? row[6].trim() : null,
+          remark: (row[7] || '').trim(),
           owner_email: store.session?.user?.email
         }]);
         if (!error) count++;
@@ -459,12 +437,12 @@ async function handleImport(e) {
       alert(`✅ 成功匯入 ${count} 位客戶！`);
       store.syncAll();
     } catch (err) {
-      console.error('匯入失敗:', err);
-      alert('❌ 無法解析此 Excel 檔案，請確保使用正確的底稿。');
+      console.error('匯入出錯:', err);
+      alert('❌ 匯入失敗，請確保使用正確的 CSV 底稿。');
     }
   };
-  // 🚀 關鍵修改：使用 readAsArrayBuffer 以便處理 Excel 格式
-  reader.readAsArrayBuffer(file);
+  // 🚀 變回 readAsText，這是讀取 CSV 的標準方式
+  reader.readAsText(file);
 }
 </script>
 
