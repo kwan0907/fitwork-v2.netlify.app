@@ -36,6 +36,16 @@ const editingClient = ref({})
 const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
 })
+// 🟢 朋友介紹搜尋框專用變數
+const referrerSearch = ref('')
+const filteredReferrerOptions = computed(() => {
+  const q = referrerSearch.value.toLowerCase()
+  if (!q) return allClientsOptions.value
+  return allClientsOptions.value.filter(c => 
+    (c.name && c.name.toLowerCase().includes(q)) || 
+    (c.phone && c.phone.includes(q))
+  )
+})
 
 const getClientPackageStats = (clientName) => {
   if (!clientName) return { pkg10: 0, pkg35: 0 }
@@ -205,6 +215,7 @@ function handleActionRetail() {
 function openAddModal() {
     newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
     consumeMyGift.value = false 
+    referrerSearch.value = '' // 🟢 新增：清空搜尋框
     showAddModal.value = true
 }
 
@@ -302,6 +313,7 @@ function openEditModal(client) {
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
+  referrerSearch.value = '' // 🟢 新增：清空搜尋框
   showEditModal.value = true
 }
 
@@ -531,9 +543,10 @@ async function handleImport(event) {
         
         <div class="f-item" v-if="editingClient.source === '朋友介紹' || editingClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
             <label>介紹人</label>
+            <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
             <select v-model="editingClient.referred_by_id" class="modern-select">
                 <option :value="null">請選擇介紹人...</option>
-                <option v-for="c in allClientsOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+                <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
             </select>
         </div>
 
@@ -635,9 +648,10 @@ async function handleImport(event) {
 
         <div class="f-item" v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
             <label>是哪位朋友介紹的？(計算代數)</label>
+            <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
             <select v-model="newClient.referred_by_id" class="modern-select">
                 <option :value="null">請選擇...</option>
-                <option v-for="c in allClientsOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+                <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
             </select>
         </div>
 
