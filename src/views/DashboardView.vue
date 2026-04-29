@@ -545,16 +545,24 @@ const chartOptions = {
     <div class="section-title" style="margin-top: 10px;">📅 近期試堂預約 (點擊可修改)</div>
     <div class="card p-list" style="margin-bottom: 20px; border-color: #a5b4fc; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);">
       <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
+      
       <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
         <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
+        
         <div class="p-info">
-          <div class="name">
-            {{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span>
-            <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn" @click.stop>💬 WhatsApp</a>
+          <div class="p-info-text">
+            <div class="name-wrapper">
+              <span class="name-text">{{ p.name }}</span>
+              <span class="time">{{ getTimeStr(p.trial_date) }}</span>
+            </div>
+            <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
           </div>
-          <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
+          
+          <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn-pill" @click.stop>
+            💬 WhatsApp
+          </a>
         </div>
-      </div>
+        </div>
     </div>
 
     <div class="chart-wrapper">
@@ -870,8 +878,25 @@ const chartOptions = {
 .text-green { color: #10b981; }
 .text-white { color: white; }
 .text-purple { color: #8b5cf6; }
-.wts-btn { background: #25D366; color: white; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; text-decoration: none; box-shadow: 0 2px 5px rgba(37, 211, 102, 0.3); transition: 0.2s; }
-.wts-btn:active { transform: scale(0.95); }
+
+/* 🟢 手機自適應 (RWD) 預約卡片排版 */
+.p-item { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
+.p-date { background: #fffbeb; color: #d97706; padding: 10px 6px; border-radius: 12px; text-align: center; min-width: 55px; flex-shrink: 0; }
+.p-date .m { font-size: 11px; font-weight: 800; }
+.p-date .d { font-size: 18px; font-weight: 900; }
+
+.p-info { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.p-info-text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+
+/* 名字與時間的彈性排版，名字太長自動變 ... */
+.name-wrapper { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.name-text { font-weight: 800; font-size: 16px; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.time { font-size: 11px; color: #d97706; background: #fff7ed; padding: 2px 6px; border-radius: 6px; font-weight: 800; flex-shrink: 0; }
+.meta { font-size: 12px; color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 永遠置右的 WhatsApp 藥丸按鈕 */
+.wts-btn-pill { background: #25D366; color: white; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.3); white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
+.wts-btn-pill:active { transform: scale(0.95); background: #1da851; }
 
 @media (max-width: 600px) {
   .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }
