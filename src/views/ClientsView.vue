@@ -381,74 +381,87 @@ const getExpiryClass = (dateStr) => {
 }
 
 function downloadCSVTemplate() {
-    const BOM = "\uFEFF"; 
-    const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect/absent),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD),備註\n";
-    const sample1 = "王大明,98765432,觀塘,active,2024-01-01,廣告,,VIP客戶\n";
-    const sample2 = "陳小美,91234567,中環,prospect,,,朋友介紹,需要多關心\n";
+    // 🚀 改用 Excel 兼容的 HTML 格式輸出，直接生出 .xls 檔案
+    const htmlContent = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="UTF-8"></head>
+        <body>
+            <table border="1">
+                <tr style="background-color: #4f46e2; color: white; font-weight: bold;">
+                    <th>姓名(必填)</th><th>電話</th><th>分店(觀塘/中環/佐敦)</th><th>狀態(active/prospect/absent)</th><th>加入日期(YYYY-MM-DD)</th><th>來源(廣告/傳單/朋友介紹等)</th><th>到期日(YYYY-MM-DD)</th><th>備註</th>
+                </tr>
+                <tr>
+                    <td>王大明</td><td>98765432</td><td>觀塘</td><td>active</td><td>2024-01-01</td><td>廣告</td><td></td><td>VIP客戶</td>
+                </tr>
+                <tr>
+                    <td>陳小美</td><td>91234567</td><td>中環</td><td>prospect</td><td></td><td>朋友介紹</td><td></td><td>需要多關心</td>
+                </tr>
+            </table>
+        </body>
+        </html>
+    `;
     
-    const csvContent = "data:text/csv;charset=utf-8," + BOM + header + sample1 + sample2;
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "fitwork_clients_template.csv");
+    link.href = url;
+    link.download = "fitwork_clients_template.xls"; // 🟢 變成 Excel 附檔名
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 function triggerFileInput() {
     document.getElementById('csvFileInput').click()
 }
 
-async function handleImport(event) {
-    const file = event.target.files[0]
-    if (!file) return
+async function handleImport(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  
+  const reader = new FileReader()
+  reader.onload = async (evt) => {
+    try {
+      const data = new Uint8Array(evt.target.result)
+      const workbook = XLSX.read(data, { type: 'array' })
+      
+      // 抓取第一個 Sheet 的內容並轉成 JSON
+      const firstSheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[firstSheetName]
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+      // 移除標題列 (第一列)
+      const rows = jsonData.slice(1)
+      
+      let count = 0
+      for (const row of rows) {
+        // row[0]=姓名, row[1]=電話, row[2]=分店, row[3]=狀態, row[4]=加入日期, row[5]=來源, row[6]=到期日, row[7]=備註
+        if (!row[0]) continue // 沒姓名就跳過
 
-    const reader = new FileReader()
-    reader.onload = async (e) => {
-        try {
-            const text = e.target.result
-            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '')
-            if (lines.length <= 1) return alert('❌ CSV 檔案沒有資料列！')
-
-            const insertData = []
-
-            for (let i = 1; i < lines.length; i++) {
-                const cols = lines[i].split(',')
-                const name = cols[0]?.trim()
-                if (!name) continue 
-                
-                let parsedStatus = 'active';
-                const statusStr = cols[3]?.trim();
-                if (statusStr === 'prospect') parsedStatus = 'prospect';
-                else if (statusStr === 'absent') parsedStatus = 'absent';
-
-                insertData.push({
-                    name, phone: cols[1]?.trim() || '', branch: cols[2]?.trim() || '觀塘', 
-                    status: parsedStatus, 
-                    join_date: cols[4]?.trim() || null, source: cols[5]?.trim() || '其他', 
-                    expiry_date: cols[6]?.trim() || null, remark: cols[7]?.trim() || '', 
-                    own_email: user.email, user_id: user.id
-                })
-            }
-            if (insertData.length === 0) return alert('❌ 沒有找到有效的客戶資料！請檢查格式。')
-
-            const { error } = await supabase.from('clients').insert(insertData)
-            if (error) throw error
-
-            alert(`✅ 成功匯入 ${insertData.length} 筆客戶資料！`)
-            store.syncAll() 
-        } catch (err) {
-            console.error('匯入失敗:', err)
-            alert('❌ 匯入發生錯誤: ' + err.message)
-        } finally {
-            event.target.value = ''
-        }
+        const { error } = await supabase.from('clients').insert([{
+          name: String(row[0] || '').trim(),
+          phone: String(row[1] || '').trim(),
+          branch: row[2] || '觀塘',
+          status: row[3] || 'active',
+          join_date: row[4] || null,
+          source: row[5] || '其他',
+          expiry_date: row[6] || null,
+          remark: row[7] || '',
+          owner_email: store.session?.user?.email
+        }])
+        if (!error) count++
+      }
+      
+      alert(`✅ 成功匯入 ${count} 位客戶！`)
+      store.syncAll()
+    } catch (err) {
+      console.error('匯入失敗:', err)
+      alert('❌ 檔案格式錯誤或損毀，請確保使用下載的底稿填寫。')
     }
-    reader.readAsText(file)
+  }
+  // 🚀 注意：這裡要改用 readAsArrayBuffer 才能讀取 Excel 二進位檔
+  reader.readAsArrayBuffer(file)
 }
 </script>
 

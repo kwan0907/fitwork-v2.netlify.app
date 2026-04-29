@@ -593,9 +593,9 @@ const chartOptions = {
       </div>
     </div>
     
-    <div class="section-title" style="margin-top: 25px;">🌟 區間客戶增長與來源</div>
-    <div class="card" style="margin-bottom: 20px; padding: 20px;">
-      <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 15px;">
+  <div class="section-title" style="margin-top: 15px;">🌟 區間客戶增長與來源</div>
+    <div class="card compact-card" style="margin-bottom: 15px; padding: 12px 15px;">
+      <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
         
         <div @click="showNewClientsModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-left: -10px; border: 1px solid transparent; transition: 0.2s;">
           <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; gap: 6px;">
@@ -902,7 +902,7 @@ const chartOptions = {
 .source-grid { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 5px; }
 .source-grid::-webkit-scrollbar { height: 4px; }
 .source-grid::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-.src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 5px; text-align: center; flex: 1; min-width: 50px; }
+.src-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 6px 5px; text-align: center; flex: 1; min-width: 50px; }
 .src-lbl { font-size: 11px; color: #64748b; font-weight: 800; margin-bottom: 4px; white-space: nowrap; }
 .src-val { font-size: 18px; font-weight: 900; color: #1e293b; }
 .text-p { color: #4f46e2; }
