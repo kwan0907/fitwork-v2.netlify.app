@@ -9,7 +9,7 @@ const showAddModal = ref(false)
 const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
-const filterStatus = ref('active')
+const filterStatus = ref('active') // 預設顯示正式會員
 const filterMyGiftExpiring = ref(false) 
 
 const sortBy = ref('default') 
@@ -23,7 +23,7 @@ const getLocalHKDate = () => {
 const todayStr = getLocalHKDate()
 
 const defaultNewClient = { 
-  name: '', phone: '', branch: '觀塘', source: '廣告', status: 'active', 
+  name: '', phone: '', branch: '觀塘', source: '廣告', status: 'prospect', 
   is_vip: false, is_marathon: false, join_date: todayStr, 
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
   referred_by_id: null, vip_tier: '銅級(88折)', 
@@ -124,10 +124,22 @@ const filteredClients = computed(() => {
   let list = [...store.clients] 
   
   const q = clientSearch.value.toLowerCase()
-  if (q) list = list.filter(c => (c?.name && c?.name.toLowerCase().includes(q)) || (c?.phone && c?.phone.includes(q)))
-  if (filterBranch.value) list = list.filter(c => c?.branch === filterBranch.value)
-  if (filterStatus.value === 'active') list = list.filter(c => c?.status !== 'prospect')
-  else list = list.filter(c => c?.status === 'prospect')
+  if (q) {
+    list = list.filter(c => (c?.name && c?.name.toLowerCase().includes(q)) || (c?.phone && c?.phone.includes(q)))
+  }
+  
+  if (filterBranch.value) {
+    list = list.filter(c => c?.branch === filterBranch.value)
+  }
+  
+  // 🟢 缺席狀態的過濾邏輯
+  if (filterStatus.value === 'active') {
+    list = list.filter(c => c?.status === 'active')
+  } else if (filterStatus.value === 'prospect') {
+    list = list.filter(c => c?.status === 'prospect')
+  } else if (filterStatus.value === 'absent') {
+    list = list.filter(c => c?.status === 'absent')
+  }
 
   if (filterMyGiftExpiring.value) {
     const todayYMD = getLocalHKDate();
@@ -227,7 +239,6 @@ async function handleAddClient() {
   const mm = String(now.getMinutes()).padStart(2, '0');
   const ss = String(now.getSeconds()).padStart(2, '0');
 
-  // 🎁 如果是朋友介紹且使用了 MyGift，自動扣減介紹人的 MyGift
   if (consumeMyGift.value && dataToInsert.referred_by_id) {
     const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id);
     if (referrer) {
@@ -243,7 +254,6 @@ async function handleAddClient() {
       await supabase.from('transactions').insert(dummyTxn);
     }
   } 
-  // 🟢 如果是新增「預約客戶」且「沒有使用 MyGift」，自動產生 98 元帳單 (成本 52 / 利潤 46)
   else if (dataToInsert.status === 'prospect') {
     const trialIncomeTxn = {
       type: 'income', amount: 98, cost: 52, profit: 46,
@@ -319,7 +329,7 @@ const getExpiryClass = (dateStr) => {
 
 function downloadCSVTemplate() {
     const BOM = "\uFEFF"; 
-    const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD),備註\n";
+    const header = "姓名(必填),電話,分店(觀塘/中環/佐敦),狀態(active/prospect/absent),加入日期(YYYY-MM-DD),來源(廣告/傳單/朋友介紹等),到期日(YYYY-MM-DD),備註\n";
     const sample1 = "王大明,98765432,觀塘,active,2024-01-01,廣告,,VIP客戶\n";
     const sample2 = "陳小美,91234567,中環,prospect,,,朋友介紹,需要多關心\n";
     
@@ -357,9 +367,15 @@ async function handleImport(event) {
                 const cols = lines[i].split(',')
                 const name = cols[0]?.trim()
                 if (!name) continue 
+                
+                let parsedStatus = 'active';
+                const statusStr = cols[3]?.trim();
+                if (statusStr === 'prospect') parsedStatus = 'prospect';
+                else if (statusStr === 'absent') parsedStatus = 'absent';
+
                 insertData.push({
                     name, phone: cols[1]?.trim() || '', branch: cols[2]?.trim() || '觀塘', 
-                    status: cols[3]?.trim() === 'prospect' ? 'prospect' : 'active', 
+                    status: parsedStatus, 
                     join_date: cols[4]?.trim() || null, source: cols[5]?.trim() || '其他', 
                     expiry_date: cols[6]?.trim() || null, remark: cols[7]?.trim() || '', 
                     own_email: user.email, user_id: user.id
@@ -396,6 +412,8 @@ async function handleImport(event) {
       <div class="filter-row">
         <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
+        <button class="f-btn" :class="{active: filterStatus==='absent'}" @click="filterStatus='absent'">⚠️ 缺席/需補堂</button>
+        
         <div class="v-line"></div>
         <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
         <div class="v-line"></div>
@@ -431,8 +449,15 @@ async function handleImport(event) {
           </div>
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
+            
+            <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn" @click.stop>💬 WhatsApp</a>
+
             <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
               ⏰ {{ formatTrialDate(c.trial_date) }}
+            </span>
+            
+            <span v-if="c.status === 'absent'" class="trial-time-tag" style="background: #fee2e2; color: #ef4444;">
+              ⚠️ 缺席需補堂
             </span>
           </div>
 
@@ -440,7 +465,7 @@ async function handleImport(event) {
             📝 {{ c.remark }}
           </div>
 
-          <div class="c-packages" v-if="c.status !== 'prospect'">
+          <div class="c-packages" v-if="c.status !== 'prospect' && c.status !== 'absent'">
             🎟️ 買卡: 
             <span class="pkg-tag t-10" v-if="getClientPackageStats(c.name).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg10 }}</b></span>
             <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
@@ -454,9 +479,9 @@ async function handleImport(event) {
           
         </div>
         <div class="c-side">
-          <div class="c-gen" v-if="c.status!=='prospect'">Gen {{ getClientGen(c.id) }}</div>
+          <div class="c-gen" v-if="c.status !== 'prospect' && c.status !== 'absent'">Gen {{ getClientGen(c.id) }}</div>
           <div :class="['c-expiry', getExpiryClass(c.expiry_date)]">
-            {{ c.status==='prospect' ? '預約中' : (c.expiry_date || '無效期') }}
+            {{ c.status === 'prospect' ? '預約中' : (c.status === 'absent' ? '缺席' : (c.expiry_date || '無效期')) }}
           </div>
         </div>
       </div>
@@ -471,14 +496,28 @@ async function handleImport(event) {
         <div class="toggle-group" style="margin-bottom: 20px;">
           <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
           <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
+          <button class="t-btn" :class="{active: editingClient.status === 'absent'}" @click="editingClient.status = 'absent'" style="color: #ef4444;">缺席補堂</button>
         </div>
 
         <div class="section-title">👤 基本資料</div>
-        <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
-        <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
+        <div class="f-item">
+          <label>姓名</label>
+          <input v-model="editingClient.name" class="modern-inp">
+        </div>
+        <div class="f-item">
+          <label>電話</label>
+          <input v-model="editingClient.phone" class="modern-inp">
+        </div>
 
         <div class="grid-2">
-          <div class="f-item"><label>分店</label><select v-model="editingClient.branch" class="modern-select"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
+          <div class="f-item">
+            <label>分店</label>
+            <select v-model="editingClient.branch" class="modern-select">
+              <option value="觀塘">觀塘</option>
+              <option value="中環">中環</option>
+              <option value="佐敦">佐敦</option>
+            </select>
+          </div>
           <div class="f-item">
               <label>來源</label>
               <select v-model="editingClient.source" class="modern-select">
@@ -501,22 +540,31 @@ async function handleImport(event) {
         </div>
 
         <div class="section-title">📅 關鍵日期</div>
-        <div class="f-item" v-if="editingClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
-          <label>⏰ 預約試堂日期與時間</label>
+        <div class="f-item" v-if="editingClient.status === 'prospect' || editingClient.status === 'absent'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
+          <label>⏰ {{ editingClient.status === 'absent' ? '下次補堂日期與時間' : '預約試堂日期與時間' }}</label>
           <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
-          <label>📍 預約試堂地點 (同步分店資料)</label>
+          <label>📍 預約試堂地點</label>
           <select v-model="editingClient.branch" class="modern-select">
-            <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+            <option value="觀塘">觀塘</option>
+            <option value="中環">中環</option>
+            <option value="佐敦">佐敦</option>
           </select>
         </div>
+        
         <div class="grid-2">
-          <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
-          <div class="f-item"><label>套票到期日</label><input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空"></div>
+          <div class="f-item">
+            <label>加入日期</label>
+            <input type="date" v-model="editingClient.join_date" class="modern-date">
+          </div>
+          <div class="f-item">
+            <label>套票到期日</label>
+            <input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空">
+          </div>
         </div>
 
         <div class="section-title">💬 客戶備註</div>
         <div class="f-item">
-          <textarea v-model="editingClient.remark" class="modern-inp" style="height: 80px;" placeholder="輸入備註事項 (客戶要求、運動習慣等)..."></textarea>
+          <textarea v-model="editingClient.remark" class="modern-inp" style="height: 80px;" placeholder="輸入備註事項 (例如：缺席原因、客戶要求)..."></textarea>
         </div>
 
         <div class="section-title">🏆 項目設定</div>
@@ -553,16 +601,26 @@ async function handleImport(event) {
         </div>
 
         <div class="section-title">👤 基本資料</div>
-        <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
-        <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話"></div>
+        <div class="f-item">
+          <label>姓名</label>
+          <input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名">
+        </div>
+        <div class="f-item">
+          <label>電話</label>
+          <input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話">
+        </div>
         
         <div class="grid-2">
-            <div class="f-item"><label>分店</label>
+            <div class="f-item">
+                <label>分店</label>
                 <select v-model="newClient.branch" class="modern-select">
-                    <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+                    <option value="觀塘">觀塘</option>
+                    <option value="中環">中環</option>
+                    <option value="佐敦">佐敦</option>
                 </select>
             </div>
-            <div class="f-item"><label>認識來源</label>
+            <div class="f-item">
+                <label>認識來源</label>
                 <select v-model="newClient.source" class="modern-select">
                     <option value="廣告">廣告</option>
                     <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
@@ -596,14 +654,22 @@ async function handleImport(event) {
         <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
           <label>⏰ 預約試堂日期與時間</label>
           <input type="datetime-local" v-model="newClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
-          <label>📍 預約試堂地點 (同步分店資料)</label>
+          <label>📍 預約試堂地點</label>
           <select v-model="newClient.branch" class="modern-select">
-            <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+            <option value="觀塘">觀塘</option>
+            <option value="中環">中環</option>
+            <option value="佐敦">佐敦</option>
           </select>
         </div>
         <div class="grid-2">
-          <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>
-          <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
+          <div class="f-item">
+            <label>成為客戶日期</label>
+            <input type="date" v-model="newClient.join_date" class="modern-date">
+          </div>
+          <div class="f-item">
+            <label>套票有效期 (選填)</label>
+            <input type="date" v-model="newClient.expiry_date" class="modern-date">
+          </div>
         </div>
 
         <div class="section-title">💬 客戶備註</div>
@@ -679,7 +745,7 @@ async function handleImport(event) {
 .search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
 .inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
 .filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; }
-.f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer;}
+.f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer; transition: 0.2s; }
 .f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
 .mygift-btn { border-color: #8b5cf6; color: #8b5cf6; background: #faf5ff; }
 .mygift-btn.active { background: #8b5cf6; color: white; border-color: #8b5cf6; }
@@ -690,14 +756,20 @@ async function handleImport(event) {
 .sort-select:focus { border-color: #6366f1; }
 .btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s;}
 .btn-outline:active { transform: scale(0.95); }
+
 .client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; cursor: pointer;}
 .client-card:active { transform: scale(0.97); }
 .c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; }
 .c-name { font-weight: 800; font-size: 17px; color: #1e293b; }
 .badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
 .badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
-.c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; }
-.trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; margin-left: 8px; font-size: 11px; }
+.c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+
+/* 🟢 WhatsApp 按鈕放大優化 */
+.wts-btn { background: #25D366; color: white; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; text-decoration: none; box-shadow: 0 2px 5px rgba(37,211,102,0.3); display: inline-block; transition: 0.2s; }
+.wts-btn:active { transform: scale(0.95); }
+
+.trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; font-size: 11px; }
 .c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;}
 .pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
 .t-10 { background: #3b82f6; }
@@ -706,25 +778,11 @@ async function handleImport(event) {
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
 .c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
 
-/* 🟢 解決手機卡住：徹底改寫 Modal 排版 */
-.modal-overlay { 
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; 
-  display: flex; align-items: flex-start; justify-content: center; 
-  padding-top: 8vh; padding-bottom: 8vh;
-  overflow-y: auto; -webkit-overflow-scrolling: touch;
-}
-.center-modal { 
-  background: white; width: 90%; max-width: 450px; border-radius: 24px; 
-  padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); 
-  animation: popIn 0.3s ease-out; margin: auto; position: relative;
-}
-.scrollable-modal { 
-  max-height: 80vh; overflow-y: auto; padding-right: 5px; 
-  overscroll-behavior: contain;
-}
-@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-start; justify-content: center; padding-top: 5vh; padding-bottom: 5vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.center-modal { background: white; width: 90%; max-width: 480px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); animation: popIn 0.3s ease-out; margin: auto; position: relative; }
+.scrollable-modal { max-height: 80vh; overflow-y: auto; padding-right: 5px; overscroll-behavior: contain; }
 
+@keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center;}
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
@@ -744,15 +802,11 @@ async function handleImport(event) {
 .btn-confirm { flex: 1; background: #6366f1; color: white; border: none; padding: 16px; border-radius: 16px; font-weight: 800; font-size: 16px; box-shadow: 0 10px 20px rgba(99,102,241,0.2); cursor: pointer;}
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
+.tag-red { color: #e11d48; } .tag-orange { color: #f59e0b; } .tag-green { color: #10b981; }
 
 .action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 20vh; }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
-.action-big-btn { 
-  display: flex; align-items: center; gap: 15px; 
-  width: 100%; padding: 18px; border-radius: 20px; 
-  border: none; cursor: pointer; transition: 0.2s all;
-  background: #f8fafc; text-align: left;
-}
+.action-big-btn { display: flex; align-items: center; gap: 15px; width: 100%; padding: 18px; border-radius: 20px; border: none; cursor: pointer; transition: 0.2s all; background: #f8fafc; text-align: left; }
 .action-big-btn:active { transform: scale(0.96); }
 .action-big-btn .emoji-icon { font-size: 28px; background: white; padding: 10px; border-radius: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 .action-big-btn .text-left { display: flex; flex-direction: column; gap: 4px; }

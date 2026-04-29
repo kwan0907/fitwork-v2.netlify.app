@@ -521,7 +521,7 @@ const chartOptions = {
 <template>
   <div class="page" style="padding-bottom: 150px;">
     <div class="d-header">
-      <h2 class="title">數據中心 2.0</h2>
+      <h2 class="title">數據中心 </h2>
       <div class="filters">
         <select v-model="filterTime" class="f-sel">
           <option value="today">今日</option>
@@ -550,7 +550,7 @@ const chartOptions = {
         <div class="p-info">
           <div class="name">
             {{ p.name }} <span class="time">{{ getTimeStr(p.trial_date) }}</span>
-            <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn" @click.stop>💬 Wts</a>
+            <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn" @click.stop>💬 WhatsApp</a>
           </div>
           <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
         </div>
@@ -943,9 +943,12 @@ const chartOptions = {
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-start; justify-content: center; padding-top: 5vh; padding-bottom: 5vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .edit-modal { background: white; width: 90%; max-width: 480px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); margin: auto; position: relative; max-height: 85vh; overflow-y: auto; overscroll-behavior: contain; }
 /* WhatsApp 綠色按鈕樣式 */
-.wts-btn { background: #25D366; color: white; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; text-decoration: none; margin-left: 8px; box-shadow: 0 2px 4px rgba(37,211,102,0.2); }
-.wts-btn-large { background: #25D366; color: white; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.2); }
+/* 🟢 放大版的 WhatsApp 按鈕 (增加 padding 讓手機超好點) */
+.wts-btn { background: #25D366; color: white; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 900; text-decoration: none; margin-left: 8px; box-shadow: 0 4px 10px rgba(37,211,102,0.3); display: inline-block; transition: 0.2s; }
+.wts-btn:active { transform: scale(0.95); background: #1da851; }
 
+.wts-btn-large { background: #25D366; color: white; padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 900; text-decoration: none; margin-left: 10px; display: inline-block; box-shadow: 0 4px 12px rgba(37,211,102,0.3); transition: 0.2s; }
+.wts-btn-large:active { transform: scale(0.95); background: #1da851; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; }
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center; }
