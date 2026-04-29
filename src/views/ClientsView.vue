@@ -48,16 +48,27 @@ const filteredReferrerOptions = computed(() => {
 })
 
 const getClientPackageStats = (clientName) => {
-  if (!clientName) return { pkg10: 0, pkg35: 0 }
-  let pkg10 = 0, pkg35 = 0
+  if (!clientName) return { pkg10: 0, pkg35: 0, other: 0 }
+  let pkg10 = 0, pkg35 = 0, other = 0
+  const nameLower = clientName.trim().toLowerCase();
   
   store.transactions.forEach(t => {
-    if ((t.category === '運動套票' || t.category === '運動') && t.note && t.note.includes(clientName)) {
-      if (t.amount === 850 || t.note.includes('10點') || t.note.includes('pkg_10')) pkg10++
-      if (t.amount === 2550 || t.amount === 2800 || t.note.includes('35點') || t.note.includes('pkg_35')) pkg35++
+    const tClientName = (t.client_name || '').trim().toLowerCase();
+    const tNote = (t.note || '').trim().toLowerCase();
+    const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
+    
+    if (isMatch && t.type === 'income') {
+      const noteStr = t.note || ''
+      if (t.amount === 850 || noteStr.includes('10點') || noteStr.includes('pkg_10')) {
+        pkg10++
+      } else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點') || noteStr.includes('pkg_35')) {
+        pkg35++
+      } else if (t.category === '運動' || t.category === '運動套票' || noteStr.includes('體驗卡') || noteStr.includes('堂')) {
+        other++
+      }
     }
   })
-  return { pkg10, pkg35 }
+  return { pkg10, pkg35, other }
 }
 
 const parseLocal = (dateStr) => {
@@ -130,14 +141,18 @@ const getMyGiftStats = (client) => {
   return { available: validTickets.length, closestExpiry: cYMD };
 }
 
-// 🟢 新增：智能尋找該客戶最早購買套票/運動的日期
+// 🟢 新增：智能尋找該客戶最早購買套票/運動的日期 (忽略大小寫與空格)
 const getEarliestTxnDate = (clientName) => {
   if (!clientName) return null;
   let earliest = null;
+  const nameLower = clientName.trim().toLowerCase();
+  
   store.transactions.forEach(t => {
-    // 比對名字，並確認是買套票或運動
-    const isMatch = t.client_name === clientName || (t.note && t.note.includes(clientName));
-    if (isMatch && (t.category === '運動套票' || t.category === '運動')) {
+    const tClientName = (t.client_name || '').trim().toLowerCase();
+    const tNote = (t.note || '').trim().toLowerCase();
+    const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
+    
+    if (isMatch && t.type === 'income' && (t.category === '運動套票' || t.category === '運動' || t.category === '試堂')) {
       const d = String(t.created_at).slice(0, 10);
       if (!earliest || d < earliest) earliest = d;
     }
@@ -505,11 +520,15 @@ async function handleImport(event) {
             🎟️ 買卡: 
             <span class="pkg-tag t-10" v-if="getClientPackageStats(c.name).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg10 }}</b></span>
             <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
-            <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0">尚未買卡</span>
+            
+            <span class="pkg-tag" style="background: #0ea5e9;" v-if="getClientPackageStats(c.name).other > 0">其他套票 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).other }}</b></span>
+            
+            <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0 && getClientPackageStats(c.name).other === 0">尚未買卡</span>
             
             <span class="pkg-tag mygift-tag" v-if="getMyGiftStats(c).available > 0">
-  🎁 MyGift: {{ getMyGiftStats(c).available }}張<b class="expiry-text">(至 {{ getMyGiftStats(c).closestExpiry }})</b>
-</span>
+              🎁 MyGift: {{ getMyGiftStats(c).available }}張 
+              <b class="expiry-text">(至 {{ getMyGiftStats(c).closestExpiry }})</b>
+            </span>
           </div>
           
         </div>

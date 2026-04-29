@@ -14,7 +14,27 @@ const getLocalYMD = () => {
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().split('T')[0]
 }
+// ==========================================
+// 🟢 新增：月份過濾邏輯
+// ==========================================
+const filterMonth = ref('all')
 
+// 自動抓取資料庫內所有出現過的月份 (由新到舊排序)
+const availableMonths = computed(() => {
+  const months = new Set()
+  store.transactions.forEach(t => {
+    if (t?.created_at) {
+      months.add(String(t.created_at).substring(0, 7)) // 只取 'YYYY-MM'
+    }
+  })
+  return Array.from(months).sort((a, b) => b.localeCompare(a)) 
+})
+
+// 把 2026-04 轉換成漂亮的 2026年4月
+const formatMonthLabel = (ym) => {
+  const [y, m] = ym.split('-')
+  return `${y}年${parseInt(m)}月`
+}
 const showExpModal = ref(false)
 const editingTxn = ref(null)
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
@@ -67,10 +87,15 @@ const uniqueCategories = computed(() => {
 const groupedTxns = computed(() => {
   const g = {}
   
-  // 🟢 根據選擇的分類過濾流水帳
-  const filteredList = activeCategory.value === '全部' 
+  // 1. 根據選擇的分類過濾
+  let filteredList = activeCategory.value === '全部' 
     ? store.transactions 
     : store.transactions.filter(t => t?.category === activeCategory.value)
+
+  // 2. 🟢 根據選擇的月份過濾
+  if (filterMonth.value !== 'all') {
+    filteredList = filteredList.filter(t => String(t?.created_at || '').startsWith(filterMonth.value))
+  }
 
   filteredList.forEach(t => {
     // 🛡️ 加上防護盾
@@ -85,7 +110,6 @@ const groupedTxns = computed(() => {
   })
   
   return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>{
-    // 🛡️ 加上防護盾，預防 undefinded 導致 split 失敗
     const d1 = a?.date || ''
     const d2 = b?.date || ''
     if (!d1 || !d2) return 0;
@@ -289,9 +313,17 @@ async function handleDeleteTransaction(t) {
 
 <template>
   <div class="page" style="padding-bottom: 150px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
       <h2 class="page-title" style="margin:0;">收支流水帳</h2>
-      <button class="btn-primary" style="padding:10px 16px; border-radius:12px; font-weight:800;" @click="openExpForm">+ 新增收支</button>
+      
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <select v-model="filterMonth" class="modern-select" style="padding: 8px 12px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0;">
+          <option value="all">所有月份</option>
+          <option v-for="m in availableMonths" :key="m" :value="m">{{ formatMonthLabel(m) }}</option>
+        </select>
+        
+        <button class="btn-primary" style="padding:10px 16px; border-radius:12px; font-weight:800;" @click="openExpForm">+ 新增收支</button>
+      </div>
     </div>
 
     <div class="filter-row">
@@ -307,7 +339,7 @@ async function handleDeleteTransaction(t) {
     </div>
 
     <div v-if="groupedTxns.length === 0" style="text-align: center; color: #94a3b8; font-weight: 800; margin-top: 50px;">
-      目前沒有「{{ activeCategory }}」的相關紀錄
+      目前沒有相關紀錄
     </div>
 
     <div v-for="group in groupedTxns" :key="group.date">
