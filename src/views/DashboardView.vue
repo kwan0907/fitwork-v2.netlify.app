@@ -37,6 +37,7 @@ const showFunnelModal = ref(false)
 const showMyGiftModal = ref(false) 
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
+const showTrendChart = ref(false) // 🚀 新增：預設收合七天走勢圖表
 
 const getMonthStr = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '';
@@ -509,34 +510,32 @@ const chartOptions = {
     <div v-if="filterTime === 'custom'" class="custom-date-box">
       <input type="date" v-model="customStart" class="d-inp"> <span>至</span> <input type="date" v-model="customEnd" class="d-inp">
     </div>
-
-    <div class="section-title" style="margin-top: 10px;">📅 近期試堂預約 (點擊可修改)</div>
-    <div class="card p-list" style="margin-bottom: 20px; border-color: #a5b4fc; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);">
-      <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
-      
-      <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
-        <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
+ <div class="section-title" style="margin-top: 10px;">📅 近期試堂預約 (點擊可修改)</div>
+    <div class="urgent-action-box" style="margin-bottom: 20px;">
+      <div class="card p-list" style="margin-bottom: 0; border-color: #a5b4fc; box-shadow: 0 4px 15px rgba(79, 70, 229, 0.1);">
+        <div v-if="upcomingTrials.length === 0" class="empty">目前無預約資料</div>
         
-        <div class="p-info">
-          <div class="p-info-text">
-            <div class="name-wrapper">
-              <span class="name-text">{{ p.name }}</span>
-              <span class="time">{{ getTimeStr(p.trial_date) }}</span>
-            </div>
-            <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
-          </div>
+        <div v-for="p in upcomingTrials" :key="p.id" class="p-item clickable" @click="openTrialEdit(p)">
+          <div class="p-date"><div class="m">{{ getMonthStr(p.trial_date) }}</div><div class="d">{{ getDayStr(p.trial_date) }}</div></div>
           
-          <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn-pill" @click.stop>
-            💬 Wts
-          </a>
+          <div class="p-info">
+            <div class="p-info-text">
+              <div class="name-wrapper">
+                <span class="name-text">{{ p.name }}</span>
+                <span class="time">{{ getTimeStr(p.trial_date) }}</span>
+              </div>
+              <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
+            </div>
+            
+            <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn-pill" @click.stop>
+              💬 Wts
+            </a>
+          </div>
         </div>
-        </div>
+      </div>
     </div>
 
-    <div class="chart-wrapper">
-      <div class="chart-header">📈 過去 7 天趨勢走勢</div>
-      <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
-    </div>
+   
 
     <div class="finance-grid" style="margin-top: 20px; grid-template-columns: 1fr 1fr 1fr;">
       <div class="f-card"><div class="f-val text-green">$ {{ financialStats.revenue.toLocaleString() }}</div><div class="f-label">區間營業額</div></div>
@@ -641,7 +640,7 @@ const chartOptions = {
       <div class="b-card"><div class="num">{{ branchCounts.jordan }}</div><div class="loc">佐敦</div></div>
     </div>
 
-    <div class="marathon-card">
+    <div class="marathon-card compact-card">
       <div class="m-title">客戶轉馬拉松百分比</div>
       <div class="m-val">{{ marathonRate }}% <span style="float:right; font-size:32px;">🏃</span></div>
       <div class="m-foot"><span>活躍: {{ activeClients.filter(c=>c?.is_marathon).length }} 人</span><span>正式會員: {{ activeClients.length }} 人</span></div>
@@ -649,7 +648,7 @@ const chartOptions = {
 
     <div class="section-title" v-if="Object.keys(cashSummary).length > 0">💰 經手人資金結算</div>
     <div class="grid-2">
-      <div v-for="(data, name, index) in cashSummary" :key="name" class="cash-card" :class="'border-'+(index%2)">
+      <div v-for="(data, name, index) in cashSummary" :key="name" class="cash-card compact-card" :class="'border-'+(index%2)">
         <div class="c-name">{{ name }}</div>
         <div class="c-total">$ {{ (data.in - data.out).toLocaleString() }}</div>
         <div class="c-foot"><span>收: ${{ data.in }}</span><span>支: ${{ data.out }}</span></div>
@@ -666,6 +665,15 @@ const chartOptions = {
         <div class="s-label" style="color: #7c3aed;">🎁 擁有未消耗 MyGift 優惠</div>
         <div class="s-sub" style="color: #8b5cf6;">(區間內共消耗: {{ myGiftConsumedTotal }} 張) 🖱️ 點擊查看名單</div>
       </div>
+    </div>
+
+    <button @click="showTrendChart = !showTrendChart" class="toggle-chart-btn">
+      📊 {{ showTrendChart ? '收起' : '展開' }}過去七天趨勢走勢
+    </button>
+
+    <div v-show="showTrendChart" class="chart-wrapper">
+      <div class="chart-header">📈 過去 7 天趨勢走勢</div>
+      <div class="canvas-container"><Line :data="trendChartData" :options="chartOptions" /></div>
     </div>
 
     <div v-if="showMyGiftModal" class="modal-overlay" @click.self="showMyGiftModal = false">
@@ -964,4 +972,50 @@ const chartOptions = {
 .mod-inp:focus { border-color: #4f46e2; }
 .btn-save { margin-top: 25px; width: 100%; padding: 16px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; transition: 0.2s;}
 .btn-save:active { transform: scale(0.96); }
+/* =========================================
+   🚀 Dashboard 新增排版樣式
+   ========================================= */
+
+/* 獨立滾動的試堂名單框 (約顯示 4 個人的高度) */
+.urgent-action-box {
+  max-height: 330px; 
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: transparent;
+  padding-right: 5px; /* 留一點空間給滾動條 */
+}
+/* 隱藏滾動條維持乾淨 */
+.urgent-action-box::-webkit-scrollbar { width: 4px; }
+.urgent-action-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+/* 壓扁卡片的魔法 */
+.compact-card {
+  padding: 15px !important;
+  margin-top: 10px !important;
+}
+.compact-card .m-val {
+  margin: 5px 0 !important;
+  font-size: 32px !important;
+  padding-bottom: 8px !important;
+}
+.compact-card .c-total {
+  font-size: 20px !important;
+  margin: 5px 0 !important;
+}
+
+/* 圖表展開開關按鈕 */
+.toggle-chart-btn {
+  width: 100%;
+  padding: 15px;
+  background: white;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  font-weight: 800;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.02);
+}
+.toggle-chart-btn:active { background: #f8fafc; }
 </style>
