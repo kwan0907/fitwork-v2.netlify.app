@@ -121,13 +121,68 @@ const groupedTxns = computed(() => {
   })
 })
 
+// ==========================================
+// 🏃 套裝拆解引擎：為了退還庫存與再來一套
+// ==========================================
+const marathonCombos = [
+  {
+    name: '慢跑計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 1 },
+      { name: '佳能蛋白質粉', qty: 1 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 }
+    ]
+  },
+  {
+    name: '快跑計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 1 },
+      { name: '佳能蛋白質粉', qty: 1 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 }
+    ]
+  },
+  {
+    name: '運動vip計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 5 },
+      { name: '佳能蛋白質粉', qty: 5 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 },
+      { name: '消脂片', qty: 1 },
+      { name: '抗脂片', qty: 1 }
+    ]
+  },
+  {
+    name: '運動vVip計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 5 },
+      { name: '佳能蛋白質粉', qty: 5 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 },
+      { name: '消脂片', qty: 1 },
+      { name: '抗脂片', qty: 1 },
+      { name: '夜寧新營養飲品', qty: 1 },
+      { name: '莓之寶', qty: 1 },
+      { name: '營養纖維粉(蘋果味)', qty: 1 },
+      { name: '膠原蛋白美肌飲料', qty: 1 },
+      { name: '深海魚油', qty: 1 } 
+    ]
+  }
+]
+
 function handleRepeatOrder(t) {
   const { client, text } = getDisplayData(t)
   let items = []
   
-  const match = t?.note?.match(/\((.*?)\)$/)
+  const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
-    const parts = match[1].split(', ')
+    const itemString = match[1]
+    // 🟢 智能正則：只用逗號分隔「不在括號內」的產品
+    const parts = itemString.split(/,\s*(?![^()]*\))/)
     parts.forEach(p => {
       const lastX = p.lastIndexOf('x')
       if (lastX !== -1) {
@@ -232,7 +287,7 @@ async function saveTransaction() {
 }
 
 async function handleDeleteTransaction(t) {
-  if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用/採購紀錄，系統將自動同步校正庫存)')) return
+  if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用/採購/套裝紀錄，系統將自動同步校正庫存)')) return
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
@@ -240,43 +295,77 @@ async function handleDeleteTransaction(t) {
   let itemsToRefund = []
   let isProcurement = false 
   
-  if (t?.category === '零售收入' && t?.note) {
-    const match = t.note.match(/\((.*?)\)$/)
-    if (match) {
-      const parts = match[1].split(', ')
-      parts.forEach(p => {
-        const lastXIndex = p.lastIndexOf('x')
-        if (lastXIndex !== -1) {
-          const pName = p.substring(0, lastXIndex).trim()
-          const pQty = parseInt(p.substring(lastXIndex + 1))
-          if (pName && !isNaN(pQty)) itemsToRefund.push({ name: pName, qty: pQty })
+  // 🟢 智能拆解文字與退回庫存計算邏輯
+  const parseItemsStr = (str) => {
+    const parts = str.split(/,\s*(?![^()]*\))/)
+    parts.forEach(p => {
+      const lastXIndex = p.lastIndexOf('x')
+      if (lastXIndex !== -1) {
+        let pNameFull = p.substring(0, lastXIndex).trim()
+        const pQty = parseInt(p.substring(lastXIndex + 1))
+        
+        if (pNameFull && !isNaN(pQty)) {
+           // 偵測是否為馬拉松套裝
+           const comboMatch = pNameFull.match(/^(.*?)\s*(?:\((.*?)\))?$/)
+           const baseName = comboMatch ? comboMatch[1].trim() : pNameFull
+           const flavorsPart = comboMatch && comboMatch[2] ? comboMatch[2] : ''
+           
+           const comboDef = marathonCombos.find(c => c.name === baseName)
+           
+           if (comboDef) {
+              // 找到套裝了！拆解裡面的項目來退庫存
+              let sFlavor = ''
+              let aFlavor = ''
+              if (flavorsPart.includes('Shake:')) {
+                  sFlavor = flavorsPart.split('Shake:')[1].split(/,|$/)[0].trim()
+              }
+              if (flavorsPart.includes('蘆薈:')) {
+                  aFlavor = flavorsPart.split('蘆薈:')[1].split(/,|$/)[0].trim()
+              }
+              
+              comboDef.subItems.forEach(sub => {
+                  let sName = sub.name;
+                  if (sub.isShake && sFlavor) sName = `${sName}-${sFlavor}`
+                  if (sub.isAloe && aFlavor) sName = `${sName}-${aFlavor}`
+                  
+                  const existing = itemsToRefund.find(x => x.name === sName)
+                  if(existing) existing.qty += sub.qty * pQty
+                  else itemsToRefund.push({ name: sName, qty: sub.qty * pQty })
+              })
+           } else {
+              // 普通產品，直接退還
+              const existing = itemsToRefund.find(x => x.name === pNameFull)
+              if(existing) existing.qty += pQty
+              else itemsToRefund.push({ name: pNameFull, qty: pQty })
+           }
         }
-      })
+      }
+    })
+  }
+
+  // 分析不同類別的備註內容
+  if ((t?.category === '零售收入' || t?.category === '產品採購') && t?.note) {
+    if (t.category === '產品採購') isProcurement = true
+    
+    const match = t.note.match(/\((.*)\)$/)
+    if (match) {
+       parseItemsStr(match[1])
+    } else {
+       const str = t.note.replace(/^【.*?】\s*/, '').replace(/^(售出|採購)\s*/, '')
+       parseItemsStr(str)
     }
   } else if (t?.category === '自用消耗' && t?.note) {
     const match = t.note.match(/提取自用:\s*(.*?)\s*x(\d+)$/)
     if (match) {
       itemsToRefund.push({ name: match[1].trim(), qty: parseInt(match[2]) })
     }
-  } else if (t?.category === '產品採購' && t?.note) {
-    isProcurement = true
-    const match = t.note.match(/\((.*?)\)$/)
-    if (match) {
-      const parts = match[1].split(', ')
-      parts.forEach(p => {
-        const lastXIndex = p.lastIndexOf('x')
-        if (lastXIndex !== -1) {
-          const pName = p.substring(0, lastXIndex).trim()
-          const pQty = parseInt(p.substring(lastXIndex + 1))
-          if (pName && !isNaN(pQty)) itemsToRefund.push({ name: pName, qty: pQty })
-        }
-      })
-    }
   }
 
+  // 正式刪除紀錄
   const { error } = await supabase.from('transactions').delete().eq('id', t.id)
   if (error) return alert('刪除失敗: ' + error.message)
 
+  // 開始退還(或扣除)庫存
   if (itemsToRefund.length > 0) {
     let stockUpdateFailed = false
     
@@ -301,7 +390,7 @@ async function handleDeleteTransaction(t) {
     if (stockUpdateFailed) alert('⚠️ 流水帳已刪除，但部分庫存校正失敗！請手動至「庫存管理」確認。')
     else {
       if (isProcurement) alert('✅ 採購紀錄已刪除，剛剛進的貨已經從庫存中自動扣除了！')
-      else alert('✅ 紀錄已成功刪除，扣除的庫存已自動補回！')
+      else alert('✅ 紀錄已成功刪除，套裝與產品庫存已全數自動補回！')
     }
   } else {
     alert('✅ 紀錄已成功刪除')

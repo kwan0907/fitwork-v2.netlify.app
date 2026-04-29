@@ -29,14 +29,13 @@ const tierMapping = {
 }
 
 const searchProduct = ref('')
-// 🟢 新增了「馬拉松套裝」作為分類
 const categories = ['全部', '馬拉松套裝', '內在營養', '外在保養']
 const selectedCategory = ref('全部')
 const cart = ref([])
 const showCheckoutModal = ref(false)
 
 // ==========================================
-// 🏃 馬拉松套裝快選設定 (完全對接你資料庫裡的正式名稱)
+// 🏃 馬拉松套裝快選設定
 // ==========================================
 const showComboModal = ref(false)
 const selectedCombo = ref(null)
@@ -151,7 +150,6 @@ onMounted(() => {
     data.items.forEach(item => {
       let flavor = ''
       let baseName = item.name
-      // 🟢 智能拆解：支援以 "-" 分隔的舊訂單紀錄
       if (item.name.includes('-')) {
         const parts = item.name.split('-')
         baseName = parts[0].trim()
@@ -216,7 +214,7 @@ const sortedProducts = computed(() => {
 })
 
 const displayProducts = computed(() => {
-  // 🟢 如果選了「馬拉松套裝」，就不顯示下方的一般商品
+  // 🟢 如果選了「馬拉松套裝」，下方就不顯示一般商品
   if (selectedCategory.value === '馬拉松套裝') return []
 
   let list = sortedProducts.value.map(p => {
@@ -229,8 +227,17 @@ const displayProducts = computed(() => {
     return { ...p, current_stock: currentQty, active_price: finalPrice }
   })
   
-  if (selectedCategory.value === '內在營養') list = list.filter(p => p.category && p.category.includes('內'))
-  else if (selectedCategory.value === '外在保養') list = list.filter(p => p.category && p.category.includes('外'))
+  // 🟢 智能分類判斷：如果資料庫沒有 category 欄位，自動利用關鍵字分辨外在保養品
+  const isOuter = (n) => {
+     const name = n || '';
+     return ['洗面', '爽膚水', '霜', '眼膠', '精華', '角質', '面膜', '沐浴', '潤膚', '髮', '護膚'].some(k => name.includes(k));
+  }
+
+  if (selectedCategory.value === '內在營養') {
+    list = list.filter(p => (p.category && p.category.includes('內')) || (!p.category && !isOuter(p.name)))
+  } else if (selectedCategory.value === '外在保養') {
+    list = list.filter(p => (p.category && p.category.includes('外')) || (!p.category && isOuter(p.name)))
+  }
 
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
@@ -292,7 +299,7 @@ const netProfit = computed(() => totalRevenue.value - totalCost.value)
 async function finalizeCheckout(payeeName) {
   if (!selectedClient.value && !searchClient.value) return alert('請在上方先選擇紀錄對象！')
   
-  // 🟢 智能轉換購物車文字，保持格式完美
+  // 🟢 智能轉換購物車文字
   const itemsStr = cart.value.map(i => {
     if (i.isCombo) {
       let f = []
@@ -421,7 +428,7 @@ async function finalizeCheckout(payeeName) {
       </div>
     </div>
 
-    <div v-if="selectedCategory === '全部' || selectedCategory === '馬拉松套裝'" class="combo-grid" style="margin-bottom: 20px;">
+    <div v-if="selectedCategory === '馬拉松套裝'" class="combo-grid" style="margin-bottom: 20px;">
        <div v-for="c in marathonCombos" :key="c.id" class="combo-card" @click="openCombo(c)">
           <div class="c-name">{{ c.name }}</div>
           <div class="c-price">${{ c.fixedPrice }}</div>
