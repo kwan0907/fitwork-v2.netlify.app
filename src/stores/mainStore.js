@@ -14,17 +14,14 @@ export const useMainStore = defineStore('main', () => {
   const stock = ref({}) 
   const stockExpiry = ref({}) 
   const promotions = ref([]) 
-
-  const isFetchingMore = ref(false) 
-const hasMoreTxn = ref(true)
   
   const settings = ref(JSON.parse(localStorage.getItem('fitwork_settings')) || { payees: [] }) 
   const deviceUsers = ref(JSON.parse(localStorage.getItem('fitwork_deviceUsers')) || [])
   const currentUser = ref(localStorage.getItem('fitwork_currentUser') || '') 
 
- // 🚀 新增：用來暫存「再來一套」的複刻訂單資料，作為頁面間的溝通橋樑
+  // 🚀 用來暫存「再來一套」的複刻訂單資料，作為頁面間的溝通橋樑
   const pendingRepeatOrder = ref(null)
-  const quickActionClient = ref(null) // 🚀 新增：用來暫存快捷鍵選中的客戶
+  const quickActionClient = ref(null) // 🚀 用來暫存快捷鍵選中的客戶
 
   // 🚀 新增：控制分批載入與舊資料狀態
   const isFetchingMore = ref(false) 
@@ -45,20 +42,14 @@ const hasMoreTxn = ref(true)
       }
 
       // 💡 2. 【核心修復：前端隱私雙重鎖】
-      // 這裡的 promotions 已經補上 .eq('owner_email', userEmail) 了！
       const [c, p, t, s, pr] = await Promise.all([
         supabase.from('clients').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('name'),
+        // 👇 這裡把 limit(3000) 改成 limit(500)
         supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(500),
         supabase.from('stock').select('*').eq('owner_email', userEmail),
         supabase.from('promotions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }) 
       ])
-      if (t.error) console.error('❌ 交易抓取失敗:', t.error)
-else {
-  transactions.value = t.data || []
-  // 🚀 新增：如果抓回來的資料剛好是 500 筆，代表可能還有舊資料；如果少於 500 筆，代表已經到底了
-  hasMoreTxn.value = (t.data?.length === 500) 
-}
 
       // 1. 處理客戶資料
       if (c.error) console.error('❌ 客戶抓取失敗:', c.error)
@@ -71,7 +62,7 @@ else {
         console.log('📦 產品同步成功，共:', p.data?.length, '筆')
       }
 
-   // 3. 處理交易資料
+      // 3. 處理交易資料
       if (t.error) console.error('❌ 交易抓取失敗:', t.error)
       else {
         transactions.value = t.data || []
@@ -179,59 +170,12 @@ else {
     } catch (err) { console.error('抓取區間資料失敗:', err) }
   }
 
-  return {
+  // 👇 檔案最後唯一的一個 return
+  return { 
     view, session, clients, transactions, products, stock, stockExpiry, 
     promotions, settings, displayTxnCount, syncAll,
     deviceUsers, currentUser, setDeviceUsers, switchUser,
     pendingRepeatOrder, quickActionClient,
-    // 🚀 將剛剛寫好的新狀態與功能導出給畫面使用
     isFetchingMore, hasMoreTxn, loadMoreTransactions, fetchTransactionsByDateRange
   }
 })
-// 🚀 新增：載入更舊交易紀錄的專屬功能
-async function loadMoreTransactions() {
-  if (isFetchingMore.value || !hasMoreTxn.value) return
-  isFetchingMore.value = true
-  
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    const userEmail = session?.user?.email
-    if (!userEmail) return
-
-    const currentLen = transactions.value.length
-    
-    // 使用 .range(from, to) 接續抓取舊資料 (例如抓取第 500 ~ 999 筆)
-    const { data, error } = await supabase.from('transactions')
-      .select('*')
-      .eq('owner_email', userEmail)
-      .order('created_at', { ascending: false })
-      .range(currentLen, currentLen + 499)
-
-    if (error) {
-      console.error('❌ 載入舊資料失敗:', error)
-      alert('載入舊資料失敗')
-    } else if (data) {
-      // 把新抓到的舊資料「接」在原本的資料後面
-      transactions.value = [...transactions.value, ...data]
-      
-      // 如果這次抓不到 500 筆，代表保險箱已經空了，舊資料全部拿完了
-      if (data.length < 500) {
-        hasMoreTxn.value = false
-      }
-    }
-  } catch (err) {
-    console.error('載入更多資料時發生錯誤:', err)
-  } finally {
-    isFetchingMore.value = false
-  }
-}
-
-// ... 最後記得在 return 裡面把這些新東西導出：
-return { 
-  view, session, clients, transactions, products, stock, stockExpiry, 
-  promotions, settings, displayTxnCount, syncAll,
-  deviceUsers, currentUser, setDeviceUsers, switchUser,
-  pendingRepeatOrder, quickActionClient,
-  // 👇 導出給畫面使用
-  isFetchingMore, hasMoreTxn, loadMoreTransactions 
-}
