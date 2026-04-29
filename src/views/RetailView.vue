@@ -214,9 +214,10 @@ const sortedProducts = computed(() => {
 })
 
 const displayProducts = computed(() => {
-  // 🟢 如果選了「馬拉松套裝」，下方就不顯示一般商品
+  // 🟢 1. 如果選了「馬拉松套裝」，下方就不顯示一般商品
   if (selectedCategory.value === '馬拉松套裝') return []
 
+  // 🟢 2. 準備基礎產品清單與計算最新價格、庫存
   let list = sortedProducts.value.map(p => {
     const branchKey = selectedBranch.value.replace('店', '')
     const stockKey = `${p.name}_${branchKey}`
@@ -224,21 +225,39 @@ const displayProducts = computed(() => {
     const currentPriceCol = tierMapping[selectedTier.value]
     const finalPrice = Number(p[currentPriceCol]) || Number(p.retail_price) || 0
     
-    return { ...p, current_stock: currentQty, active_price: finalPrice }
+    // 🛡️ 確保 category 欄位一定是字串，方便後續比對，並清除前後空白
+    const safeCategory = typeof p.category === 'string' ? p.category.trim() : ''
+    
+    return { ...p, current_stock: currentQty, active_price: finalPrice, _safeCategory: safeCategory }
   })
   
-  // 🟢 智能分類判斷：如果資料庫沒有 category 欄位，自動利用關鍵字分辨外在保養品
+  // 🟢 3. 智能分類判斷機制
+  // 為了防呆，如果資料庫沒填 category，用關鍵字當最後防線
   const isOuter = (n) => {
      const name = n || '';
      return ['洗面', '爽膚水', '霜', '眼膠', '精華', '角質', '面膜', '沐浴', '潤膚', '髮', '護膚'].some(k => name.includes(k));
   }
 
+  // 🟢 4. 執行過濾 (比對 _safeCategory)
   if (selectedCategory.value === '內在營養') {
-    list = list.filter(p => (p.category && p.category.includes('內')) || (!p.category && !isOuter(p.name)))
+    list = list.filter(p => {
+      // 優先看資料庫分類是否包含「內」或「營養」
+      if (p._safeCategory && (p._safeCategory.includes('內') || p._safeCategory.includes('營養'))) return true;
+      // 如果資料庫沒填，用關鍵字判斷
+      if (!p._safeCategory && !isOuter(p.name)) return true;
+      return false;
+    })
   } else if (selectedCategory.value === '外在保養') {
-    list = list.filter(p => (p.category && p.category.includes('外')) || (!p.category && isOuter(p.name)))
+    list = list.filter(p => {
+      // 優先看資料庫分類是否包含「外」或「保養」
+      if (p._safeCategory && (p._safeCategory.includes('外') || p._safeCategory.includes('保養'))) return true;
+      // 如果資料庫沒填，用關鍵字判斷
+      if (!p._safeCategory && isOuter(p.name)) return true;
+      return false;
+    })
   }
 
+  // 🟢 5. 執行搜尋關鍵字過濾
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
     list = list.filter(p => (p.name?.toLowerCase().includes(q)) || (p.name_en?.toLowerCase().includes(q)) || (p.id?.toLowerCase().includes(q)))
