@@ -470,10 +470,9 @@ async function handleImport(event) {
             <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
             <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0">尚未買卡</span>
             
-            <span class="pkg-tag" style="background: #8b5cf6;" v-if="getMyGiftStats(c).available > 0">
-              🎁 MyGift: {{ getMyGiftStats(c).available }}張 
-              <b style="font-size:10px; margin-left:2px; opacity:0.9;">(至 {{ getMyGiftStats(c).closestExpiry }})</b>
-            </span>
+            <span class="pkg-tag mygift-tag" v-if="getMyGiftStats(c).available > 0">
+  🎁 MyGift: {{ getMyGiftStats(c).available }}張<b class="expiry-text">(至 {{ getMyGiftStats(c).closestExpiry }})</b>
+</span>
           </div>
           
         </div>
@@ -782,8 +781,15 @@ async function handleImport(event) {
 .wts-btn:active { transform: scale(0.95); }
 
 .trial-time-tag { background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 6px; font-weight: 800; font-size: 11px; }
+
+/* 🟢 修改了這裡：讓標籤可以整齊排列，且強制不換行 */
 .c-packages { font-size: 11px; font-weight: 800; color: #94a3b8; margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;}
-.pkg-tag { padding: 2px 6px; border-radius: 6px; font-weight: 900; color: white; }
+.pkg-tag { padding: 2px 8px; border-radius: 6px; font-weight: 900; color: white; white-space: nowrap; display: inline-flex; align-items: center; }
+
+/* 🟢 新增了這裡：MyGift 專用的紫色與日期設定 */
+.mygift-tag { background: #8b5cf6; }
+.expiry-text { font-size: 10px; margin-left: 4px; opacity: 0.9; font-weight: 700; white-space: nowrap; }
+
 .t-10 { background: #3b82f6; }
 .t-35 { background: #ec4899; }
 .pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
