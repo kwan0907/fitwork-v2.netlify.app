@@ -449,7 +449,7 @@ async function handleImport(event) {
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
             
-            <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn" @click.stop>💬 WhatsApp</a>
+            <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn" @click.stop>💬 Wts</a>
 
             <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
               ⏰ {{ formatTrialDate(c.trial_date) }}
@@ -790,20 +790,29 @@ async function handleImport(event) {
 .c-gen { font-weight: 900; color: #6366f1; font-size: 12px; margin-bottom: 4px;}
 .c-expiry { font-size: 11px; font-weight: 800; }
 
-/* 🟢 解決 Modal 頂部被遮住的問題 */
+/* 🟢 解決 Modal 頂部被遮住：強制往下推 */
 .modal-overlay { 
   position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; 
-  /* 改為置中，並留出邊距 */
-  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); 
+  z-index: 99999; 
+  /* 對齊上方，不使用 center */
+  display: flex; align-items: flex-start; justify-content: center; 
 }
 
-.center-modal { 
+.edit-modal, .center-modal { 
   background: white; width: 100%; max-width: 480px; 
   border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
   animation: popIn 0.3s ease-out; position: relative; 
-  /* 限制最大高度，並讓 Modal 內部可以滾動 */
-  max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  
+  /* 1️⃣ 核心修改：強制往下推 110px，完美避開 FITWORK PRO 頂部標題 */
+  margin-top: 110px; 
+  margin-bottom: 40px; 
+  
+  /* 2️⃣ 高度自動扣除上方空出的 110px 與下方留白，保證滾動順暢不破版 */
+  max-height: calc(100vh - 160px); 
+  
+  overflow-y: auto; -webkit-overflow-scrolling: touch; 
+  overscroll-behavior: contain;
 }
 
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
