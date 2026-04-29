@@ -11,9 +11,9 @@ const clientSearch = ref('')
 const filterBranch = ref('')
 const filterStatus = ref('active')
 const filterMyGiftExpiring = ref(false) 
-
 const sortBy = ref('default') 
 const consumeMyGift = ref(false)
+const activeTab = ref('basic') // 🚀 新增：用來控制目前顯示哪一個分頁 ('basic', 'source', 'advanced')
 
 const getLocalHKDate = () => {
   const d = new Date()
@@ -255,7 +255,8 @@ function handleActionRetail() {
 function openAddModal() {
     newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
     consumeMyGift.value = false 
-    referrerSearch.value = '' // 🟢 新增：清空搜尋框
+    referrerSearch.value = '' 
+    activeTab.value = 'basic' // 🚀 新增：每次打開都預設回到「基本資料」分頁
     showAddModal.value = true
 }
 
@@ -353,7 +354,8 @@ function openEditModal(client) {
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
-  referrerSearch.value = '' // 🟢 新增：清空搜尋框
+  referrerSearch.value = '' 
+  activeTab.value = 'basic' // 🚀 新增：每次打開都預設回到「基本資料」分頁
   showEditModal.value = true
 }
 
@@ -544,218 +546,191 @@ async function handleImport(event) {
     <button class="main-fab" @click="openAddModal">+</button>
 
     <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-      <div class="center-modal scrollable-modal">
+      <div class="center-modal scrollable-modal" style="padding-bottom: 0;">
         <div class="m-header">🔧 客戶詳細設定 <button class="close-x" @click="showEditModal=false">✕</button></div>
         
-        <div class="toggle-group" style="margin-bottom: 20px;">
-          <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
-          <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
-          <button class="t-btn" :class="{active: editingClient.status === 'absent'}" @click="editingClient.status = 'absent'" style="color: #ef4444;">缺席補堂</button>
+        <div class="tab-nav">
+          <button class="tab-btn" :class="{active: activeTab === 'basic'}" @click="activeTab = 'basic'">👤 基本</button>
+          <button class="tab-btn" :class="{active: activeTab === 'source'}" @click="activeTab = 'source'">📅 來源/預約</button>
+          <button class="tab-btn" :class="{active: activeTab === 'advanced'}" @click="activeTab = 'advanced'">💎 進階設定</button>
         </div>
 
-        <div class="section-title">👤 基本資料</div>
-        <div class="f-item">
-          <label>姓名</label>
-          <input v-model="editingClient.name" class="modern-inp">
-        </div>
-        <div class="f-item">
-          <label>電話</label>
-          <input v-model="editingClient.phone" class="modern-inp">
-        </div>
-
-        <div class="grid-2">
-          <div class="f-item">
-            <label>分店</label>
-            <select v-model="editingClient.branch" class="modern-select">
-              <option value="觀塘">觀塘</option>
-              <option value="中環">中環</option>
-              <option value="佐敦">佐敦</option>
-            </select>
-          </div>
-          <div class="f-item">
-              <label>來源</label>
-              <select v-model="editingClient.source" class="modern-select">
-                  <option value="廣告">廣告</option>
-                  <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
-                  <option value="傳單">傳單</option>
-                  <option value="IG">IG</option>
-                  <option value="朋友介紹">朋友介紹</option>
-                  <option value="朋友">朋友</option>
+        <div class="tab-content-area">
+          <div v-show="activeTab === 'basic'" class="tab-pane">
+            <div class="toggle-group" style="margin-bottom: 20px;">
+              <button class="t-btn" :class="{active: editingClient.status === 'active'}" @click="editingClient.status = 'active'">正式會員</button>
+              <button class="t-btn" :class="{active: editingClient.status === 'prospect'}" @click="editingClient.status = 'prospect'">試堂預約</button>
+              <button class="t-btn" :class="{active: editingClient.status === 'absent'}" @click="editingClient.status = 'absent'" style="color: #ef4444;">缺席補堂</button>
+            </div>
+            <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
+            <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
+            <div class="f-item">
+              <label>分店</label>
+              <select v-model="editingClient.branch" class="modern-select">
+                <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
               </select>
             </div>
-        </div>
-        
-        <div class="f-item" v-if="editingClient.source === '朋友介紹' || editingClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
-            <label>介紹人</label>
-            <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
-            <select v-model="editingClient.referred_by_id" class="modern-select">
-                <option :value="null">請選擇介紹人...</option>
-                <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
-            </select>
-        </div>
-
-        <div class="section-title">📅 關鍵日期</div>
-        <div class="f-item" v-if="editingClient.status === 'prospect' || editingClient.status === 'absent'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
-          <label>⏰ {{ editingClient.status === 'absent' ? '下次補堂日期與時間' : '預約試堂日期與時間' }}</label>
-          <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
-          <label>📍 預約試堂地點</label>
-          <select v-model="editingClient.branch" class="modern-select">
-            <option value="觀塘">觀塘</option>
-            <option value="中環">中環</option>
-            <option value="佐敦">佐敦</option>
-          </select>
-        </div>
-        
-        <div class="grid-2">
-          <div class="f-item">
-            <label>加入日期</label>
-            <input type="date" v-model="editingClient.join_date" class="modern-date">
           </div>
-          <div class="f-item">
-            <label>套票到期日</label>
-            <input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空">
+
+          <div v-show="activeTab === 'source'" class="tab-pane">
+            <div class="f-item">
+                <label>來源</label>
+                <select v-model="editingClient.source" class="modern-select">
+                    <option value="廣告">廣告</option><option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
+                    <option value="傳單">傳單</option><option value="IG">IG</option>
+                    <option value="朋友介紹">朋友介紹</option><option value="朋友">朋友</option>
+                </select>
+            </div>
+            
+            <div class="f-item" v-if="editingClient.source === '朋友介紹' || editingClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
+                <label>介紹人</label>
+                <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
+                <select v-model="editingClient.referred_by_id" class="modern-select">
+                    <option :value="null">請選擇介紹人...</option>
+                    <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+                </select>
+            </div>
+
+            <div class="f-item" v-if="editingClient.status === 'prospect' || editingClient.status === 'absent'" style="margin-top: 12px; animation: popIn 0.3s ease-out;">
+              <label>⏰ {{ editingClient.status === 'absent' ? '下次補堂日期與時間' : '預約試堂日期與時間' }}</label>
+              <input type="datetime-local" v-model="editingClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
+              <label>📍 預約試堂地點</label>
+              <select v-model="editingClient.branch" class="modern-select">
+                <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+              </select>
+            </div>
+            
+            <div class="grid-2" style="margin-top: 12px;">
+              <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
+              <div class="f-item"><label>套票到期日</label><input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空"></div>
+            </div>
+          </div>
+
+          <div v-show="activeTab === 'advanced'" class="tab-pane">
+            <div class="f-item">
+              <label>💬 客戶備註</label>
+              <textarea v-model="editingClient.remark" class="modern-inp" style="height: 100px;" placeholder="輸入備註事項 (例如：缺席原因、客戶要求)..."></textarea>
+            </div>
+
+            <label style="font-size: 12px; font-weight: 800; color: #475569; margin: 15px 0 6px; display:block;">🏆 項目設定</label>
+            <div class="row-flex">
+              <div class="toggle-card" :class="{active: editingClient.is_marathon}" @click="editingClient.is_marathon = !editingClient.is_marathon">🏃 馬拉松</div>
+              <div class="toggle-card" :class="{active: editingClient.is_vip}" @click="editingClient.is_vip = !editingClient.is_vip">💎 VIP 折扣</div>
+            </div>
+
+            <div class="f-item" v-if="editingClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+              <label>🎖️ 請選擇 VIP 等級</label>
+              <select v-model="editingClient.vip_tier" class="modern-select">
+                <option value="銅級(88折)">🥉 銅級 (88折)</option><option value="銀級(75折)">🥈 銀級 (75折)</option>
+                <option value="金級(65折)">🥇 金級 (65折)</option><option value="直接58折">💎 直接58折</option><option value="領班(半折)">👑 領班 (半折)</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div class="section-title">💬 客戶備註</div>
-        <div class="f-item">
-          <textarea v-model="editingClient.remark" class="modern-inp" style="height: 80px;" placeholder="輸入備註事項 (例如：缺席原因、客戶要求)..."></textarea>
-        </div>
-
-        <div class="section-title">🏆 項目設定</div>
-        <div class="row-flex">
-          <div class="toggle-card" :class="{active: editingClient.is_marathon}" @click="editingClient.is_marathon = !editingClient.is_marathon">🏃 馬拉松</div>
-          <div class="toggle-card" :class="{active: editingClient.is_vip}" @click="editingClient.is_vip = !editingClient.is_vip">💎 VIP 折扣</div>
-        </div>
-
-        <div class="f-item" v-if="editingClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
-          <label>🎖️ 請選擇 VIP 等級</label>
-          <select v-model="editingClient.vip_tier" class="modern-select">
-            <option value="銅級(88折)">🥉 銅級 (88折)</option>
-            <option value="銀級(75折)">🥈 銀級 (75折)</option>
-            <option value="金級(65折)">🥇 金級 (65折)</option>
-            <option value="直接58折">💎 直接58折</option>
-            <option value="領班(半折)">👑 領班 (半折)</option>
-          </select>
-        </div>
-
-        <div class="action-row">
+        <div class="sticky-action-row">
           <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
           <button class="btn-confirm" @click="handleUpdateClient">確認修改</button>
         </div>
-        
-        <div style="height: 50px; width: 100%;"></div>
 
       </div>
     </div>
-
-    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-      <div class="center-modal scrollable-modal">
+   <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
+      <div class="center-modal scrollable-modal" style="padding-bottom: 0;">
         <div class="m-header">➕ 登記新客戶 <button class="close-x" @click="showAddModal=false">✕</button></div>
         
-        <div class="toggle-group" style="margin-bottom: 20px;">
-          <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
-          <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
+        <div class="tab-nav">
+          <button class="tab-btn" :class="{active: activeTab === 'basic'}" @click="activeTab = 'basic'">👤 基本</button>
+          <button class="tab-btn" :class="{active: activeTab === 'source'}" @click="activeTab = 'source'">📅 來源/預約</button>
+          <button class="tab-btn" :class="{active: activeTab === 'advanced'}" @click="activeTab = 'advanced'">💎 進階設定</button>
         </div>
 
-        <div class="section-title">👤 基本資料</div>
-        <div class="f-item">
-          <label>姓名</label>
-          <input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名">
-        </div>
-        <div class="f-item">
-          <label>電話</label>
-          <input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話">
-        </div>
-        
-        <div class="grid-2">
+        <div class="tab-content-area">
+          <div v-show="activeTab === 'basic'" class="tab-pane">
+            <div class="toggle-group" style="margin-bottom: 20px;">
+              <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
+              <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
+            </div>
+            <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
+            <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話"></div>
             <div class="f-item">
                 <label>分店</label>
                 <select v-model="newClient.branch" class="modern-select">
-                    <option value="觀塘">觀塘</option>
-                    <option value="中環">中環</option>
-                    <option value="佐敦">佐敦</option>
+                    <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
                 </select>
             </div>
+          </div>
+
+          <div v-show="activeTab === 'source'" class="tab-pane">
             <div class="f-item">
                 <label>認識來源</label>
                 <select v-model="newClient.source" class="modern-select">
-                    <option value="廣告">廣告</option>
-                    <option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
-                    <option value="傳單">傳單</option>
-                    <option value="朋友介紹">朋友介紹</option>
-                    <option value="IG">IG</option>
-                    <option value="朋友">朋友</option>
+                    <option value="廣告">廣告</option><option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
+                    <option value="傳單">傳單</option><option value="朋友介紹">朋友介紹</option>
+                    <option value="IG">IG</option><option value="朋友">朋友</option>
                 </select>
             </div>
-        </div>
 
-        <div class="f-item" v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
-            <label>是哪位朋友介紹的？(計算代數)</label>
-            <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
-            <select v-model="newClient.referred_by_id" class="modern-select">
-                <option :value="null">請選擇...</option>
-                <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
-            </select>
-        </div>
+            <div class="f-item" v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
+                <label>介紹人 (計算代數)</label>
+                <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
+                <select v-model="newClient.referred_by_id" class="modern-select">
+                    <option :value="null">請選擇...</option>
+                    <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
+                </select>
+            </div>
 
-        <div class="f-item" v-if="(newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹') && newClient.referred_by_id" style="margin-top: 15px; background: #faf5ff; border: 1px dashed #c4b5fd; padding: 15px; border-radius: 12px; animation: popIn 0.3s ease-out;">
-           <label style="color: #7c3aed; font-size: 14px;">🎁 是否消耗介紹人的 MyGift？</label>
-           <div style="font-size: 12px; color: #64748b; margin-bottom: 10px; font-weight: 700;">
-             該介紹人目前剩餘: <span style="color: #ef4444; font-size: 14px; font-weight: 900;">{{ getMyGiftStats(store.clients.find(c => c.id === newClient.referred_by_id)).available }}</span> 張
-           </div>
-           <div class="toggle-card" style="margin: 0;" :class="{active: consumeMyGift}" @click="consumeMyGift = !consumeMyGift">
-             {{ consumeMyGift ? '✅ 是，建立後自動扣減 1 張' : '❌ 否，不扣除' }}
-           </div>
-        </div>
+            <div class="f-item" v-if="(newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹') && newClient.referred_by_id" style="margin-top: 15px; background: #faf5ff; border: 1px dashed #c4b5fd; padding: 15px; border-radius: 12px; animation: popIn 0.3s ease-out;">
+               <label style="color: #7c3aed; font-size: 14px;">🎁 是否消耗介紹人的 MyGift？</label>
+               <div style="font-size: 12px; color: #64748b; margin-bottom: 10px; font-weight: 700;">
+                 介紹人目前剩餘: <span style="color: #ef4444; font-size: 14px; font-weight: 900;">{{ getMyGiftStats(store.clients.find(c => c.id === newClient.referred_by_id)).available }}</span> 張
+               </div>
+               <div class="toggle-card" style="margin: 0;" :class="{active: consumeMyGift}" @click="consumeMyGift = !consumeMyGift">
+                 {{ consumeMyGift ? '✅ 是，建立後自動扣減 1 張' : '❌ 否，不扣除' }}
+               </div>
+            </div>
 
-        <div class="section-title">📅 關鍵日期</div>
-        <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-bottom: 12px; animation: popIn 0.3s ease-out;">
-          <label>⏰ 預約試堂日期與時間</label>
-          <input type="datetime-local" v-model="newClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
-          <label>📍 預約試堂地點</label>
-          <select v-model="newClient.branch" class="modern-select">
-            <option value="觀塘">觀塘</option>
-            <option value="中環">中環</option>
-            <option value="佐敦">佐敦</option>
-          </select>
-        </div>
-        <div class="grid-2">
-          <div class="f-item">
-            <label>成為客戶日期</label>
-            <input type="date" v-model="newClient.join_date" class="modern-date">
+            <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-top: 12px; animation: popIn 0.3s ease-out;">
+              <label>⏰ 預約試堂日期與時間</label>
+              <input type="datetime-local" v-model="newClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
+              <label>📍 預約試堂地點</label>
+              <select v-model="newClient.branch" class="modern-select">
+                <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
+              </select>
+            </div>
+            
+            <div class="grid-2" style="margin-top: 12px;">
+              <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>
+              <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
+            </div>
           </div>
-          <div class="f-item">
-            <label>套票有效期 (選填)</label>
-            <input type="date" v-model="newClient.expiry_date" class="modern-date">
+
+          <div v-show="activeTab === 'advanced'" class="tab-pane">
+            <div class="f-item">
+              <label>💬 客戶備註</label>
+              <textarea v-model="newClient.remark" class="modern-inp" style="height: 100px;" placeholder="輸入備註事項 (客戶要求、運動習慣等)..."></textarea>
+            </div>
+
+            <label style="font-size: 12px; font-weight: 800; color: #475569; margin: 15px 0 6px; display:block;">🏆 項目設定</label>
+            <div class="row-flex">
+              <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
+              <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
+            </div>
+
+            <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
+              <label>🎖️ 請選擇 VIP 等級</label>
+              <select v-model="newClient.vip_tier" class="modern-select">
+                <option value="銅級(88折)">🥉 銅級 (88折)</option><option value="銀級(75折)">🥈 銀級 (75折)</option>
+                <option value="金級(65折)">🥇 金級 (65折)</option><option value="直接58折">💎 直接58折</option><option value="領班(半折)">👑 領班 (半折)</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div class="section-title">💬 客戶備註</div>
-        <div class="f-item">
-          <textarea v-model="newClient.remark" class="modern-inp" style="height: 80px;" placeholder="輸入備註事項 (客戶要求、運動習慣等)..."></textarea>
+        <div class="sticky-action-row">
+          <button class="btn-confirm" style="width:100%; margin: 0;" @click="handleAddClient">立即新增客戶</button>
         </div>
 
-        <div class="section-title">🏆 項目設定</div>
-        <div class="row-flex">
-          <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
-          <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
-        </div>
-
-        <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
-          <label>🎖️ 請選擇 VIP 等級</label>
-          <select v-model="newClient.vip_tier" class="modern-select">
-            <option value="銅級(88折)">🥉 銅級 (88折)</option>
-            <option value="銀級(75折)">🥈 銀級 (75折)</option>
-            <option value="金級(65折)">🥇 金級 (65折)</option>
-            <option value="直接58折">💎 直接58折</option>
-            <option value="領班(半折)">👑 領班 (半折)</option>
-          </select>
-        </div>
-
-        <button class="btn-confirm" style="width:100%; margin-top:20px;" @click="handleAddClient">立即新增</button>
-        
-        <div style="height: 50px; width: 100%;"></div>
       </div>
     </div>
 
@@ -917,4 +892,29 @@ async function handleImport(event) {
   .action-big-btn { padding: 14px; } 
   .page { padding: 15px; padding-bottom: 100px; }
 }
+/* 🚀 Tabs 分頁專用樣式 */
+.tab-nav { display: flex; gap: 8px; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch;}
+.tab-nav::-webkit-scrollbar { display: none; }
+.tab-btn { flex: 1; background: transparent; border: none; font-size: 13px; font-weight: 800; color: #94a3b8; padding: 10px 5px; cursor: pointer; white-space: nowrap; transition: 0.2s; border-radius: 10px; }
+.tab-btn.active { background: #eef2ff; color: #4f46e2; box-shadow: 0 4px 10px rgba(79, 70, 226, 0.1); }
+
+.tab-content-area { 
+  /* 設定固定高度或最小高度，確保切換頁面時 Modal 大小不會突然劇烈跳動 */
+  min-height: 280px; 
+  padding-bottom: 20px;
+}
+.tab-pane { animation: popIn 0.2s ease-out; }
+
+/* 🚀 懸浮在底部的按鈕區 */
+.sticky-action-row {
+  display: flex; gap: 10px; 
+  position: sticky; bottom: 0; left: 0; right: 0;
+  background: white; 
+  padding: 15px 0 25px 0; /* 底部多留白，避開 iPhone 橫線 */
+  border-top: 1px dashed #e2e8f0;
+  margin-top: 10px;
+  z-index: 10;
+}
+/* 覆蓋原本 action-row 的 margin，避免排版衝突 */
+.sticky-action-row .btn-del, .sticky-action-row .btn-confirm { margin-top: 0; }
 </style>
