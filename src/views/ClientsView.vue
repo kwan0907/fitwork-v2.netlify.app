@@ -749,7 +749,7 @@ async function handleImport(event) {
 .search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
 .inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
 
-/* 🟢 Filter 列加入水平滾動，保留原本所有按鈕 */
+/* 篩選按鈕列 */
 .filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
 .f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
 .f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
@@ -764,21 +764,19 @@ async function handleImport(event) {
 .btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s;}
 .btn-outline:active { transform: scale(0.95); }
 
+/* 🟢 補回卡片的排版結構 (解決卡片變醜的問題) */
 .client-card { background: white; padding: 16px; border-radius: 20px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; border: 1px solid #f1f5f9; transition: 0.2s; cursor: pointer;}
 .client-card:active { transform: scale(0.97); }
 
-/* 🟢 解決 Icon 變形：強制鎖定 48x48，不能 shrink */
-.c-avatar { 
-    width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; 
-    display: flex; align-items: center; justify-content: center; 
-    font-weight: 900; font-size: 20px; flex-shrink: 0; min-width: 48px; min-height: 48px;
-}
+.c-avatar { width: 48px; height: 48px; background: #6366f1; color: white; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 20px; flex-shrink: 0; min-width: 48px; min-height: 48px; }
+.c-main { flex: 1; min-width: 0; }
+.c-side { text-align: right; flex-shrink: 0; }
 
+.c-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .c-name { font-weight: 800; font-size: 17px; color: #1e293b; }
-.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
-.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; margin-left: 5px; }
+.badge-vip { background: #fef9c3; color: #a16207; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
+.badge-run { background: linear-gradient(135deg, #4f46e2, #9333ea); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 900; }
 
-/* Meta 讓它自動折行 */
 .c-meta { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .wts-btn { background: #25D366; color: white; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; text-decoration: none; box-shadow: 0 2px 5px rgba(37,211,102,0.3); display: inline-block; transition: 0.2s; }
 .wts-btn:active { transform: scale(0.95); }
@@ -789,14 +787,24 @@ async function handleImport(event) {
 .t-10 { background: #3b82f6; }
 .t-35 { background: #ec4899; }
 .pkg-zero { background: #f1f5f9; color: #94a3b8; padding: 2px 6px; border-radius: 6px;}
-.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; text-align: right;}
-.c-expiry { font-size: 11px; font-weight: 800; margin-top: 4px; text-align: right;}
+.c-gen { font-weight: 900; color: #6366f1; font-size: 12px; margin-bottom: 4px;}
+.c-expiry { font-size: 11px; font-weight: 800; }
 
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-start; justify-content: center; padding-top: 5vh; padding-bottom: 5vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 🟢 解決 Modal 頂部被遮住的問題 */
+.modal-overlay { 
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; 
+  /* 改為置中，並留出邊距 */
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
 
-/* 🟢 Modal 結構保留原本的，但修正滾動邏輯 */
-.center-modal { background: white; width: 90%; max-width: 480px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); animation: popIn 0.3s ease-out; margin: auto; position: relative; }
-.scrollable-modal { max-height: 85vh; overflow-y: auto; padding-right: 5px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.center-modal { 
+  background: white; width: 100%; max-width: 480px; 
+  border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
+  animation: popIn 0.3s ease-out; position: relative; 
+  /* 限制最大高度，並讓 Modal 內部可以滾動 */
+  max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
 
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .m-header { font-weight: 900; font-size: 18px; margin-bottom: 20px; display: flex; justify-content: space-between; color: #1e293b; align-items: center;}
@@ -819,7 +827,7 @@ async function handleImport(event) {
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 
-.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 15vh; }
+.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 0; }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .action-big-btn { display: flex; align-items: center; gap: 15px; width: 100%; padding: 18px; border-radius: 20px; border: none; cursor: pointer; transition: 0.2s all; background: #f8fafc; text-align: left; }
 .action-big-btn:active { transform: scale(0.96); }
@@ -827,4 +835,12 @@ async function handleImport(event) {
 .action-big-btn .text-left { display: flex; flex-direction: column; gap: 4px; }
 .action-big-btn strong { font-size: 16px; color: #1e293b; font-weight: 800; }
 .action-big-btn small { font-size: 12px; color: #64748b; font-weight: 600; line-height: 1.3; }
+
+/* 📱 手機螢幕自動適應 */
+@media (max-width: 600px) {
+  .grid-2 { grid-template-columns: 1fr; gap: 8px; }
+  .center-modal { padding: 20px 15px; } 
+  .action-big-btn { padding: 14px; } 
+  .page { padding: 15px; padding-bottom: 100px; }
+}
 </style>
