@@ -160,34 +160,33 @@ const financialStats = computed(() => {
 const clientStats = computed(() => {
   let newClientsList = [];
   const sourceCount = { '廣告': 0, '廣告+朋友介紹': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
-
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t?.type === 'income' && t?.client_id) {
-      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = String(t.created_at); 
-      }
+      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) firstTxnMap[t.client_id] = String(t.created_at); 
     }
   });
-
+  
   store.clients.forEach(c => {
     if (c?.status !== 'active') return;
+    
+    let isNew = false;
+    let displayDate = '無紀錄';
 
-    let isNewByJoinDate = c?.join_date && isDateInRange(c?.join_date);
-    let isNewByFirstTxn = false;
-    if (firstTxnMap[c?.id]) {
-        isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
+    // 🟢 嚴格優先使用「加入日期」判定！如果你設定了3月，他絕對不會在4月出現。
+    if (c?.join_date) {
+        isNew = isDateInRange(c.join_date);
+        displayDate = c.join_date;
+    } else if (firstTxnMap[c?.id]) {
+        // 只有在完全沒有輸入加入日期時，才用第一筆消費日當作備案
+        isNew = isDateInRange(firstTxnMap[c.id]);
+        displayDate = firstTxnMap[c.id].slice(0, 10);
     }
 
-    if (isNewByJoinDate || isNewByFirstTxn) {
+    if (isNew) {
         if (filterBranch.value === '全部分店' || c?.branch === filterBranch.value) {
             if (!newClientsList.find(x => x?.id === c?.id)) {
-                const displayDate = (isNewByJoinDate && c?.join_date) 
-                                  ? c.join_date 
-                                  : (firstTxnMap[c?.id] ? firstTxnMap[c.id].slice(0, 10) : '無紀錄');
-                
                 newClientsList.push({ ...c, display_join_date: displayDate });
-
                 const src = c?.source || '其他';
                 if (sourceCount[src] !== undefined) sourceCount[src]++;
                 else sourceCount['其他']++;
@@ -195,95 +194,54 @@ const clientStats = computed(() => {
         }
     }
   })
-
   newClientsList.sort((a,b) => String(b?.display_join_date || '').localeCompare(String(a?.display_join_date || '')));
-
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
 
 const trialFunnelStats = computed(() => {
-  let bookedList = [];
-  let completedList = [];
-  let convertedList = [];
-  let notConvertedList = [];
-
+  let bookedList = [], completedList = [], convertedList = [], notConvertedList = [];
   const todayYMD = getLocalHKDate();
   const firstTxnMap = {};
   store.transactions.forEach(t => {
     if (t?.type === 'income' && t?.client_id) {
-      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) {
-        firstTxnMap[t.client_id] = String(t.created_at);
-      }
+      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) firstTxnMap[t.client_id] = String(t.created_at);
     }
   });
-
+  
   store.clients.forEach(c => {
     if (filterBranch.value !== '全部分店' && c?.branch !== filterBranch.value) return;
-
+    
     let hasTrialInDate = c?.trial_date && isDateInRange(c?.trial_date);
-    let isDirectConvert = false;
-    let displayTrialDate = c?.trial_date;
-
+    let isDirectConvert = false, displayTrialDate = c?.trial_date;
+    
     if (!hasTrialInDate && c?.status === 'active') {
-        let isNewByJoinDate = c?.join_date && isDateInRange(c?.join_date);
-        let isNewByFirstTxn = false;
-        let firstTxnDateStr = null;
-        if (firstTxnMap[c?.id]) {
-            firstTxnDateStr = firstTxnMap[c.id].slice(0, 19);
-            isNewByFirstTxn = isDateInRange(firstTxnMap[c.id]);
-        }
-
-        if (isNewByJoinDate || isNewByFirstTxn) {
-            isDirectConvert = true;
-            displayTrialDate = isNewByFirstTxn ? firstTxnDateStr : (c?.join_date ? c.join_date + 'T12:00:00' : null);
+        // 🟢 同樣嚴格優先使用「加入日期」判定是否為本區間的直接開卡
+        if (c?.join_date) {
+            isDirectConvert = isDateInRange(c.join_date);
+            if (isDirectConvert) displayTrialDate = c.join_date + 'T12:00:00';
+        } else if (firstTxnMap[c?.id]) {
+            let firstTxnDateStr = firstTxnMap[c.id].slice(0, 19);
+            isDirectConvert = isDateInRange(firstTxnMap[c.id]);
+            if (isDirectConvert) displayTrialDate = firstTxnDateStr;
         }
     }
-
+    
     if (hasTrialInDate || isDirectConvert) {
       const clientData = { ...c, virtual_trial_date: displayTrialDate, is_direct: isDirectConvert };
-      
       bookedList.push(clientData);
-
-      let hasRealTransaction = false;
-      store.transactions.forEach(t => {
-        if ((t?.category === '運動套票' || t?.category === '運動' || t?.category === '零售收入') && t?.note && c?.name && t.note.includes(c.name)) {
-          hasRealTransaction = true;
-        }
-      });
-
+      let hasRealTransaction = store.transactions.some(t => (t?.category === '運動套票' || t?.category === '運動' || t?.category === '零售收入') && t?.note && c?.name && t.note.includes(c.name));
       if (isDirectConvert || c?.status === 'active' || hasRealTransaction || c?.expiry_date) {
-        completedList.push(clientData);
-        convertedList.push(clientData);     
-      } 
-      else {
+        completedList.push(clientData); convertedList.push(clientData);
+      } else {
         const tDateStr = String(c?.trial_date || '').slice(0, 10);
-        if (tDateStr <= todayYMD) {
-          completedList.push(clientData);
-          notConvertedList.push(clientData);
-        }
+        if (tDateStr <= todayYMD) { completedList.push(clientData); notConvertedList.push(clientData); }
       }
     }
   });
-
+  
   const sortByTrial = (a, b) => String(b?.virtual_trial_date || '').localeCompare(String(a?.virtual_trial_date || ''));
-  bookedList.sort(sortByTrial);
-  completedList.sort(sortByTrial);
-  convertedList.sort(sortByTrial);
-  notConvertedList.sort(sortByTrial);
-
-  const conversionRate = completedList.length > 0 ? ((convertedList.length / completedList.length) * 100).toFixed(1) : "0.0";
-
-  return { 
-    totalBooked: bookedList.length, 
-    completedTrials: completedList.length, 
-    converted: convertedList.length, 
-    notConverted: notConvertedList.length, 
-    conversionRate,
-    bookedList,
-    completedList,
-    convertedList,
-    notConvertedList
-  };
+  bookedList.sort(sortByTrial); completedList.sort(sortByTrial); convertedList.sort(sortByTrial); notConvertedList.sort(sortByTrial);
+  return { totalBooked: bookedList.length, completedTrials: completedList.length, converted: convertedList.length, notConverted: notConvertedList.length, conversionRate: completedList.length > 0 ? ((convertedList.length / completedList.length) * 100).toFixed(1) : "0.0", bookedList, completedList, convertedList, notConvertedList };
 })
 
 function openFunnelModal(type) {
