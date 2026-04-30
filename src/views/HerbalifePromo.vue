@@ -698,7 +698,8 @@ function exportToExcel() {
   align-items: center; 
   justify-content: center; 
   padding: 20px;
-  padding-bottom: 120px; 
+  /* 💡 圖片底部留白加大，確保圖片滑到最底時，唔會被升高咗嘅按鈕遮住 */
+  padding-bottom: 180px; 
 }
 .full-size-img { 
   max-width: 95%; 
@@ -711,7 +712,8 @@ function exportToExcel() {
 
 .zoom-controls { 
   position: absolute; 
-  bottom: max(30px, env(safe-area-inset-bottom)); 
+  /* 💡 關鍵修改：大幅度拉高！110px 足夠跨過你 App 嘅底部導覽列同 iPhone 底線 */
+  bottom: calc(110px + env(safe-area-inset-bottom)); 
   left: 50%; 
   transform: translateX(-50%); 
   display: flex; 
