@@ -562,25 +562,30 @@ async function handleDeleteTransaction(t) {
 
 .card { background: white; border-radius: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
 .date-header { font-size: 13px; font-weight: 900; color: #64748b; margin: 15px 0 8px; }
-.txn-item { display: flex; align-items: center; padding: 18px 0; border-bottom: 1px dashed #e2e8f0; }
-.txn-item:last-child { border-bottom: none; }
-.t-header-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-.t-cat { font-weight: 900; font-size: 13px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 8px; border: 1px solid #e2e8f0;}
-.t-client-highlight { font-weight: 900; font-size: 14px; color: #ec4899; background: #fdf2f8; padding: 4px 10px; border-radius: 8px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
+/* 💡 極限省空間版：縮小上下內距與字體 */
+.txn-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0; }
+.t-header-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
 
-.repeat-btn { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center;}
+/* 標籤縮小 */
+.t-cat { font-weight: 900; font-size: 11px; color: #475569; background: #f1f5f9; padding: 2px 6px; border-radius: 6px; border: 1px solid #e2e8f0;}
+.t-client-highlight { font-weight: 900; font-size: 12px; color: #ec4899; background: #fdf2f8; padding: 2px 6px; border-radius: 6px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
+
+.repeat-btn { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center;}
 .repeat-btn:active { transform: scale(0.95); background: #c7d2fe; }
 
-.t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 12px; margin-bottom: 6px; }
-.t-desc { font-size: 13px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
-.icon-lbl { font-size: 12px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
-.t-desc-val { color: #1e293b; font-weight: 900; font-size: 15px; word-break: break-word; } 
-.t-staff { font-weight: 900; color: #4f46e2; font-size: 14px; } 
-.t-ad { font-size: 11px; color: #d97706; margin-top: 8px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 4px 8px; border-radius: 6px; }
-.t-amt { font-weight: 900; font-size: 22px; white-space: nowrap;}
+/* 內容區塊間距縮細 */
+.t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 10px; margin-bottom: 2px; }
+.t-desc { font-size: 12px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; margin-top: 2px !important; }
+.icon-lbl { font-size: 11px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
+.t-desc-val { color: #1e293b; font-weight: 900; font-size: 13px; word-break: break-word; } 
+.t-staff { font-weight: 900; color: #4f46e2; font-size: 13px; } 
+.t-ad { font-size: 11px; color: #d97706; margin-top: 4px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 2px 6px; border-radius: 6px; }
+
+/* 金額與操作按鈕縮細 */
+.t-amt { font-weight: 900; font-size: 18px; white-space: nowrap;}
 .t-amt.g { color: #10b981; }
 .t-amt.r { color: #ef4444; }
-.icon-btn { background: #f1f5f9; border: none; font-size: 14px; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+.icon-btn { background: #f1f5f9; border: none; font-size: 12px; padding: 6px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
 .icon-btn:active { transform: scale(0.9); }
 .form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #475569; }
 .modern-inp, .modern-select { width: 100%; border: 2px solid #e2e8f0; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; background: #f8fafc; appearance: none;}
