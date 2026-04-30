@@ -667,34 +667,35 @@ function exportToExcel() {
 .img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
 .full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
 
-/* 💡 大幅提昇按鈕高度 (避開所有 Home Bar)，並徹底解決擠壓變形 */
+/* 💡 將控制列固定在上方，保證絕對不會被底部的瀏覽器列擋住！ */
 .zoom-controls { 
-  position: absolute; 
-  bottom: calc(50px + env(safe-area-inset-bottom)); 
+  position: fixed; /* 改用 fixed，鎖死在螢幕上 */
+  top: max(20px, env(safe-area-inset-top)); /* 放在頂部，並避開瀏海 */
   left: 50%; 
   transform: translateX(-50%); 
   display: flex; 
   flex-wrap: wrap; 
   justify-content: center;
   gap: 8px; 
-  background: rgba(255,255,255,0.2); 
-  backdrop-filter: blur(15px); 
+  background: rgba(30, 41, 59, 0.7); /* 改成深色半透明背景比較酷 */
+  backdrop-filter: blur(10px); 
   padding: 10px 15px; 
   border-radius: 20px; 
   z-index: 10000;
   width: max-content;
   max-width: 90vw;
 }
+
+/* 確保按鈕在深色背景上清楚可見 */
 .z-btn { 
   background: white; 
   color: #1e293b; 
   font-size: 13px; 
   font-weight: 900; 
-  padding: 10px 14px; 
-  border-radius: 12px; 
+  padding: 8px 12px; 
+  border-radius: 10px; 
   border: none; 
   cursor: pointer; 
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
   white-space: nowrap; 
 }
 .z-btn:active { transform: scale(0.9); }

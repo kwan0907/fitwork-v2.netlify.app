@@ -543,8 +543,10 @@ async function handleDeleteTransaction(t) {
         </select>
       </div>
       
-      <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" @click="saveTransaction">✅ 儲存</button>
-    </BaseModal>
+<!-- 加上一個外層的 div 來把按鈕頂上來，避免被手機底部控制列擋住 -->
+<div style="padding-bottom: 80px;">
+  <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" @click="saveTransaction">✅ 儲存</button>
+</div>    </BaseModal>
   </div>
 </template>
 
