@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
@@ -17,6 +17,27 @@ const getLocalYMD = () => {
 // ==========================================
 // 🟢 新增：月份過濾邏輯
 // ==========================================
+
+// ==========================================
+// 🟢 新增：一鍵回到最上層功能
+// ==========================================
+const showScrollTop = ref(false)
+
+const handleScroll = (e) => {
+  // 偵測滾動，超過 300px 就顯示按鈕
+  const target = e.target.documentElement || e.target
+  showScrollTop.value = target.scrollTop > 300 || window.scrollY > 300
+}
+
+const scrollToTop = () => {
+  // 讓網頁平滑滾動回最上方
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  // 兼容某些套用客製化滾動的框架
+  document.querySelector('.page')?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+onMounted(() => { window.addEventListener('scroll', handleScroll, true) })
+onUnmounted(() => { window.removeEventListener('scroll', handleScroll, true) })
 const filterMonth = ref('all')
 
 // 自動抓取資料庫內所有出現過的月份 (由新到舊排序)
@@ -402,43 +423,36 @@ async function handleDeleteTransaction(t) {
 
 <template>
   <div class="page" style="padding-bottom: 150px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-      <h2 class="page-title" style="margin:0;">收支流水帳</h2>
-      
-      <div style="display: flex; gap: 8px; align-items: center;">
-        <select v-model="filterMonth" class="modern-select" style="padding: 8px 12px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0;">
-          <option value="all">所有月份</option>
-          <option v-for="m in availableMonths" :key="m" :value="m">{{ formatMonthLabel(m) }}</option>
-        </select>
-        
-        <button class="btn-primary" style="padding:10px 16px; border-radius:12px; font-weight:800;" @click="openExpForm">+ 新增收支</button>
+    
+    <!-- 💡 置頂區塊 Wrapper 開始 -->
+    <div class="sticky-top-bar">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 class="page-title" style="margin:0;">收支流水帳</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select v-model="filterMonth" class="modern-select" style="padding: 6px 10px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0;">
+            <option value="all">所有月份</option>
+            <option v-for="m in availableMonths" :key="m" :value="m">{{ formatMonthLabel(m) }}</option>
+          </select>
+          <button class="btn-primary" style="padding:8px 14px; border-radius:10px; font-weight:800; font-size: 13px;" @click="openExpForm">+ 新增收支</button>
+        </div>
+      </div>
+
+      <div v-if="store.hasMoreTxn" style="text-align: center; margin: 5px 0 10px 0;">
+        <button @click="store.loadMoreTransactions()" :disabled="store.isFetchingMore" style="background: #eef2ff; color: #4f46e2; border: 1.5px solid #c7d2fe; padding: 6px 16px; border-radius: 10px; font-weight: 800; cursor: pointer; transition: 0.2s; font-size: 12px;">
+          {{ store.isFetchingMore ? '🔄 正在拿取中...' : '📜 載入舊紀錄' }}
+        </button>
+      </div>
+      <div v-else style="text-align: center; margin: 5px 0 10px 0; color: #94a3b8; font-weight: 700; font-size: 11px;">
+        ✅ 已經到底了，所有歷史交易皆已載入
+      </div>
+
+      <div class="filter-row" style="margin-bottom: 5px;">
+        <button v-for="cat in uniqueCategories" :key="cat" class="f-btn" :class="{ active: activeCategory === cat }" @click="activeCategory = cat">
+          {{ cat }}
+        </button>
       </div>
     </div>
-
-    <div v-if="store.hasMoreTxn" style="text-align: center; margin: 20px 0 40px 0;">
-  <button 
-    @click="store.loadMoreTransactions()" 
-    :disabled="store.isFetchingMore"
-    style="background: #eef2ff; color: #4f46e2; border: 1.5px solid #c7d2fe; padding: 12px 24px; border-radius: 12px; font-weight: 800; cursor: pointer; transition: 0.2s;"
-  >
-    {{ store.isFetchingMore ? '🔄 正在從資料庫拿取中...' : '📜 載入更舊的交易紀錄' }}
-  </button>
-</div>
-<div v-else style="text-align: center; margin: 20px 0 40px 0; color: #94a3b8; font-weight: 700; font-size: 13px;">
-  ✅ 已經到底了，所有歷史交易皆已載入
-</div>
-
-    <div class="filter-row">
-      <button 
-        v-for="cat in uniqueCategories" 
-        :key="cat" 
-        class="f-btn" 
-        :class="{ active: activeCategory === cat }" 
-        @click="activeCategory = cat"
-      >
-        {{ cat }}
-      </button>
-    </div>
+    <!-- 💡 置頂區塊 Wrapper 結束 -->
 
     <div v-if="groupedTxns.length === 0" style="text-align: center; color: #94a3b8; font-weight: 800; margin-top: 50px;">
       目前沒有相關紀錄
@@ -547,6 +561,10 @@ async function handleDeleteTransaction(t) {
 <div style="padding-bottom: 80px;">
   <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" @click="saveTransaction">✅ 儲存</button>
 </div>    </BaseModal>
+
+    <!-- 💡 浮動回到最上層按鈕 -->
+    <button v-if="showScrollTop" class="scroll-top-btn" @click="scrollToTop">⬆️</button>
+
   </div>
 </template>
 

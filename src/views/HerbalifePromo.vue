@@ -40,6 +40,12 @@ const displayedMonths = computed(() => {
 
 const monthlyStats = ref({})
 const isSyncing = ref(false)
+// 🟢 身份切換 (績優組/卓越組 vs 非績優組)
+const isTopTeam = ref(JSON.parse(localStorage.getItem('fitwork_isTopTeam')) || false)
+const toggleTopTeam = () => {
+  isTopTeam.value = !isTopTeam.value
+  localStorage.setItem('fitwork_isTopTeam', JSON.stringify(isTopTeam.value))
+}
 
 // 💯 10000% 保留所有活動條件、金額與圖片
 const promos = ref([
@@ -364,24 +370,93 @@ const promoStatus = computed(() => {
       }
     }
     else if (promo.id === 2) {
-      // 🏖️ 馬爾代夫三級制邏輯
+      // 🏖️ 馬爾代夫雙軌邏輯 (卓越組 vs 非卓越組)
       let vp = calculatedVp
-      if (vp >= 100000) {
-        specialStatusText = "🎉 達成【第三級】(10萬點)！太神啦！"
-        isQualified = true
-        progressPercent = 100
-      } else if (vp >= 80000) {
-        specialStatusText = `🎉 達成【第二級】(8萬點)！升級第三級尚差 ${(100000 - vp).toLocaleString()} VP`
-        isQualified = true
-        progressPercent = 100
-      } else if (vp >= 60000) {
-        specialStatusText = `🎉 達成【第一級】(6萬點)！升級第二級尚差 ${(80000 - vp).toLocaleString()} VP`
-        isQualified = true
-        progressPercent = 100
+      if (isTopTeam.value) {
+        // 👑 卓越組 (4萬特別賞起跳)
+        if (vp >= 100000) {
+          specialStatusText = "🎉 達成【第三級】(10萬點)！太神啦！"
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 80000) {
+          specialStatusText = `🎉 達成【第二級】(8萬點)！升級第三級尚差 ${(100000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 60000) {
+          specialStatusText = `🎉 達成【第一級】(6萬點)！升級第二級尚差 ${(80000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 40000) {
+          specialStatusText = `🎉 達成【卓越組特別賞】(4萬點)！升級第一級尚差 ${(60000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else {
+          specialStatusText = `⚠️ 距離特別賞(4萬點)尚差: ${(40000 - vp).toLocaleString()} VP`
+          isQualified = false
+          progressPercent = Math.min(100, (vp / 40000) * 100)
+        }
       } else {
-        specialStatusText = `⚠️ 距離第一級(6萬點)尚差: ${(60000 - vp).toLocaleString()} VP`
-        isQualified = false
-        progressPercent = Math.min(100, (vp / 60000) * 100)
+        // 👤 非卓越組 (6萬第一級起跳)
+        if (vp >= 100000) {
+          specialStatusText = "🎉 達成【第三級】(10萬點)！太神啦！"
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 80000) {
+          specialStatusText = `🎉 達成【第二級】(8萬點)！升級第三級尚差 ${(100000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 60000) {
+          specialStatusText = `🎉 達成【第一級】(6萬點)！升級第二級尚差 ${(80000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else {
+          specialStatusText = `⚠️ 距離第一級(6萬點)尚差: ${(60000 - vp).toLocaleString()} VP`
+          isQualified = false
+          progressPercent = Math.min(100, (vp / 60000) * 100)
+        }
+      }
+    }
+    else if (promo.id === 1) {
+      // 🌴 沖繩雙軌邏輯 (績優組 vs 非績優組)
+      let vp = calculatedVp
+      if (isTopTeam.value) {
+        // 👑 績優組
+        if (vp >= 80000) {
+          specialStatusText = "🎉 達成【第二重資格】(8萬點)！太神啦！"
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 60000) {
+          specialStatusText = `🎉 達成【第一重資格】(6萬點)！升級第二重尚差 ${(80000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 40000) {
+          specialStatusText = `🎉 達成【特別賞】(4萬點)！升級第一重尚差 ${(60000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else {
+          specialStatusText = `⚠️ 距離特別賞(4萬點)尚差: ${(40000 - vp).toLocaleString()} VP`
+          isQualified = false
+          progressPercent = Math.min(100, (vp / 40000) * 100)
+        }
+      } else {
+        // 👤 非績優組
+        if (vp >= 50000) {
+          specialStatusText = "🎉 達成【第二重資格】(5萬點)！太神啦！"
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 40000) {
+          specialStatusText = `🎉 達成【第一重資格】(4萬點)！升級第二重尚差 ${(50000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else if (vp >= 30000) {
+          specialStatusText = `🎉 達成【特別賞】(3萬點)！升級第一重尚差 ${(40000 - vp).toLocaleString()} VP`
+          isQualified = true
+          progressPercent = 100
+        } else {
+          specialStatusText = `⚠️ 距離特別賞(3萬點)尚差: ${(30000 - vp).toLocaleString()} VP`
+          isQualified = false
+          progressPercent = Math.min(100, (vp / 30000) * 100)
+        }
       }
     }
     else {
@@ -394,8 +469,6 @@ const promoStatus = computed(() => {
     }
 
     return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
-  })
-})
 
 function exportToExcel() {
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
@@ -433,7 +506,11 @@ function exportToExcel() {
           <div class="mc-title">逐月成績控制台 <span v-if="isSyncing" style="font-size:11px; color:#10b981;">(🔄 同步中...)</span></div>
           <div class="mc-desc">請選擇年份，並填寫各月份考核成績。</div>
         </div>
-        <button class="btn-sync" @click="loadCloudStats">🔄 重新整理</button>
+        <!-- 👇 新增：績優/卓越組切換按鈕 -->
+        <button @click="toggleTopTeam" :class="['team-toggle-btn', isTopTeam ? 'active' : '']">
+          {{ isTopTeam ? '👑 績優/卓越組' : '👤 非績優組' }}
+        </button>
+        <button class="btn-sync" @click="loadCloudStats">🔄 刷新</button>
       </div>
 
       <div class="year-tabs">
@@ -600,6 +677,25 @@ function exportToExcel() {
 .year-tabs::-webkit-scrollbar { display: none; }
 .year-btn { flex-shrink: 0; background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #cbd5e1; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s; white-space: nowrap;}
 .year-btn.active { background: #10b981; border-color: #10b981; color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.25); }
+
+/* 身份切換按鈕樣式 */
+.team-toggle-btn {
+  background: rgba(255,255,255,0.05); 
+  border: 1px solid #475569; 
+  color: #94a3b8; 
+  font-size: 11px; 
+  font-weight: 800; 
+  padding: 6px 10px; 
+  border-radius: 8px; 
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.team-toggle-btn.active {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+  border-color: #f59e0b;
+}
 
 /* 💡 優化：防止月份卡片被擠扁 */
 .months-scroll-container { display: flex; overflow-x: auto; gap: 12px; padding-bottom: 10px; scroll-behavior: smooth; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
