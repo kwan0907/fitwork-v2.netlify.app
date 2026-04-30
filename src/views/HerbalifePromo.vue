@@ -468,8 +468,9 @@ const promoStatus = computed(() => {
       progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
     }
 
-    return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
-
+return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
+  })
+})
 function exportToExcel() {
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
   csvContent += "活動名稱,考核期限,該區間已累積(VP),已累積(VIP),已累積(金級),已累積(領班),綜合完成率(%),達標狀態\n"
