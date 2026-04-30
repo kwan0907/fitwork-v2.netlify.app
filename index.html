@@ -1,10 +1,27 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- ⚠️ 如果你已經把 Excel 匯入改回純 CSV，這行 SheetJS 可以刪掉，但我先幫你保留策安全 -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />    <title>Vite + Vue</title>
+    
+    <!-- 👇 1. 這裡換成你剛剛放進去的圖片 (瀏覽器分頁用) -->
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    
+    <!-- 👇 2. 新增這行：專門給蘋果 iPhone 桌面顯示用的圖示 -->
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />    
+    
+    <!-- 👇 專門告訴 iPhone「加入主畫面時請用這個名字」 -->
+    <meta name="apple-mobile-web-app-title" content="BZ記錄器">
+    <meta name="application-name" content="BZ記錄器">
+    
+    <!-- 👇 告訴 Android 手機去哪裡讀取詳細設定檔 (非常重要！) -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- 👇 瀏覽器上方的分頁名稱 -->
+    <title>BZ記錄器</title>
   </head>
   <body>
     <div id="app"></div>
