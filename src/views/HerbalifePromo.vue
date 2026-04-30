@@ -59,13 +59,16 @@ const promos = ref([
   { 
     id: 2, name: '🏖️ 2027 馬爾代夫閒情浪漫遊', date: '2026/1/1 ~ 2026/12/31', 
     startMonth: '2026-01', endMonth: '2026-12',
+    // 👇 啟動二月雙倍引擎，最高加成 2500 分
+    doubleVpMonth: '2026-02', doubleVpMaxExtra: 2500, 
     defaultImage: 'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImages: [null, null],
-    targetVp: 40000, targetVip: 0, targetGold: 0, targetSup: 0,
+    targetVp: 60000, targetVip: 0, targetGold: 0, targetSup: 0, // 👈 基礎目標改為第一級的 60000
     details: [
-      '【卓越組及以上限定】最低門檻累積 40,000 總銷售量點數',
+      '【非卓越組限定】最低門檻累積 60,000 總銷售量點數',
       '【級別要求】第一級: 6萬點 / 第二級: 8萬點 / 第三級: 10萬點',
-      '📌 開放予所有全資格領班及以上參與'
+      '📌 2月加碼：最多可雙倍計算 2,500 個人點數 (系統將自動加乘)'
+      
     ]
   },
   { 
@@ -360,6 +363,27 @@ const promoStatus = computed(() => {
           specialStatusText = `⚠️ 尚差: ${vpDiff.toLocaleString()} VP 或 需達成連續 4 個月 2500 VP`
       }
     }
+    else if (promo.id === 2) {
+      // 🏖️ 馬爾代夫三級制邏輯
+      let vp = calculatedVp
+      if (vp >= 100000) {
+        specialStatusText = "🎉 達成【第三級】(10萬點)！太神啦！"
+        isQualified = true
+        progressPercent = 100
+      } else if (vp >= 80000) {
+        specialStatusText = `🎉 達成【第二級】(8萬點)！升級第三級尚差 ${(100000 - vp).toLocaleString()} VP`
+        isQualified = true
+        progressPercent = 100
+      } else if (vp >= 60000) {
+        specialStatusText = `🎉 達成【第一級】(6萬點)！升級第二級尚差 ${(80000 - vp).toLocaleString()} VP`
+        isQualified = true
+        progressPercent = 100
+      } else {
+        specialStatusText = `⚠️ 距離第一級(6萬點)尚差: ${(60000 - vp).toLocaleString()} VP`
+        isQualified = false
+        progressPercent = Math.min(100, (vp / 60000) * 100)
+      }
+    }
     else {
       let percents = []
       if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
@@ -528,17 +552,19 @@ function exportToExcel() {
       </div>
     </div>
 
-    <div v-if="viewingImage" class="image-modal-overlay" @click.self="viewingImage = null">
+    <div v-if="viewingImage" class="image-modal-overlay" @click="viewingImage = null">
       
-      <div class="zoom-controls">
-        <button class="z-btn" @click.stop="imgScale += 0.4">➕ 放大</button>
-        <button class="z-btn" @click.stop="imgScale = Math.max(0.4, imgScale - 0.4)">➖ 縮小</button>
-        <button class="z-btn" @click.stop="imgScale = 1">↺ 還原</button>
-        <button class="z-btn c-btn" @click.stop="viewingImage = null">✕ 關閉</button>
+      <!-- 圖片顯示區：加上 @click.stop，點圖片本身不會關閉 -->
+      <div class="img-scroll-container">
+        <img :src="viewingImage" class="full-size-img" :style="{ transform: `scale(${imgScale})` }" @click.stop />
       </div>
 
-      <div class="img-scroll-container">
-        <img :src="viewingImage" class="full-size-img" :style="{ transform: `scale(${imgScale})` }" />
+      <!-- 控制列移到底部：同樣加上 @click.stop -->
+      <div class="zoom-controls" @click.stop>
+        <button class="z-btn" @click="imgScale += 0.4">➕ 放大</button>
+        <button class="z-btn" @click="imgScale = Math.max(0.4, imgScale - 0.4)">➖ 縮小</button>
+        <button class="z-btn" @click="imgScale = 1">↺ 還原</button>
+        <button class="z-btn c-btn" @click="viewingImage = null">✕ 關閉</button>
       </div>
 
     </div>
@@ -658,44 +684,59 @@ function exportToExcel() {
   left: 0; 
   width: 100vw; 
   height: 100vh; 
-  background: rgba(0,0,0,0.9); 
-  z-index: 9999; 
+  background: rgba(0,0,0,0.85); 
+  z-index: 99999; 
   display: flex; 
   flex-direction: column;
   overscroll-behavior: none; 
 }
-.img-scroll-container { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 20px;}
-.full-size-img { max-width: 95%; max-height: 85vh; border-radius: 8px; object-fit: contain; transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); transform-origin: center center;}
+.img-scroll-container { 
+  flex: 1; 
+  width: 100%;
+  overflow: auto; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  padding: 20px;
+  padding-bottom: 120px; 
+}
+.full-size-img { 
+  max-width: 95%; 
+  max-height: 85vh; 
+  border-radius: 8px; 
+  object-fit: contain; 
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); 
+  transform-origin: center center;
+}
 
-/* 💡 將控制列固定在上方，保證絕對不會被底部的瀏覽器列擋住！ */
 .zoom-controls { 
-  position: fixed; /* 改用 fixed，鎖死在螢幕上 */
-  top: max(20px, env(safe-area-inset-top)); /* 放在頂部，並避開瀏海 */
+  position: absolute; 
+  bottom: max(30px, env(safe-area-inset-bottom)); 
   left: 50%; 
   transform: translateX(-50%); 
   display: flex; 
   flex-wrap: wrap; 
   justify-content: center;
-  gap: 8px; 
-  background: rgba(30, 41, 59, 0.7); /* 改成深色半透明背景比較酷 */
+  gap: 10px; 
+  background: rgba(30, 41, 59, 0.85); 
   backdrop-filter: blur(10px); 
-  padding: 10px 15px; 
+  padding: 12px 18px; 
   border-radius: 20px; 
-  z-index: 10000;
+  z-index: 100000;
   width: max-content;
   max-width: 90vw;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
 }
-
-/* 確保按鈕在深色背景上清楚可見 */
 .z-btn { 
   background: white; 
   color: #1e293b; 
-  font-size: 13px; 
+  font-size: 14px; 
   font-weight: 900; 
-  padding: 8px 12px; 
-  border-radius: 10px; 
+  padding: 10px 14px; 
+  border-radius: 12px; 
   border: none; 
   cursor: pointer; 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
   white-space: nowrap; 
 }
 .z-btn:active { transform: scale(0.9); }
