@@ -169,7 +169,44 @@ const loadCloudStats = async () => {
   isSyncing.value = false
 }
 
-onMounted(() => { loadCloudStats() })
+// 🟢 智能判斷是否為「本月」
+const isCurrentMonth = (mStr) => {
+  const today = new Date()
+  const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  return mStr === currentMonthStr
+}
+
+// 🟢 自動滾動到本月
+const scrollToCurrentMonth = () => {
+  setTimeout(() => {
+    const today = new Date()
+    const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    
+    // 只有當選擇的年份是「今年」時，才滾動到本月
+    if (selectedYear.value === String(today.getFullYear())) {
+      const targetCard = document.getElementById('month-card-' + currentMonthStr)
+      if (targetCard) {
+        // 平滑滾動，把本月推到最左邊第一個位置
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+      }
+    } else {
+       // 切換到其他年份時，自動滾回 1 月
+       const container = document.querySelector('.months-scroll-container')
+       if(container) container.scrollTo({ left: 0, behavior: 'smooth' })
+    }
+  }, 300) // 延遲 300 毫秒等待畫面資料渲染完成
+}
+
+// 監聽年份切換，一轉年份就自動執行滾動
+watch(selectedYear, () => {
+  scrollToCurrentMonth()
+})
+
+// 網頁一載入，讀取完資料就自動滾動
+onMounted(async () => { 
+  await loadCloudStats() 
+  scrollToCurrentMonth()
+})
 
 // 💡 優化儲存機制：加入狀態防呆與失敗重試，徹底解決靜默失敗導致資料遺失的問題
 const saveMonthToCloud = async (month) => {
@@ -534,9 +571,12 @@ function exportToExcel() {
         </button>
       </div>
 
-      <div class="months-scroll-container">
-        <div class="month-card" v-for="month in displayedMonths" :key="month">
-          <div class="m-title">📅 {{ formatMonthLabel(month) }}</div>
+     <div class="months-scroll-container">
+        <div class="month-card" v-for="month in displayedMonths" :key="month" :id="'month-card-' + month" :class="{'current-month-highlight': isCurrentMonth(month)}">
+          <div class="m-title">
+            📅 {{ formatMonthLabel(month) }}
+            <span v-if="isCurrentMonth(month)" class="now-tag">本月</span>
+          </div>
           
           <div class="m-inp-group">
             <label>VP</label>
@@ -665,6 +705,23 @@ function exportToExcel() {
 </template>
 
 <style scoped>
+/* 💡 本月專屬高光特效與標籤 */
+.current-month-highlight {
+  border: 2px solid #ef4444 !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.15);
+}
+.now-tag {
+  font-size: 10px;
+  background: #ef4444;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-left: 4px;
+  vertical-align: top;
+  font-weight: 900;
+  box-shadow: 0 2px 5px rgba(239,68,68,0.3);
+}
 /* 💡 優化：徹底解決手機版「下拉拉動整個螢幕」的干擾 */
 .page { 
   padding: 20px; 
