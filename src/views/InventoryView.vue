@@ -34,12 +34,13 @@ const displayInventory = computed(() => {
     return { ...p, current_qty: currentQty }
   })
 
-  if (selectedCategory.value === '內在營養') {
-    list = list.filter(p => p.category && p.category.includes('內'))
+if (selectedCategory.value === '內在營養') {
+    // 🌿 兼容繁體「內」與簡體「内」
+    list = list.filter(p => p.category && (p.category.includes('內') || p.category.includes('内')))
   } else if (selectedCategory.value === '外在保養') {
-    list = list.filter(p => p.category && p.category.includes('外'))
+    // 🧴 確保無論繁簡都能正確抓取 (雖然「外」字一樣，但加強比對策安全)
+    list = list.filter(p => p.category && (p.category.includes('外') || p.category.includes('保养')))
   }
-
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
     list = list.filter(p => 
