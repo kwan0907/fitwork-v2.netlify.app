@@ -43,10 +43,11 @@ const monthlyReport = computed(() => {
   let otherExpenses = 0
   let payoutToCoach = 0 
   
-  // 4. 續卡明細
+  // 4. 續卡明細與清單收集器
   let renew10 = 0
   let renew35 = 0
   let otherIncome = 0
+  const packageSalesList = [] // 🟢 新增：用來裝所有續卡/售卡項目的清單
 
   // 5. 迴圈結算
   txns.forEach(t => {
@@ -54,6 +55,28 @@ const monthlyReport = computed(() => {
       totalRevenue += Number(t.amount)
       
       const noteStr = t.note || ''
+      
+      // 🟢 智能擷取具體購買項目名稱
+      let itemName = t.category || '其他'
+      if (t.amount === 850 || noteStr.includes('10點')) itemName = '10點套票'
+      else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點')) itemName = '35點套票'
+      else if (noteStr) itemName = noteStr.replace(/^【.*?】\s*/, '') // 自動去掉名字開頭，只保留項目
+      
+      // 🟢 如果是套票、運動或試堂，加入明細清單
+      if (t.category === '運動套票' || t.category === '運動' || t.category === '試堂') {
+        let cName = t.client_name
+        if (!cName && noteStr) {
+            const match = noteStr.match(/^【(.*?)】/);
+            if (match) cName = match[1];
+        }
+        packageSalesList.push({
+           date: String(t.created_at).slice(5, 10), // 只顯示 MM-DD
+           client: cName || '未記錄',
+           item: itemName,
+           amount: t.amount
+        })
+      }
+
       if (t.amount === 850 || noteStr.includes('10點')) {
         renew10++
         payoutToCoach += 250
@@ -78,9 +101,9 @@ const monthlyReport = computed(() => {
   const cpa = newClientCount > 0 ? Math.round(adSpend / newClientCount) : 0 
   const conversionRate = (newClientCount + trialCount) > 0 ? Math.round((newClientCount / (newClientCount + trialCount)) * 100) : 0 
 
-  return {
+ return {
     startMonth: startM, endMonth: endM, newClientCount, trialCount, referralCount,
-    renew10, renew35, otherIncome,
+    renew10, renew35, otherIncome, packageSalesList,
     totalRevenue, adSpend, otherExpenses, payoutToCoach,
     grossProfit, netProfit, cpa, conversionRate
   }
@@ -983,19 +1006,46 @@ const chartOptions = {
             <div class="b-val">${{ monthlyReport.cpa }} / 人</div>
             <div class="b-desc">用 ${{ monthlyReport.adSpend }} 廣告費帶來 {{ monthlyReport.newClientCount }} 個新客</div>
           </div>
-          <div class="b-metric">
+         <div class="b-metric">
             <span>淨利潤率 (Margin)</span>
             <div class="b-val">{{ monthlyReport.totalRevenue > 0 ? Math.round((monthlyReport.netProfit / monthlyReport.totalRevenue)*100) : 0 }}%</div>
             <div class="b-desc">每一百蚊營業額，最終落袋幾多蚊</div>
           </div>
         </div>
         
+        <!-- 🟢 新增：續卡與售出項目明細表格 -->
+        <h2 class="r-section-title" style="margin-top: 30px;">📝 續卡與售出項目明細</h2>
+        <div style="font-size: 13px; margin-bottom: 10px; color: #64748b; font-weight: 800;">
+          區間內共售出 / 續卡：<strong style="color: #4f46e2;">{{ monthlyReport.packageSalesList.length }}</strong> 項
+        </div>
+        
+        <table class="r-table">
+          <thead>
+            <tr>
+              <th style="width: 15%;">日期</th>
+              <th style="width: 25%;">客戶姓名</th>
+              <th style="width: 45%;">售出項目 (續卡內容)</th>
+              <th style="width: 15%; text-align: right;">金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(p, idx) in monthlyReport.packageSalesList" :key="idx">
+              <td>{{ p.date }}</td>
+              <td style="font-weight: 800; color: #4f46e2;">{{ p.client }}</td>
+              <td>{{ p.item }}</td>
+              <td style="text-align: right; color: #10b981; font-weight: 900;">${{ p.amount }}</td>
+            </tr>
+            <tr v-if="monthlyReport.packageSalesList.length === 0">
+              <td colspan="4" style="text-align: center; color: #94a3b8; padding: 15px;">此區間無續卡或售出紀錄</td>
+            </tr>
+          </tbody>
+        </table>
+
         <div class="r-footer">此報表由 FITWORK PRO 系統自動結算產生。</div>
       </div>
     </div>
   </div>
 </template>
-
 
 <style scoped>
 
@@ -1099,12 +1149,17 @@ const chartOptions = {
 
 .r-footer { margin-top: 40px; text-align: center; font-size: 10px; color: #cbd5e1; border-top: 1px solid #f1f5f9; padding-top: 15px; }
 
+/* 📊 報表表格專用樣式 */
+.r-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+.r-table th { background: #f8fafc; color: #475569; padding: 10px 8px; text-align: left; border-bottom: 2px solid #cbd5e1; font-weight: 900; }
+.r-table td { padding: 10px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; font-weight: 600; vertical-align: middle;}
+.r-table tbody tr:nth-child(even) { background-color: #fafaf9; }
+
 /* 📱 手機瀏覽器縮放 A4 紙 (避免破版) */
-@media (max-width: 800px) {
   .a4-paper { width: 100%; min-height: auto; padding: 15px; }
   .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; }
   .r-boss-metrics { flex-direction: column; gap: 10px;}
-}
+
 
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .dashboard-top-section { margin-bottom: 20px; }
