@@ -939,19 +939,17 @@ const chartOptions = {
       </div>
 
       <div class="a4-paper" id="printable-report">
-       <div class="r-header" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+        
+        <!-- 💡 修正後的頂部標題區 -->
+        <div class="r-header" style="flex-direction: column; align-items: flex-start; gap: 5px;">
           <div style="width: 100%;">
             <h1 class="r-title" style="font-size: 22px; white-space: nowrap;">BZ PRO 營運報告</h1>
-            <p class="r-subtitle">區間：{{ monthlyReport.startMonth }} ~ {{ monthlyReport.endMonth }}</p>
-          </div>
-          <div class="r-logo" style="margin-top: 5px;">BLUE ZONE</div>
-        </div>
             <p class="r-subtitle">
-              結算區間：{{ monthlyReport.startMonth }} {{ monthlyReport.startMonth !== monthlyReport.endMonth ? '至 ' + monthlyReport.endMonth : '' }} | 
+              結算區間：{{ monthlyReport.startMonth }}{{ monthlyReport.startMonth !== monthlyReport.endMonth ? ' 至 ' + monthlyReport.endMonth : '' }} | 
               產出日期：{{ new Date().toLocaleDateString() }}
             </p>
           </div>
-          <div class="r-logo">BLUE ZONE</div>
+          <div class="r-logo" style="margin-top: 5px;">BLUE ZONE</div>
         </div>
 
         <h2 class="r-section-title">👥 客戶增長與廣告效益</h2>
@@ -963,7 +961,7 @@ const chartOptions = {
         </div>
 
         <h2 class="r-section-title">🎟️ 續卡與銷售明細</h2>
-       <div class="r-grid-3">
+        <div class="r-grid-3">
           <div class="r-stat-box highlight-blue"><span>總營業額 (HKD)</span><strong class="money">${{ monthlyReport.totalRevenue.toLocaleString() }}</strong></div>
           <div class="r-stat-box"><span>10點 套票售出</span><strong>{{ monthlyReport.renew10 }} 張</strong><small>(${{ monthlyReport.renew10 * 850 }})</small></div>
           <div class="r-stat-box"><span>35點 套票售出</span><strong>{{ monthlyReport.renew35 }} 張</strong><small>(${{ monthlyReport.renew35 * 2550 }})</small></div>
@@ -983,7 +981,7 @@ const chartOptions = {
           <div class="b-metric">
             <span>單一獲客成本 (CPA)</span>
             <div class="b-val">${{ monthlyReport.cpa }} / 人</div>
-            <div class="b-desc">用 {{ monthlyReport.adSpend }} 廣告費帶來 {{ monthlyReport.newClientCount }} 個新客</div>
+            <div class="b-desc">用 ${{ monthlyReport.adSpend }} 廣告費帶來 {{ monthlyReport.newClientCount }} 個新客</div>
           </div>
           <div class="b-metric">
             <span>淨利潤率 (Margin)</span>
@@ -994,7 +992,10 @@ const chartOptions = {
         
         <div class="r-footer">此報表由 FITWORK PRO 系統自動結算產生。</div>
       </div>
+    </div>
+  </div>
 </template>
+
 
 <style scoped>
 
@@ -1037,8 +1038,25 @@ const chartOptions = {
   /* 其他樣式保持不變... */
 }
 /* 💡 懸浮在最底部的玻璃質感操作列 (保持不變，但加寬手機適應) */
-.report-actions { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 15px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.25); width: 92%; max-width: 450px; z-index: 1000000; border: 1px solid #cbd5e1; }
-
+/* 💡 終極優化懸浮操作列，確保底部不被遮擋 */
+.report-actions { 
+  position: fixed; 
+  bottom: calc(100px + env(safe-area-inset-bottom)); /* 🚀 關鍵：把高度拉高，絕對躲開 iPhone 的底部白線和任何導航列 */
+  left: 50%; 
+  transform: translateX(-50%); 
+  display: flex; 
+  flex-direction: column; /* 強制垂直排列，確保按鈕一定會出現 */
+  gap: 12px; 
+  background: rgba(255, 255, 255, 0.98); 
+  backdrop-filter: blur(10px); 
+  padding: 15px; 
+  border-radius: 20px; 
+  box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
+  width: 90%; 
+  max-width: 450px; 
+  z-index: 10000000; 
+  border: 1px solid #cbd5e1; 
+}
 .report-actions .d-inp { width: 100%; border-radius: 10px; padding: 8px; border: 1px solid #cbd5e1; font-weight: 800; text-align: center; color: #4f46e2; background: #f8fafc; font-size: 16px;}
 .btn-pdf { flex: 1; background: #ef4444; color: white; border: none; padding: 12px; border-radius: 12px; font-weight: 900; cursor: pointer; font-size: 14px; white-space: nowrap; box-shadow: 0 4px 10px rgba(239, 68, 68, 0.2);}
 .btn-close-report { flex: 1; background: #f1f5f9; color: #475569; border: none; padding: 12px; border-radius: 12px; font-weight: 900; cursor: pointer; font-size: 14px; white-space: nowrap; }
