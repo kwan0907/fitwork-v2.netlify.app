@@ -939,9 +939,13 @@ const chartOptions = {
       </div>
 
       <div class="a4-paper" id="printable-report">
-        <div class="r-header">
-          <div>
-            <h1 class="r-title">FITWORK PRO 營運報告</h1>
+       <div class="r-header" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+          <div style="width: 100%;">
+            <h1 class="r-title" style="font-size: 22px; white-space: nowrap;">BZ PRO 營運報告</h1>
+            <p class="r-subtitle">區間：{{ monthlyReport.startMonth }} ~ {{ monthlyReport.endMonth }}</p>
+          </div>
+          <div class="r-logo" style="margin-top: 5px;">BLUE ZONE</div>
+        </div>
             <p class="r-subtitle">
               結算區間：{{ monthlyReport.startMonth }} {{ monthlyReport.startMonth !== monthlyReport.endMonth ? '至 ' + monthlyReport.endMonth : '' }} | 
               產出日期：{{ new Date().toLocaleDateString() }}
@@ -990,8 +994,6 @@ const chartOptions = {
         
         <div class="r-footer">此報表由 FITWORK PRO 系統自動結算產生。</div>
       </div>
-    </div>
-  </div>
 </template>
 
 <style scoped>
@@ -1004,13 +1006,36 @@ const chartOptions = {
 .report-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #e2e8f0; z-index: 999999; overflow-y: auto; padding: 20px 15px 150px 15px; display: block; }
 
 /* 💡 鎖死背景滑動：加入 overscroll-behavior: none; */
+/* 💡 終極修復：解決上下遮擋與背景滑動 */
 .report-modal-overlay { 
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-  background: #e2e8f0; z-index: 999999; 
-  overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: none; 
-  padding: 20px 15px 150px 15px; display: block; 
+  position: fixed; 
+  top: 0; 
+  left: 0; 
+  width: 100vw; 
+  height: 100vh; 
+  background: rgba(226, 232, 240, 0.98); /* 稍微帶點透明度 */
+  z-index: 9999999; /* 層級推到最高 */
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; 
+  overscroll-behavior: none; 
+  
+  /* 🚀 關鍵修改：
+     頂部預留 100px 躲開標題欄
+     底部預留 200px 確保報表尾巴能完全滑出，不被懸浮按鈕擋住 */
+  padding: 100px 15px calc(200px + env(safe-area-inset-bottom)) 15px; 
+  display: block; 
+  box-sizing: border-box;
 }
 
+/* 💡 讓懸浮按鈕永遠在最前面 */
+.report-actions { 
+  position: fixed; 
+  bottom: calc(20px + env(safe-area-inset-bottom)); /* 自動適應 iPhone 底部 */
+  left: 50%; 
+  transform: translateX(-50%); 
+  z-index: 10000000; /* 比 overlay 還要高 */
+  /* 其他樣式保持不變... */
+}
 /* 💡 懸浮在最底部的玻璃質感操作列 (保持不變，但加寬手機適應) */
 .report-actions { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 15px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.25); width: 92%; max-width: 450px; z-index: 1000000; border: 1px solid #cbd5e1; }
 
