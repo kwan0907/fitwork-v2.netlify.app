@@ -198,12 +198,8 @@ const groupedTxns = computed(() => {
   filteredList.forEach(t => {
   if (!t?.created_at) return
   
-  // 🟢 先轉成 JS Date 物件，它會自動處理時區轉換，再轉回本地日期字串
-  const localDate = new Date(t.created_at);
-  const y = localDate.getFullYear();
-  const m = String(localDate.getMonth() + 1).padStart(2, '0');
-  const d = String(localDate.getDate()).padStart(2, '0');
-  const dateStr = `${y}-${m}-${d}`;
+ // 🟢 極限粗暴法：直接斬件，唔經 Date 轉換，所見即所得
+  const dateStr = String(t.created_at).slice(0, 10);
     
     const [yyyy, mm, dd] = dateStr.split('-')
     const displayDate = `${dd}/${mm}/${yyyy}`
@@ -334,9 +330,9 @@ async function saveTransaction() {
   const mm = String(now.getMinutes()).padStart(2, '0')
   const ss = String(now.getSeconds()).padStart(2, '0')
   
-  // 加上 +08:00 確保資料庫知道這是香港時間，不會亂減時數
-const finalString = `${expForm.value.date}T${hh}:${mm}:${ss}+08:00`
-const updatePayload = { ...data, created_at: finalString }
+// 🟢 直接儲存，唔加時區標記，當作純字串處理
+  const finalString = `${expForm.value.date}T${hh}:${mm}:${ss}`
+  const updatePayload = { ...data, created_at: finalString }
 
   let error
   if (editingTxn.value) {
