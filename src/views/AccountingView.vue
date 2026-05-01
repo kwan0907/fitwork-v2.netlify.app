@@ -26,11 +26,7 @@ const getLocalYMD = () => {
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
   return d.toISOString().split('T')[0]
 }
-const getLocalYMD = () => {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-  return d.toISOString().split('T')[0]
-}
+
 // ==========================================
 // 🟢 新增：月份過濾邏輯
 
