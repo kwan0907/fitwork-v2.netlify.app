@@ -430,7 +430,7 @@ async function confirmAction() {
 .btn-orange { background: #fff7ed; color: #d97706; }
 
 /* 🚀 採購購物車 Float Bar & Modal */
-.float-bar { position: fixed; bottom: 85px; left: 5%; width: 90%; background: #1e293b; border-radius: 99px; padding: 14px 20px; display: flex; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 90; cursor: pointer; }
+.float-bar { position: fixed; bottom: calc(90px + env(safe-area-inset-bottom)); left: 5%; width: 90%; background: #1e293b; border-radius: 99px; padding: 14px 20px; display: flex; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 90; cursor: pointer; }
 .badge-num { background: #10b981; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 16px; }
 .float-total { font-size: 20px; font-weight: 900; color: white; margin-right: 15px; flex: 1; margin-left: 10px;}
 .float-btn { font-size: 14px; font-weight: 800; color: #cbd5e1; }
@@ -475,7 +475,7 @@ async function confirmAction() {
 
 /* 🌟 單件操作 Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.6); backdrop-filter: blur(5px); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 20px;}
-.checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 28px; padding: 25px; max-height: 85vh; overflow-y: auto; align-self: flex-end;}
+.checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 28px; padding: 25px; padding-bottom: calc(40px + env(safe-area-inset-bottom)); max-height: 85vh; overflow-y: auto; align-self: flex-end;}
 .action-modal { background: white; width: 100%; max-width: 360px; border-radius: 28px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes modalPop { 0% { transform: scale(0.95) translateY(10px); opacity: 0; } 100% { transform: scale(1) translateY(0); opacity: 1; } }
 

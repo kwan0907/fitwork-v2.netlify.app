@@ -157,8 +157,12 @@ async function handleCheckout(staff) {
           <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="showDropdown = true" @input="showDropdown = true">
           <div v-if="showDropdown && clientOptions.length > 0" class="drop-menu">
             <div style="padding:8px; text-align:center; font-size:12px; color:#ef4444; background:#f8fafc; border-bottom:1px solid #eee; cursor:pointer;" @click="showDropdown = false">✕ 關閉搜尋</div>
-            <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)">
-              {{ c.name }} <span class="sub-text">({{ c.phone }})</span>
+            <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+              <span>{{ c.name }} <span class="sub-text">({{ c.phone }})</span></span>
+              <!-- 🟢 新增：直觀顯示該客戶所屬分店 -->
+              <span style="font-size: 10px; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 800; white-space: nowrap;">
+                📍 {{ c.branch || '未知分店' }}
+              </span>
             </div>
           </div>
         </div>
