@@ -959,10 +959,10 @@ const chartOptions = {
         </div>
 
         <h2 class="r-section-title">🎟️ 續卡與銷售明細</h2>
-        <div class="r-grid-3">
+       <div class="r-grid-3">
           <div class="r-stat-box highlight-blue"><span>總營業額 (HKD)</span><strong class="money">${{ monthlyReport.totalRevenue.toLocaleString() }}</strong></div>
-          <div class="r-stat-box"><span>10點 套票售出</span><strong>{{ monthlyReport.renew10 }} 張</strong><small>(${monthlyReport.renew10 * 850})</small></div>
-          <div class="r-stat-box"><span>35點 套票售出</span><strong>{{ monthlyReport.renew35 }} 張</strong><small>(${monthlyReport.renew35 * 2550})</small></div>
+          <div class="r-stat-box"><span>10點 套票售出</span><strong>{{ monthlyReport.renew10 }} 張</strong><small>(${{ monthlyReport.renew10 * 850 }})</small></div>
+          <div class="r-stat-box"><span>35點 套票售出</span><strong>{{ monthlyReport.renew35 }} 張</strong><small>(${{ monthlyReport.renew35 * 2550 }})</small></div>
         </div>
 
         <h2 class="r-section-title">💰 財務與利潤結算</h2>
@@ -1003,16 +1003,29 @@ const chartOptions = {
 /* 💡 移除 Flexbox 避免擠壓，加入超大底部 padding 讓 A4 紙可以滑動到底部而不被遮住 */
 .report-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #e2e8f0; z-index: 999999; overflow-y: auto; padding: 20px 15px 150px 15px; display: block; }
 
-/* 💡 懸浮在最底部的玻璃質感操作列 */
+/* 💡 鎖死背景滑動：加入 overscroll-behavior: none; */
+.report-modal-overlay { 
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+  background: #e2e8f0; z-index: 999999; 
+  overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: none; 
+  padding: 20px 15px 150px 15px; display: block; 
+}
+
+/* 💡 懸浮在最底部的玻璃質感操作列 (保持不變，但加寬手機適應) */
 .report-actions { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 15px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.25); width: 92%; max-width: 450px; z-index: 1000000; border: 1px solid #cbd5e1; }
 
 .report-actions .d-inp { width: 100%; border-radius: 10px; padding: 8px; border: 1px solid #cbd5e1; font-weight: 800; text-align: center; color: #4f46e2; background: #f8fafc; font-size: 16px;}
 .btn-pdf { flex: 1; background: #ef4444; color: white; border: none; padding: 12px; border-radius: 12px; font-weight: 900; cursor: pointer; font-size: 14px; white-space: nowrap; box-shadow: 0 4px 10px rgba(239, 68, 68, 0.2);}
 .btn-close-report { flex: 1; background: #f1f5f9; color: #475569; border: none; padding: 12px; border-radius: 12px; font-weight: 900; cursor: pointer; font-size: 14px; white-space: nowrap; }
 
-.a4-paper { margin: 0 auto; width: 210mm; min-height: 297mm; background: white; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.15); border-radius: 12px; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; }
+/* 💡 畫布改為自適應：手機 100%，最大不超過 A4，並移除 min-height 防止下方留白太多 */
+.a4-paper { 
+  margin: 0 auto; width: 100%; max-width: 210mm; 
+  background: white; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+  border-radius: 12px; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; 
+}
 
-.r-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; }
+.r-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; flex-wrap: wrap; gap: 10px; }
 .r-title { font-size: 28px; font-weight: 900; color: #1e293b; margin: 0 0 5px 0; }
 .r-subtitle { font-size: 12px; color: #64748b; margin: 0; }
 .r-logo { font-size: 24px; font-weight: 900; color: #4f46e2; letter-spacing: 2px; }
@@ -1106,7 +1119,9 @@ const chartOptions = {
 .wts-btn-pill { background: #25D366; color: white; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.3); white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
 .wts-btn-pill:active { transform: scale(0.95); background: #1da851; }
 
+/* 📱 手機瀏覽器縮放 (統一處理所有手機排版) */
 @media (max-width: 600px) {
+  /* 1. 原本的漏斗排版 (保留不變) */
   .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }
   .funnel-metrics::-webkit-scrollbar { height: 4px; }
   .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -1117,6 +1132,13 @@ const chartOptions = {
   .fm-arrow { transform: none; font-size: 14px; }
   .fm-rate-box { width: auto; min-width: 85px; padding: 10px; margin-top: 0; flex: 0 0 auto;}
   .fm-rate-box .fm-val { font-size: 18px !important; }
+
+  /* 2. 新增的 A4 報表排版 (防止超出螢幕) */
+  .a4-paper { padding: 15px; }
+  .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; } /* 手機變成兩排，避免擠壓 */
+  .r-boss-metrics { flex-direction: column; gap: 10px; }
+  .r-title { font-size: 20px; } /* 縮小標題防止斷行 */
+  .r-logo { font-size: 18px; }
 }
 
 .p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
