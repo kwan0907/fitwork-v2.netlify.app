@@ -12,7 +12,15 @@ const selectedBranch = ref('觀塘店')
 const selectedTier = ref('無折扣')
 const showDropdown = ref(false)
 
-const checkoutDate = ref(new Date().toISOString().split('T')[0])
+// 🟢 終極防護：鎖死香港時區
+const getLocalHKDate = () => {
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Hong_Kong', 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+  }).format(new Date());
+}
+
+const checkoutDate = ref(getLocalHKDate())
 
 // 🚀 刪除確定 Modal 狀態
 const showDeleteConfirm = ref(false)

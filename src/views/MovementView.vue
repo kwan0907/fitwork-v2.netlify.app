@@ -12,7 +12,15 @@ const isNewCustomer = ref(false)
 const isReferral = ref(false)
 const showDropdown = ref(false)
 
-const checkoutDate = ref(new Date().toISOString().split('T')[0])
+// 🟢 終極防護：鎖死香港時區
+const getLocalHKDate = () => {
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Hong_Kong', 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+  }).format(new Date());
+}
+
+const checkoutDate = ref(getLocalHKDate())
 
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
