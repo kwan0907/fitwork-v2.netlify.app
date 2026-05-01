@@ -405,9 +405,17 @@ const promoStatus = computed(() => {
             } else {
               specialStatusText = "🎉 達成基本資格！快爭取 VIP (尚差 1 位新領班)"
             }
-          } else {
+         } else {
              let vpDiff = 25000 - calculatedVp;
-             specialStatusText = `🎉 已達成4個月2500點！爭取 VIP 尚差 ${vpDiff.toLocaleString()} VP 及 1位新領班`
+             // 🟢 智能判斷：銀級 VIP 最低要求 1 位領班，計算還差多少位
+             let supNeeded = Math.max(0, 1 - calculatedSup); 
+             
+             if (supNeeded > 0) {
+               specialStatusText = `🎉 已達成4個月2500點！爭取 VIP 尚差 ${vpDiff.toLocaleString()} VP 及 ${supNeeded}位新領班`
+             } else {
+               // 如果已經有領班，就唔好再叫佢追領班，只需追 VP
+               specialStatusText = `🎉 已達成4個月2500點！您已有領班，爭取 VIP 僅差 ${vpDiff.toLocaleString()} VP！`
+             }
           }
       } else {
           isQualified = false
@@ -506,17 +514,50 @@ const promoStatus = computed(() => {
         }
       }
     }
-   else {
+  else {
       let percents = []
       if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
       if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
-      if (targetPc > 0) percents.push(Math.min(100, (calculatedPc / targetPc) * 100)) // 🟢 加入 PC 百分比
+      if (targetPc > 0) percents.push(Math.min(100, (calculatedPc / targetPc) * 100))
       if (promo.targetGold > 0) percents.push(Math.min(100, (calculatedGold / promo.targetGold) * 100))
       if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
       progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
     }
 
-return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
+    // 🟢 新增：智能計算剩餘月份與平均每月需求 VP
+    let avgVpNeeded = 0
+    let monthsLeft = 0
+    // 只針對有 VP 目標的活動計算 (排除 10個VIP 或 新加坡定額)
+    if (promo.id !== 4 && promo.id !== 5) {
+        const today = new Date()
+        const currY = today.getFullYear()
+        const currM = today.getMonth() + 1
+        const [endY, endM] = promo.endMonth.split('-').map(Number)
+        const [startY, startM] = promo.startMonth.split('-').map(Number)
+        
+        const currentTotal = currY * 12 + currM
+        const startTotal = startY * 12 + startM
+        const endTotal = endY * 12 + endM
+        
+        monthsLeft = endTotal - currentTotal + 1
+        // 如果活動還沒開始，用總長度算
+        if (currentTotal < startTotal) monthsLeft = endTotal - startTotal + 1
+        if (monthsLeft < 0) monthsLeft = 0
+
+        // 智能擷取距離下一階的尚差分數
+        let exactShort = vpShort
+        if (specialStatusText) {
+           const match = specialStatusText.match(/差\s*:?\s*([\d,]+)\s*VP/)
+           if (match) exactShort = parseInt(match[1].replace(/,/g, ''))
+        }
+        
+        // 算出平均數
+        if (exactShort > 0 && monthsLeft > 0) {
+            avgVpNeeded = Math.ceil(exactShort / monthsLeft)
+        }
+    }
+
+    return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText, avgVpNeeded, monthsLeft }
   })
 })
 function exportToExcel() {
@@ -663,7 +704,7 @@ function exportToExcel() {
             </div>
           </div>
 
-          <div class="status-row">
+        <div class="status-row">
             <div v-if="p.specialStatusText" :class="['status-badge', p.isQualified ? 'success' : 'warning', p.id === 4 ? 'alert-border' : '']">
               {{ p.specialStatusText }}
             </div>
@@ -676,6 +717,13 @@ function exportToExcel() {
               <span v-if="p.goldShort > 0"> | {{ p.goldShort }} 金級 </span>
               <span v-if="p.supShort > 0"> | {{ p.supShort }} 領班 </span>
             </div>
+          </div>
+
+          <!-- 🟢 新增：每月平均需求提示 (只有未達標且尚有剩餘月份時顯示) -->
+          <div v-if="p.avgVpNeeded > 0" style="background: #f0f9ff; border: 1px dashed #7dd3fc; color: #0284c7; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; text-align: center; margin-bottom: 12px; display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span>🗓️ 剩餘 {{ p.monthsLeft }} 個月</span>
+            <span style="color: #bae6fd;">|</span>
+            <span>接下來平均每月需：<strong style="color: #0369a1; font-size: 15px;">{{ p.avgVpNeeded.toLocaleString() }}</strong> VP</span>
           </div>
 
           <div class="progress-bar-bg">
