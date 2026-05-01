@@ -27,7 +27,7 @@ const monthlyReport = computed(() => {
     return mStr >= startM && mStr <= endM
   }
   
-// 1. 抓取該區間交易與客戶
+  // 1. 抓取該區間交易與客戶
   const txns = store.transactions.filter(t => isInRange(t.created_at))
   const newClientsList = store.clients.filter(c => isInRange(c.join_date) && c.status === 'active')
   const trialClientsList = store.clients.filter(c => isInRange(c.trial_date) && c.status === 'prospect')
@@ -58,13 +58,19 @@ const monthlyReport = computed(() => {
   let trialCount = trialClientsList.length
   let referralCount = newClientsList.filter(c => c.source === '朋友介紹' || c.source === '廣告+朋友介紹').length
 
-// 4. 續卡明細與清單收集器
+  // 3. 財務數據初始化
+  let totalRevenue = 0
+  let adSpend = 0
+  let otherExpenses = 0
+  let payoutToCoach = 0 
+  
+  // 4. 續卡明細與清單收集器
   let renew10 = 0
   let renew35 = 0
   let otherIncome = 0
   const packageSalesList = []
   
-  // 🟢 新增：用來統計「新開」與「續卡」的總數量
+  // 🟢 統計「新開」與「續卡」的總數量
   let newSalesCount = 0
   let renewSalesCount = 0
 
@@ -75,13 +81,13 @@ const monthlyReport = computed(() => {
       
       const noteStr = t.note || ''
       
-      // 🟢 智能擷取具體購買項目名稱
+      // 智能擷取具體購買項目名稱
       let itemName = t.category || '其他'
       if (t.amount === 850 || noteStr.includes('10點')) itemName = '10點套票'
       else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點')) itemName = '35點套票'
-      else if (noteStr) itemName = noteStr.replace(/^【.*?】\s*/, '') // 自動去掉名字開頭，只保留項目
+      else if (noteStr) itemName = noteStr.replace(/^【.*?】\s*/, '')
       
-      // 🟢 如果是套票、運動或試堂，加入明細清單
+      // 如果是套票、運動或試堂，加入明細清單
       if (t.category === '運動套票' || t.category === '運動' || t.category === '試堂') {
         let cName = t.client_name
         if (!cName && noteStr) {
@@ -89,7 +95,6 @@ const monthlyReport = computed(() => {
             if (match) cName = match[1];
         }
         
-        // 判斷這筆交易是新開還是續卡，並進行統計 👈
         let pType = '其他'
         if (t.category === '試堂') {
           pType = '👀 試堂'
@@ -97,48 +102,19 @@ const monthlyReport = computed(() => {
           const order = txnPurchaseOrder[t.id]
           if (order === 1) {
              pType = '🆕 新開'
-             newSalesCount++ // 累加新開數量
+             newSalesCount++
           }
           else if (order > 1) {
              pType = '🔄 續卡'
-             renewSalesCount++ // 累加續卡數量
+             renewSalesCount++
           }
-        }
-  txns.forEach(t => {
-    if (t.type === 'income') {
-      totalRevenue += Number(t.amount)
-      
-      const noteStr = t.note || ''
-      
-      // 🟢 智能擷取具體購買項目名稱
-      let itemName = t.category || '其他'
-      if (t.amount === 850 || noteStr.includes('10點')) itemName = '10點套票'
-      else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點')) itemName = '35點套票'
-      else if (noteStr) itemName = noteStr.replace(/^【.*?】\s*/, '') // 自動去掉名字開頭，只保留項目
-      
-      // 🟢 如果是套票、運動或試堂，加入明細清單
-      if (t.category === '運動套票' || t.category === '運動' || t.category === '試堂') {
-        let cName = t.client_name
-        if (!cName && noteStr) {
-            const match = noteStr.match(/^【(.*?)】/);
-            if (match) cName = match[1];
-        }
-        
-        // 判斷這筆交易是新開還是續卡
-        let pType = '其他'
-        if (t.category === '試堂') {
-          pType = '👀 試堂'
-        } else if (t.category === '運動套票' || t.category === '運動') {
-          const order = txnPurchaseOrder[t.id]
-          if (order === 1) pType = '🆕 新開' // 第一次買套票
-          else if (order > 1) pType = '🔄 續卡' // 第二次或以上買套票
         }
 
         packageSalesList.push({
-           date: String(t.created_at).slice(5, 10), // 只顯示 MM-DD
+           date: String(t.created_at).slice(5, 10),
            client: cName || '未記錄',
            item: itemName,
-           type: pType, // 👈 存入狀態
+           type: pType,
            amount: t.amount
         })
       }
@@ -165,9 +141,7 @@ const monthlyReport = computed(() => {
   const grossProfit = totalRevenue - adSpend - otherExpenses 
   const netProfit = grossProfit - payoutToCoach 
   
-  // 🟢 新增：預計套票產品消耗成本 (10點扣270，35點扣437.5)
   const productCostEstimate = (renew10 * 270) + (renew35 * 437.5)
-  // 🟢 新增：預計實收淨利潤 (真正落袋的錢)
   const expectedNetProfit = netProfit - productCostEstimate
 
   const cpa = newClientCount > 0 ? Math.round(adSpend / newClientCount) : 0 
@@ -176,10 +150,11 @@ const monthlyReport = computed(() => {
   return {
     startMonth: startM, endMonth: endM, newClientCount, trialCount, referralCount,
     renew10, renew35, otherIncome, packageSalesList,
+    newSalesCount, renewSalesCount,
     totalRevenue, adSpend, otherExpenses, payoutToCoach,
     grossProfit, netProfit, productCostEstimate, expectedNetProfit, cpa, conversionRate
   }
-
+})
 
 const exportPDF = () => {
   window.print()
