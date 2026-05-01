@@ -469,35 +469,41 @@ async function handleImport(e) {
     </div>
     
     <div class="card search-box">
+      <!-- 1. 搜尋列 (減少了上下 padding) -->
       <input class="inp-clean" v-model="clientSearch" placeholder="🔍 即時搜尋姓名、電話、負責人...">
-      
+
+      <!-- 2. 客戶狀態過濾 (移除分店，減輕滑動負擔) -->
       <div class="filter-row">
         <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
         <button class="f-btn" :class="{active: filterStatus==='absent'}" @click="filterStatus='absent'">⚠️ 缺席/需補堂</button>
-        
-        <div class="v-line"></div>
-        <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
         <div class="v-line"></div>
         <button class="f-btn mygift-btn" :class="{active: filterMyGiftExpiring}" @click="filterMyGiftExpiring = !filterMyGiftExpiring">🎁 MyGift 快過期</button>
       </div>
 
-      <div class="sort-row">
-        <span class="sort-label">排序方式：</span>
-        <select v-model="sortBy" class="sort-select">
-          <option value="default">🕒 預設 (最新加入)</option>
-          <option value="name">🔤 姓名 (A-Z)</option>
-          <option value="phone">📞 電話號碼</option>
-          <option value="expiry_asc">⏳ 到期日 (由近到遠)</option>
-          <option value="expiry_desc">📅 到期日 (由遠到近)</option>
-        </select>
+      <!-- 3. 分店過濾列 (獨立一行，放在原本排序的位置) -->
+      <div class="branch-row">
+        <span class="sort-label">📍 分店：</span>
+        <button v-for="b in ['觀塘','中環','佐敦']" :key="b" class="f-btn" :class="{active: filterBranch===b}" @click="filterBranch = filterBranch===b ? '' : b">{{ b }}</button>
       </div>
-    </div>
 
-    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;">
+      <!-- 4. 底部滾動列 (排序 + 下載 + 匯入) -->
+      <div class="bottom-scroll-row">
+        <div style="display:flex; align-items:center; gap: 6px;">
+          <span class="sort-label">排序：</span>
+          <select v-model="sortBy" class="sort-select">
+            <option value="default">🕒 預設 (最新加入)</option>
+            <option value="name">🔤 姓名 (A-Z)</option>
+            <option value="phone">📞 號碼</option>
+            <option value="expiry_asc">⏳ 到期(近到遠)</option>
+            <option value="expiry_desc">📅 到期(遠到近)</option>
+          </select>
+        </div>
+        <div class="v-line" style="margin: 0 4px;"></div>
         <button class="btn-outline" @click="downloadCSVTemplate">📥 下載匯入格式</button>
         <button class="btn-outline" style="border-color:#4f46e2; color:#4f46e2; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
         <input type="file" id="csvFileInput" accept=".csv" style="display: none;" @change="handleImport">
+      </div>
     </div>
 
     <div class="list-container">
@@ -789,22 +795,30 @@ async function handleImport(e) {
 .header-section { margin-bottom: 25px; }
 .page-title { font-weight: 900; font-size: 26px; color: #1e293b; margin: 0; }
 .subtitle { color: #64748b; font-size: 14px; font-weight: 600; }
-.search-box { background: white; padding: 18px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 20px; }
-.inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 14px 20px; border-radius: 15px; font-size: 16px; font-weight: 600; outline: none; }
+.search-box { background: white; padding: 14px 16px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); margin-bottom: 15px; }
+.inp-clean { width: 100%; border: none; background: #f1f5f9; padding: 10px 16px; border-radius: 12px; font-size: 15px; font-weight: 600; outline: none; }
 
-/* 篩選按鈕列 */
-.filter-row { display: flex; gap: 8px; margin-top: 15px; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
-.f-btn { padding: 8px 18px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 700; font-size: 13px; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
+/* 篩選按鈕列 (縮小了上下間距) */
+.filter-row { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+.filter-row::-webkit-scrollbar { display: none; }
+.f-btn { padding: 6px 14px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 800; font-size: 12px; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
 .f-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
 .mygift-btn { border-color: #8b5cf6; color: #8b5cf6; background: #faf5ff; }
 .mygift-btn.active { background: #8b5cf6; color: white; border-color: #8b5cf6; }
 .v-line { width: 1px; background: #e2e8f0; margin: 0 5px; flex-shrink: 0;}
 
-.sort-row { display: flex; align-items: center; gap: 8px; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #e2e8f0; }
-.sort-label { font-size: 13px; font-weight: 800; color: #64748b; }
-.sort-select { background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; color: #1e293b; outline: none; cursor: pointer; }
+/* 🟢 新增：分店專屬列 */
+.branch-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; }
+
+/* 🟢 新增：底部滾動操作列 */
+.bottom-scroll-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e8f0; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
+.bottom-scroll-row::-webkit-scrollbar { display: none; }
+.bottom-scroll-row > * { flex-shrink: 0; }
+
+.sort-label { font-size: 12px; font-weight: 900; color: #64748b; white-space: nowrap; }
+.sort-select { background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: 800; color: #1e293b; outline: none; cursor: pointer; max-width: 140px; text-overflow: ellipsis; }
 .sort-select:focus { border-color: #6366f1; }
-.btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 800; cursor: pointer; transition: 0.2s;}
+.btn-outline { background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; transition: 0.2s;}
 .btn-outline:active { transform: scale(0.95); }
 
 /* 🟢 補回卡片的排版結構 (解決卡片變醜的問題) */
