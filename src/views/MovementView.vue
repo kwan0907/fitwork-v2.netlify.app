@@ -20,10 +20,10 @@ const packages = {
   'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 52 }, 
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
   'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
+  'pkg_vip30': { name: '🌟 VIP點數30點 ($2550)', price: 2550, baseCost: 1155 }, // 👈 成本 405+750
   'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
   'exp_30': { name: '🎟️ 體驗卡30人次', price: 0, baseCost: 750 } 
 }
-
 const clientOptions = computed(() => {
   const q = searchClient.value.toLowerCase()
   if (!q) return []
@@ -60,7 +60,13 @@ const exCalc = computed(() => {
     p -= 98
   }
   
-  return { price: p, cost: c, profit: p - c }
+  // 🟢 特殊邏輯：VIP點數30點，因為其他地方已收利潤，此處帳面利潤強制為 0
+  let calculatedProfit = p - c
+  if (selectedPkg.value === 'pkg_vip30') {
+    calculatedProfit = 0
+  }
+  
+  return { price: p, cost: c, profit: calculatedProfit }
 })
 
 async function handleCheckout(staff) {
