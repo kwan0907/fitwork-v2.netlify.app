@@ -16,28 +16,39 @@ const getLocalYMD = () => {
 }
 // ==========================================
 // 🟢 新增：月份過濾邏輯
-// ==========================================
 
 // ==========================================
 // 🟢 新增：一鍵回到最上層功能
-// ==========================================
 const showScrollTop = ref(false)
 
-const handleScroll = (e) => {
-  // 偵測滾動，超過 300px 就顯示按鈕
-  const target = e.target.documentElement || e.target
-  showScrollTop.value = target.scrollTop > 300 || window.scrollY > 300
+const handleScroll = () => {
+  // 💡 終極抓取：不管你是網頁滾動、還是內部 .page 滾動，通通抓出來！
+  const pageEl = document.querySelector('.page')
+  const scrollTop = window.scrollY || document.documentElement.scrollTop || (pageEl ? pageEl.scrollTop : 0)
+  showScrollTop.value = scrollTop > 300
 }
 
 const scrollToTop = () => {
-  // 讓網頁平滑滾動回最上方
+  // 💡 雙管齊下：同時命令 window 和內部容器回到頂部
   window.scrollTo({ top: 0, behavior: 'smooth' })
-  // 兼容某些套用客製化滾動的框架
-  document.querySelector('.page')?.scrollTo({ top: 0, behavior: 'smooth' })
+  const pageEl = document.querySelector('.page')
+  if (pageEl) {
+    pageEl.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 }
 
-onMounted(() => { window.addEventListener('scroll', handleScroll, true) })
-onUnmounted(() => { window.removeEventListener('scroll', handleScroll, true) })
+onMounted(() => { 
+  window.addEventListener('scroll', handleScroll, true)
+  // 針對內部容器獨立綁定監聽器
+  const pageEl = document.querySelector('.page')
+  if (pageEl) pageEl.addEventListener('scroll', handleScroll)
+})
+
+onUnmounted(() => { 
+  window.removeEventListener('scroll', handleScroll, true)
+  const pageEl = document.querySelector('.page')
+  if (pageEl) pageEl.removeEventListener('scroll', handleScroll)
+})
 const filterMonth = ref('all')
 
 // 自動抓取資料庫內所有出現過的月份 (由新到舊排序)
