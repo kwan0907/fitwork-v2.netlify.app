@@ -11,16 +11,26 @@ const store = useMainStore()
 
 // 📊 報表專用狀態
 const showReportModal = ref(false)
-const reportMonth = ref(new Date().toISOString().slice(0, 7))
+const currentM = new Date().toISOString().slice(0, 7)
+const reportStartMonth = ref(currentM)
+const reportEndMonth = ref(currentM)
 
 // 📊 核心結算大腦：自動化計算所有老闆級數據
 const monthlyReport = computed(() => {
-  const mStr = reportMonth.value
+  const startM = reportStartMonth.value
+  const endM = reportEndMonth.value
   
-  // 1. 抓取該月交易與客戶
-  const txns = store.transactions.filter(t => String(t.created_at || '').startsWith(mStr))
-  const newClientsList = store.clients.filter(c => String(c.join_date || '').startsWith(mStr) && c.status === 'active')
-  const trialClientsList = store.clients.filter(c => String(c.trial_date || '').startsWith(mStr) && c.status === 'prospect')
+  // 智能判斷是否在月份區間內
+  const isInRange = (dateStr) => {
+    if (!dateStr) return false
+    const mStr = String(dateStr).slice(0, 7)
+    return mStr >= startM && mStr <= endM
+  }
+  
+  // 1. 抓取該區間交易與客戶
+  const txns = store.transactions.filter(t => isInRange(t.created_at))
+  const newClientsList = store.clients.filter(c => isInRange(c.join_date) && c.status === 'active')
+  const trialClientsList = store.clients.filter(c => isInRange(c.trial_date) && c.status === 'prospect')
   
   // 2. 基本客戶數據
   let newClientCount = newClientsList.length
@@ -69,7 +79,7 @@ const monthlyReport = computed(() => {
   const conversionRate = (newClientCount + trialCount) > 0 ? Math.round((newClientCount / (newClientCount + trialCount)) * 100) : 0 
 
   return {
-    month: mStr, newClientCount, trialCount, referralCount,
+    startMonth: startM, endMonth: endM, newClientCount, trialCount, referralCount,
     renew10, renew35, otherIncome,
     totalRevenue, adSpend, otherExpenses, payoutToCoach,
     grossProfit, netProfit, cpa, conversionRate
@@ -142,9 +152,15 @@ const isDateInRange = (dateStr) => {
   const hkToday = getLocalHKDate();
   const [ny, nm, nd] = hkToday.split('-').map(Number);
 
-  if (filterTime.value === 'all') return true;
+if (filterTime.value === 'all') return true;
   if (filterTime.value === 'today') return tDateStr === hkToday;
   if (filterTime.value === 'month') return ty === ny && tm === nm;
+  if (filterTime.value === 'last_month') {
+    let lmYear = ny;
+    let lmMonth = nm - 1;
+    if (lmMonth === 0) { lmMonth = 12; lmYear -= 1; }
+    return ty === lmYear && tm === lmMonth;
+  }
   if (filterTime.value === 'half_1') return ty === ny && tm === nm && td >= 1 && td <= 14;
   if (filterTime.value === 'half_2') return ty === ny && tm === nm && td >= 15;
   if (filterTime.value === 'week') {
@@ -566,10 +582,11 @@ const chartOptions = {
         <button class="btn-boss-export" @click="showReportModal = true">📊 匯出報表</button>
       </div>
       <div class="filters">
-        <select v-model="filterTime" class="f-sel">
+       <select v-model="filterTime" class="f-sel">
           <option value="today">今日</option>
           <option value="week">本週</option>
           <option value="month">本月(全月)</option>
+          <option value="last_month">上個月</option>
           <option value="half_1">上半月 (1-14日)</option>
           <option value="half_2">下半月 (15-底)</option>
           <option value="custom">自訂區間</option>
@@ -904,17 +921,31 @@ const chartOptions = {
     
 <!-- 📄 報表彈出視窗與 A4 畫布 -->
     <div v-if="showReportModal" class="report-modal-overlay">
-      <div class="report-actions hide-on-print">
-        <input type="month" v-model="reportMonth" class="d-inp" style="background: white;">
-        <button class="btn-pdf" @click="exportPDF">🖨️ 儲存為 PDF</button>
-        <button class="btn-close-report" @click="showReportModal = false">✕ 關閉</button>
+      <div class="report-actions hide-on-print" style="flex-direction: column;">
+        
+        <!-- 雙月份選擇器 -->
+        <div style="display: flex; gap: 8px; width: 100%; align-items: center; justify-content: center; margin-bottom: 5px;">
+          <input type="month" v-model="reportStartMonth" class="d-inp" style="background: white; flex: 1; padding: 10px;">
+          <span style="font-weight: 900; color: #475569;">至</span>
+          <input type="month" v-model="reportEndMonth" class="d-inp" style="background: white; flex: 1; padding: 10px;">
+        </div>
+
+        <!-- 匯出與關閉按鈕 -->
+        <div style="display: flex; gap: 10px; width: 100%;">
+          <button class="btn-pdf" @click="exportPDF">🖨️ 儲存為 PDF</button>
+          <button class="btn-close-report" @click="showReportModal = false">✕ 關閉</button>
+        </div>
+
       </div>
 
       <div class="a4-paper" id="printable-report">
         <div class="r-header">
           <div>
-            <h1 class="r-title">FITWORK PRO 營運月報表</h1>
-            <p class="r-subtitle">結算月份：{{ reportMonth }} | 產出日期：{{ new Date().toLocaleDateString() }}</p>
+            <h1 class="r-title">FITWORK PRO 營運報告</h1>
+            <p class="r-subtitle">
+              結算區間：{{ monthlyReport.startMonth }} {{ monthlyReport.startMonth !== monthlyReport.endMonth ? '至 ' + monthlyReport.endMonth : '' }} | 
+              產出日期：{{ new Date().toLocaleDateString() }}
+            </p>
           </div>
           <div class="r-logo">BLUE ZONE</div>
         </div>
