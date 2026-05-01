@@ -77,9 +77,11 @@ const promos = ref([
       
     ]
   },
-  { 
+ { 
     id: 3, name: '🎓 香港世界組大學訓練', date: '2026/1/1 ~ 2026/6/30', 
     startMonth: '2026-01', endMonth: '2026-06',
+    // 👇 新增：專屬 2 月 Double，最高加成 3500 分，與其他活動完全獨立不干擾！
+    doubleVpMonth: '2026-02', doubleVpMaxExtra: 3500, 
     defaultImage: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImages: [null, null],
     targetVp: 25000, targetVip: 0, targetGold: 0, targetSup: 0,
@@ -87,6 +89,7 @@ const promos = ref([
       '【基本資格】累計達 25,000 點 或 連續四個月均達 2,500 點',
       '【VIP 派對資格】必須累計達 25,000 點，並達成以下領班條件：',
       '👑 白金級: 3位新領班 / 🥇 金級: 2位新領班 / 🥈 銀級: 1位新領班',
+      '📌 2月加碼：最多可雙倍計算 3,500 個人點數 (系統自動加乘)', // 👈 加入畫面文字說明
       '📌 會議日期：2026年9月12日'
     ]
   },
