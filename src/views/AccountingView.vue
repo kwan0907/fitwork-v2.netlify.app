@@ -289,25 +289,6 @@ function handleRepeatOrder(t) {
   store.view = 'retail'
 }
 
-  
-  const match = extractedNote.match(/^【(.*?)】\s*(.*)$/)
-  if (match) {
-    if (!extractedClient) extractedClient = match[1]
-    extractedNote = match[2]
-  } else if (extractedClient && extractedNote.startsWith(extractedClient + ' (')) {
-    extractedNote = extractedNote.replace(extractedClient + ' ', '')
-  }
-
-  expForm.value = {
-    type: t?.type, amount: t?.amount, 
-    note: extractedNote, 
-    client_name: extractedClient, 
-    staff: t?.staff || t?.handled_by || '',
-    category: t?.category, ad_inquiries: t?.ad_inquiries || 0, ad_phones: t?.ad_phones || 0,
-    date: String(t?.created_at || '').slice(0, 10) 
-  }
-  showExpModal.value = true
-
 async function saveTransaction() {
   if (!expForm.value.amount) return alert('請輸入金額！')
   
