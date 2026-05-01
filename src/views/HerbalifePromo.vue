@@ -125,9 +125,9 @@ const loadCloudStats = async () => {
     currentUserEmail.value = session.user.email
   }
 
-  // 💡 修正：強制將所有預設值設定為絕對乾淨的空字串
+ // 💡 修正：強制將所有預設值設定為絕對乾淨的空字串 (加入 PC)
   availableMonths.value.forEach(m => {
-    if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', gold: '', sup: '' }
+    if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', pc: '', gold: '', sup: '' }
   })
 
   if (currentUserEmail.value) {
@@ -142,6 +142,7 @@ const loadCloudStats = async () => {
           // 💡 修正：確保從資料庫抓下來的值，如果為 0，就顯示為空字串，保持畫面乾淨
           monthlyStats.value[row.month].vp = row.vp === 0 || row.vp === null ? '' : row.vp
           monthlyStats.value[row.month].vip = row.recruits_vip === 0 || row.recruits_vip === null ? '' : row.recruits_vip
+          monthlyStats.value[row.month].pc = row.recruits_pc === 0 || row.recruits_pc === null ? '' : row.recruits_pc // 🟢 新增讀取 PC
           monthlyStats.value[row.month].gold = row.recruits_gold === 0 || row.recruits_gold === null ? '' : row.recruits_gold
           monthlyStats.value[row.month].sup = row.recruits_sup === 0 || row.recruits_sup === null ? '' : row.recruits_sup
         }
@@ -184,11 +185,12 @@ const saveMonthToCloud = async (month) => {
   }
   
   const stats = monthlyStats.value[month]
-  const payload = {
+ const payload = {
     user_email: currentUserEmail.value, 
     month: month,
     vp: Number(stats.vp) || 0,
     recruits_vip: Number(stats.vip) || 0,
+    recruits_pc: Number(stats.pc) || 0, // 🟢 新增寫入 PC
     recruits_gold: Number(stats.gold) || 0,
     recruits_sup: Number(stats.sup) || 0
   }
@@ -271,7 +273,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
 // 💡 10000% 保留的超級計算大腦
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
-    let calculatedVp = 0, calculatedVip = 0, calculatedGold = 0, calculatedSup = 0
+    let calculatedVp = 0, calculatedVip = 0, calculatedPc = 0, calculatedGold = 0, calculatedSup = 0
     let totalDoubleBonus = 0 
     let specialStatusText = null 
 
@@ -285,20 +287,25 @@ const promoStatus = computed(() => {
           totalDoubleBonus += extraBonus
         }
         
-        calculatedVp += monthVp
+       calculatedVp += monthVp
         calculatedVip += Number(stats.vip) || 0
+        calculatedPc += Number(stats.pc) || 0 // 🟢 加總 PC
         calculatedGold += Number(stats.gold) || 0
         calculatedSup += Number(stats.sup) || 0
       }
     }
 
+    // 取得 targetPc，如果活動沒有設定 targetPc 就預設為 0
+    let targetPc = promo.targetPc || 0 
+
     let vpShort = Math.max(0, promo.targetVp - calculatedVp)
     let vipShort = Math.max(0, promo.targetVip - calculatedVip)
+    let pcShort = Math.max(0, targetPc - calculatedPc) // 🟢 計算 PC 尚差
     let goldShort = Math.max(0, promo.targetGold - calculatedGold)
     let supShort = Math.max(0, promo.targetSup - calculatedSup)
     
-    let isQualified = vpShort === 0 && vipShort === 0 && goldShort === 0 && supShort === 0 && 
-                        (promo.targetVp > 0 || promo.targetVip > 0 || promo.targetGold > 0 || promo.targetSup > 0)
+    let isQualified = vpShort === 0 && vipShort === 0 && pcShort === 0 && goldShort === 0 && supShort === 0 && 
+                        (promo.targetVp > 0 || promo.targetVip > 0 || targetPc > 0 || promo.targetGold > 0 || promo.targetSup > 0)
     
     let progressPercent = 0
 
@@ -459,25 +466,26 @@ const promoStatus = computed(() => {
         }
       }
     }
-    else {
+   else {
       let percents = []
       if (promo.targetVp > 0) percents.push(Math.min(100, (calculatedVp / promo.targetVp) * 100))
       if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
+      if (targetPc > 0) percents.push(Math.min(100, (calculatedPc / targetPc) * 100)) // 🟢 加入 PC 百分比
       if (promo.targetGold > 0) percents.push(Math.min(100, (calculatedGold / promo.targetGold) * 100))
       if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
       progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
     }
 
-return { ...promo, calculatedVp, calculatedVip, calculatedGold, calculatedSup, vpShort, vipShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
+return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText }
   })
 })
 function exportToExcel() {
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-  csvContent += "活動名稱,考核期限,該區間已累積(VP),已累積(VIP),已累積(金級),已累積(領班),綜合完成率(%),達標狀態\n"
+  csvContent += "活動名稱,考核期限,該區間已累積(VP),已累積(VIP),已累積(PC),已累積(金級),已累積(領班),綜合完成率(%),達標狀態\n"
 
   promoStatus.value.forEach(p => {
-    let statusText = p.specialStatusText || (p.isQualified ? "🎉 已達標" : `尚差: ${p.vpShort>0?p.vpShort+'VP ':''}${p.vipShort>0?p.vipShort+'VIP ':''}${p.goldShort>0?p.goldShort+'金級 ':''}${p.supShort>0?p.supShort+'領班 ':''}`)
-    const row = `"${p.name}","${p.date}",${p.calculatedVp},${p.calculatedVip},${p.calculatedGold},${p.calculatedSup},${p.progressPercent.toFixed(1)}%,"${statusText}"`
+    let statusText = p.specialStatusText || (p.isQualified ? "🎉 已達標" : `尚差: ${p.vpShort>0?p.vpShort+'VP ':''}${p.vipShort>0?p.vipShort+'VIP ':''}${p.pcShort>0?p.pcShort+'PC ':''}${p.goldShort>0?p.goldShort+'金級 ':''}${p.supShort>0?p.supShort+'領班 ':''}`)
+    const row = `"${p.name}","${p.date}",${p.calculatedVp},${p.calculatedVip},${p.calculatedPc},${p.calculatedGold},${p.calculatedSup},${p.progressPercent.toFixed(1)}%,"${statusText}"`
     csvContent += row + "\n"
   })
 
@@ -537,6 +545,10 @@ function exportToExcel() {
           <div class="m-inp-group mt-2">
             <label>VIP</label>
             <input type="number" v-model="monthlyStats[month].vip" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+          </div>
+          <div class="m-inp-group mt-2">
+            <label>PC</label>
+            <input type="number" v-model="monthlyStats[month].pc" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
           <div class="m-inp-group mt-2">
             <label>金級</label>
@@ -601,7 +613,8 @@ function exportToExcel() {
                 <div v-if="p.totalDoubleBonus > 0" class="double-tag">⚡️ 已含雙倍加乘 <br>(+{{ p.totalDoubleBonus.toLocaleString() }} VP)</div>
               </div>
               
-              <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP/PC</span></div>
+              <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP</span></div>
+              <div v-if="p.targetPc > 0 || p.calculatedPc > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedPc }}</span><span class="cr-lbl">PC</span></div>
               <div v-if="p.targetGold > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedGold }}</span><span class="cr-lbl">金級</span></div>
               <div v-if="p.targetSup > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedSup }}</span><span class="cr-lbl">領班</span></div>
             </div>
@@ -616,6 +629,7 @@ function exportToExcel() {
               ⚠️ 尚差: 
               <span v-if="p.vpShort > 0"> {{ p.vpShort.toLocaleString() }} VP </span>
               <span v-if="p.vipShort > 0"> | {{ p.vipShort }} VIP </span>
+              <span v-if="p.pcShort > 0"> | {{ p.pcShort }} PC </span>
               <span v-if="p.goldShort > 0"> | {{ p.goldShort }} 金級 </span>
               <span v-if="p.supShort > 0"> | {{ p.supShort }} 領班 </span>
             </div>
