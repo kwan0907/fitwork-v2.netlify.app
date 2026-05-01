@@ -1104,54 +1104,39 @@ const chartOptions = {
 .report-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #e2e8f0; z-index: 999999; overflow-y: auto; padding: 20px 15px 150px 15px; display: block; }
 
 /* 💡 鎖死背景滑動：加入 overscroll-behavior: none; */
-/* 💡 終極修復：解決上下遮擋與背景滑動 */
+/* 💡 AB 框架外層容器：改用 Flexbox 讓內容上下整齊排列 */
 .report-modal-overlay { 
   position: fixed; 
   top: 0; 
   left: 0; 
   width: 100vw; 
   height: 100vh; 
-  background: rgba(226, 232, 240, 0.98); /* 稍微帶點透明度 */
-  z-index: 9999999; /* 層級推到最高 */
+  background: rgba(226, 232, 240, 0.98); 
+  z-index: 9999999; 
   overflow-y: auto; 
   -webkit-overflow-scrolling: touch; 
   overscroll-behavior: none; 
-  
-  /* 🚀 關鍵修改：
-     頂部預留 100px 躲開標題欄
-     底部預留 200px 確保報表尾巴能完全滑出，不被懸浮按鈕擋住 */
-  padding: 100px 15px calc(200px + env(safe-area-inset-bottom)) 15px; 
-  display: block; 
+  display: flex; 
+  flex-direction: column; /* 讓內容上下垂直排列 */
+  align-items: center; /* 讓內容水平置中 */
+  padding: 50px 15px 80px 15px; /* 頂部留白避開 iPhone 瀏海 */
   box-sizing: border-box;
 }
 
-/* 💡 讓懸浮按鈕永遠在最前面 */
+/* 💡 框架 A：操作控制台 (取消懸浮，變成普通區塊排在最上方) */
 .report-actions { 
-  position: fixed; 
-  bottom: calc(20px + env(safe-area-inset-bottom)); /* 自動適應 iPhone 底部 */
-  left: 50%; 
-  transform: translateX(-50%); 
-  z-index: 10000000; /* 比 overlay 還要高 */
-  /* 其他樣式保持不變... */
-}
-/* 💡 懸浮在最底部的玻璃質感操作列 (保持不變，但加寬手機適應) */
-/* 💡 終極優化懸浮操作列，確保底部不被遮擋 */
-.report-actions { 
-  position: fixed; 
-  bottom: calc(100px + env(safe-area-inset-bottom)); /* 🚀 關鍵：把高度拉高，絕對躲開 iPhone 的底部白線和任何導航列 */
-  left: 50%; 
-  transform: translateX(-50%); 
+  position: static; /* 🚀 關鍵：取消 fixed，恢復普通文件流 */
+  margin-bottom: 20px; /* 和下方的 A4 報表保持 20px 距離 */
+  flex-shrink: 0; /* 防止被擠壓變形 */
   display: flex; 
-  flex-direction: column; /* 強制垂直排列，確保按鈕一定會出現 */
+  flex-direction: column; 
   gap: 12px; 
-  background: rgba(255, 255, 255, 0.98); 
-  backdrop-filter: blur(10px); 
+  background: white; 
   padding: 15px; 
   border-radius: 20px; 
-  box-shadow: 0 15px 35px rgba(0,0,0,0.3); 
-  width: 90%; 
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+  width: 100%; 
   max-width: 450px; 
-  z-index: 10000000; 
   border: 1px solid #cbd5e1; 
 }
 .report-actions .d-inp { width: 100%; border-radius: 10px; padding: 8px; border: 1px solid #cbd5e1; font-weight: 800; text-align: center; color: #4f46e2; background: #f8fafc; font-size: 16px;}
