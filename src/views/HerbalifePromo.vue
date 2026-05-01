@@ -93,16 +93,17 @@ const promos = ref([
       '📌 會議日期：2026年9月12日'
     ]
   },
-  { 
+ { 
     id: 4, name: '🏆 2026 Herbalife Premier League', date: '2026/1/1 ~ 2026/12/31', 
     startMonth: '2026-01', endMonth: '2026-12',
     defaultImage: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
     customImages: [null, null],
     targetVp: 0, targetVip: 10, targetGold: 0, targetSup: 2, 
     details: [
-      '【條件1】確保 10 名新推薦直銷商或優惠客戶 (系統追蹤 VIP/PC)',
-      '【條件2】每位需在登記月或下個月累計至少 250 VP',
-      '【條件3】擁有兩位頭線新領班 (系統追蹤 領班)'
+      '【條件1】確保 10 名新推薦直銷商(VIP)或優惠客戶(PC)',
+      '【條件2】當中必須包含最少 5 名 VIP',
+      '【條件3】擁有兩位頭線新領班',
+      '📌 系統提醒：每位報名者需在指定月內累計滿 250 VP'
     ]
   },
   { 
@@ -366,16 +367,48 @@ const promoStatus = computed(() => {
       
       progressPercent = Math.min(100, ((Math.min(aprVp, 2500) + Math.min(mayVp, 2500)) / 5000) * 100)
     } 
-    else if (promo.id === 4) {
-      let percents = []
-      if (promo.targetVip > 0) percents.push(Math.min(100, (calculatedVip / promo.targetVip) * 100))
-      if (promo.targetSup > 0) percents.push(Math.min(100, (calculatedSup / promo.targetSup) * 100))
-      progressPercent = percents.length > 0 ? percents.reduce((a,b)=>a+b,0) / percents.length : 0
+   else if (promo.id === 4) {
+      // 🟢 全新邏輯：10人(VIP+PC) + 最少5名VIP + 2名領班
+      let totalMembers = calculatedVip + calculatedPc
+      let isTotalMet = totalMembers >= 10
+      let isVipMet = calculatedVip >= 5
+      let isSupMet = calculatedSup >= 2
+
+      // 三個硬條件必須同時滿足才算達標
+      isQualified = isTotalMet && isVipMet && isSupMet
+
+      // 綜合進度條按三個指標的平均計算
+      let progressTotal = Math.min(100, (totalMembers / 10) * 100)
+      let progressVip = Math.min(100, (calculatedVip / 5) * 100)
+      let progressSup = Math.min(100, (calculatedSup / 2) * 100)
+      progressPercent = (progressTotal + progressVip + progressSup) / 3
 
       if (isQualified) {
-        specialStatusText = "🎉 人數已達標！⚠️ 系統提醒：請務必自行核實這 10 位 VIP/PC【每位皆已達 250 VP】！"
+        specialStatusText = "🎉 恭喜！人數與領班門檻皆已達標！(📌 請自行核實這 10 人皆已滿足 250 VP)"
       } else {
-        specialStatusText = `⚠️ 尚差: ${vipShort > 0 ? vipShort + ' VIP/PC ' : ''}${supShort > 0 ? '| ' + supShort + ' 領班 ' : ''} (📌 提醒: 報名的 VIP 必須確保滿 250 VP)`
+        let missingText = []
+        
+        // 1. 檢查總人數
+        if (!isTotalMet) {
+            missingText.push(`${10 - totalMembers} 人(VIP或PC)`)
+        }
+        
+        // 2. 檢查 VIP 保底數量 (最少 5 個)
+        if (!isVipMet) {
+            if (isTotalMet) {
+                // 如果總人數夠，但 VIP 唔夠，特別警告
+                missingText.push(`總人數足夠，但 VIP 尚欠 ${5 - calculatedVip} 人(需保底 5 名 VIP)`)
+            } else {
+                missingText.push(`其中最少需包含 ${5 - calculatedVip} 名 VIP`)
+            }
+        }
+        
+        // 3. 檢查領班數量
+        if (!isSupMet) {
+            missingText.push(`${2 - calculatedSup} 位領班`)
+        }
+
+        specialStatusText = `⚠️ 尚差: ${missingText.join(' | ')} (📌 必須滿 250 VP)`
       }
     }
     else if (promo.id === 3) {
