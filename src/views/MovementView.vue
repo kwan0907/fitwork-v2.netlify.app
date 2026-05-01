@@ -20,7 +20,7 @@ const packages = {
   'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 52 }, 
   'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
   'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
-  'pkg_vip30': { name: '🌟 VIP點數30點 ($2550)', price: 2550, baseCost: 1155 }, // 👈 成本 405+750
+  'pkg_vip30': { name: '🌟 VIP點數30點 ($0)', price: 0, baseCost: 1155 }, // 👈 成本 405+750
   'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
   'exp_30': { name: '🎟️ 體驗卡30人次', price: 0, baseCost: 750 } 
 }
@@ -89,7 +89,7 @@ async function handleCheckout(staff) {
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
-  // ==========================================
+// ==========================================
   // 🟢 核心邏輯修正：免費贈堂轉化為實質「支出」
   // ==========================================
   let finalType = 'income'
@@ -97,9 +97,10 @@ async function handleCheckout(staff) {
   let finalProfit = calc.profit
 
   // 💡 如果客人付 $0，但我們有成本支出，直接記為「支出 (expense)」
-  if (calc.price === 0 && calc.cost > 0) {
+  // 🟢 新增：VIP 30點是零售附贈品，即使 $0 也要維持 income 狀態，總覽才會計算舖頭 750！
+  if (calc.price === 0 && calc.cost > 0 && selectedPkg.value !== 'pkg_vip30') {
     finalType = 'expense'
-    finalAmount = calc.cost   // 把成本(52)當作這筆紀錄的金額，帳面就會顯示 -$52
+    finalAmount = calc.cost   
   }
 
   const { error: txnError } = await supabase.from('transactions').insert([{
