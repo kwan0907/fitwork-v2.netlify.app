@@ -168,12 +168,23 @@ const filteredClients = computed(() => {
     let earliest = getEarliestTxnDate(c.name)
     
     if (earliest) {
-        // 如果實際購買日 比 設定的加入日 還要早，系統自動往前修正為購買日
+        // 1. 校正日期 (試堂日期都算係加入日期)
         if (!fixedClient.join_date || fixedClient.join_date > earliest) {
             fixedClient.join_date = earliest
         }
-        // 只要有買過套票，就強制轉為「正式會員」，徹底解決套票次數被隱藏的問題！
-        if (fixedClient.status === 'prospect' || fixedClient.status === 'absent') {
+
+        // 2. 🟢 關鍵修正：檢查是否有買過「真正嘅套票」(排除試堂)
+        const nameLower = c.name.trim().toLowerCase();
+        const hasRealPackage = store.transactions.some(t => {
+            const tClientName = (t.client_name || '').trim().toLowerCase();
+            const tNote = (t.note || '').trim().toLowerCase();
+            const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
+            // 💡 只有買了「運動套票」或「運動」類別，先會觸發自動升級
+            return isMatch && t.type === 'income' && (t.category === '運動套票' || t.category === '運動');
+        });
+
+        // 如果有買過套票，先至強制轉為「正式會員」
+        if (hasRealPackage && (fixedClient.status === 'prospect' || fixedClient.status === 'absent')) {
             fixedClient.status = 'active'
         }
     }
