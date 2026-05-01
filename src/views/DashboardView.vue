@@ -427,16 +427,41 @@ const funnelModalData = computed(() => {
 
 const packageStats = computed(() => {
   let pkg850 = 0, pkg2550 = 0;
+  let newSales = 0;
+  let renewSales = 0;
   let list = [];
   
+  // 🟢 1. 建立全域購買次數追蹤 (查歷史紀錄判定新開/續卡)
+  const clientPurchaseCount = {}
+  const txnPurchaseOrder = {}
+  const sortedAllTxns = [...store.transactions].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+  
+  sortedAllTxns.forEach(t => {
+    if (t?.type === 'income' && (t?.category === '運動套票' || t?.category === '運動')) {
+      let cName = t.client_name
+      if (!cName && t.note) {
+        const match = t.note.match(/^【(.*?)】/)
+        if (match) cName = match[1]
+      }
+      if (cName) {
+        cName = cName.trim()
+        if (!clientPurchaseCount[cName]) clientPurchaseCount[cName] = 0
+        clientPurchaseCount[cName]++
+        txnPurchaseOrder[t.id] = clientPurchaseCount[cName]
+      }
+    }
+  })
+
+  // 🟢 2. 篩選目前選擇的區間與分店進行統計
   store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t?.branch !== filterBranch.value) return; 
     if (t?.category === '運動套票' || t?.category === '運動') {
       let isPkg = false;
       let typeStr = '';
       
-      if (t.amount === 850 || (t.note && t.note.includes('pkg_10'))) { pkg850++; isPkg = true; typeStr = '10點套票'; }
-      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35'))) { pkg2550++; isPkg = true; typeStr = '35點套票'; }
+      // 兼容各種記錄格式
+      if (t.amount === 850 || (t.note && t.note.includes('pkg_10')) || (t.note && t.note.includes('10點'))) { pkg850++; isPkg = true; typeStr = '10點套票'; }
+      if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35')) || (t.note && t.note.includes('35點'))) { pkg2550++; isPkg = true; typeStr = '35點套票'; }
       
       if (isPkg) {
         let cName = t.client_name;
@@ -444,11 +469,18 @@ const packageStats = computed(() => {
            const match = t.note.match(/^【(.*?)】/);
            if (match) cName = match[1];
         }
+
+        // 判斷這筆交易是新開還是續卡
+        let pType = '其他'
+        const order = txnPurchaseOrder[t.id]
+        if (order === 1) { pType = '🆕 新開'; newSales++; }
+        else if (order > 1) { pType = '🔄 續卡'; renewSales++; }
         
         list.push({
           ...t,
           display_client_name: cName || '未記錄',
           pkg_type: typeStr,
+          sale_type: pType, // 存入狀態供名單顯示
           display_date: String(t.created_at).slice(0, 10)
         });
       }
@@ -457,7 +489,7 @@ const packageStats = computed(() => {
   
   list.sort((a,b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
   
-  return { pkg850, pkg2550, total: pkg850 + pkg2550, list }
+  return { pkg850, pkg2550, total: pkg850 + pkg2550, newSales, renewSales, list }
 })
 
 const parseLocal = (dateStr) => {
@@ -771,10 +803,15 @@ const chartOptions = {
         <div @click="showPackageSalesModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-right: -10px; border: 1px solid transparent; transition: 0.2s; text-align: right;">
           <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
             <span style="background: #d1fae5; color: #10b981; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
-            售出 / 續卡數
+            套票售出總數
           </div>
           <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1; margin-top: 5px;">
             {{ packageStats.total }} <span style="font-size: 14px; color: #64748b;">張</span>
+          </div>
+          <!-- 🟢 新增：直觀顯示新開與續卡 -->
+          <div style="font-size: 11px; font-weight: 800; margin-top: 6px; display: flex; justify-content: flex-end; gap: 6px;">
+            <span style="color: #2563eb; background: #dbeafe; padding: 3px 6px; border-radius: 6px;">新開: {{ packageStats.newSales }}</span>
+            <span style="color: #db2777; background: #fce7f3; padding: 3px 6px; border-radius: 6px;">續卡: {{ packageStats.renewSales }}</span>
           </div>
         </div>
 
@@ -936,11 +973,13 @@ const chartOptions = {
             區間內尚無套票售出紀錄
           </div>
 
-          <div v-for="(t, idx) in packageStats.list" :key="t.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+         <div v-for="(t, idx) in packageStats.list" :key="t.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
             <div>
-              <div style="font-weight: 900; font-size: 16px; color: #1e293b;">
+              <div style="font-weight: 900; font-size: 16px; color: #1e293b; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
                 {{ idx + 1 }}. {{ t.display_client_name }}
-                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 2px 6px; border-radius: 6px; margin-left: 6px;">{{ t.pkg_type }}</span>
+                <!-- 🟢 新增：新開/續卡標籤 -->
+                <span v-if="t.sale_type" :class="t.sale_type === '🆕 新開' ? 'tag-new' : (t.sale_type === '🔄 續卡' ? 'tag-renew' : '')">{{ t.sale_type }}</span>
+                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 3px 6px; border-radius: 6px;">{{ t.pkg_type }}</span>
               </div>
               <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
                 📍 分店: {{ t.branch || '無' }} · 收款: {{ t.staff || '無' }}
