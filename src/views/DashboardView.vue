@@ -560,16 +560,18 @@ const chartOptions = {
 
 <template>
   <div class="page" style="padding-bottom: 150px;">
-    <div class="d-header">
-      <h2 class="title">數據中心 </h2>
-      <button class="btn-boss-export" @click="showReportModal = true">📊 匯出月報表</button>
+    <div class="dashboard-top-section">
+      <div class="d-title-row">
+        <h2 class="title">數據中心</h2>
+        <button class="btn-boss-export" @click="showReportModal = true">📊 匯出報表</button>
+      </div>
       <div class="filters">
         <select v-model="filterTime" class="f-sel">
           <option value="today">今日</option>
           <option value="week">本週</option>
           <option value="month">本月(全月)</option>
-          <option value="half_1">本月上半 (1-14日)</option>
-          <option value="half_2">本月下半 (15-月底)</option>
+          <option value="half_1">上半月 (1-14日)</option>
+          <option value="half_2">下半月 (15-底)</option>
           <option value="custom">自訂區間</option>
           <option value="all">全部</option>
         </select>
@@ -963,16 +965,21 @@ const chartOptions = {
 
 <style scoped>
 
-/* 📊 老闆報表專用 CSS */
-.btn-boss-export { background: linear-gradient(135deg, #1e293b, #0f172a); color: #fcd34d; font-weight: 900; padding: 8px 14px; border-radius: 12px; border: 1.5px solid #f59e0b; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); font-size: 13px;}
+/* 📊 老闆報表專用 CSS (手機終極優化版) */
+.btn-boss-export { background: linear-gradient(135deg, #1e293b, #0f172a); color: #fcd34d; font-weight: 900; padding: 8px 14px; border-radius: 10px; border: 1.5px solid #f59e0b; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); font-size: 13px; white-space: nowrap; }
 .btn-boss-export:active { transform: scale(0.95); }
 
-.report-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #e2e8f0; z-index: 999999; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-.report-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 20px; background: white; padding: 15px 25px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 500px;}
-.btn-pdf { background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 14px;}
-.btn-close-report { background: #f1f5f9; color: #475569; border: none; padding: 10px 15px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 14px;}
+/* 💡 移除 Flexbox 避免擠壓，加入超大底部 padding 讓 A4 紙可以滑動到底部而不被遮住 */
+.report-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #e2e8f0; z-index: 999999; overflow-y: auto; padding: 20px 15px 150px 15px; display: block; }
 
-.a4-paper { width: 210mm; min-height: 297mm; background: white; padding: 20mm; box-shadow: 0 20px 50px rgba(0,0,0,0.15); border-radius: 8px; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; margin-bottom: 50px;}
+/* 💡 懸浮在最底部的玻璃質感操作列 */
+.report-actions { position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 15px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.25); width: 92%; max-width: 450px; z-index: 1000000; border: 1px solid #cbd5e1; }
+
+.report-actions .d-inp { width: 100%; border-radius: 10px; padding: 8px; border: 1px solid #cbd5e1; font-weight: 800; text-align: center; color: #4f46e2; background: #f8fafc; font-size: 16px;}
+.btn-pdf { flex: 1; background: #ef4444; color: white; border: none; padding: 12px; border-radius: 12px; font-weight: 900; cursor: pointer; font-size: 14px; white-space: nowrap; box-shadow: 0 4px 10px rgba(239, 68, 68, 0.2);}
+.btn-close-report { flex: 1; background: #f1f5f9; color: #475569; border: none; padding: 12px; border-radius: 12px; font-weight: 900; cursor: pointer; font-size: 14px; white-space: nowrap; }
+
+.a4-paper { margin: 0 auto; width: 210mm; min-height: 297mm; background: white; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.15); border-radius: 12px; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; }
 
 .r-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; }
 .r-title { font-size: 28px; font-weight: 900; color: #1e293b; margin: 0 0 5px 0; }
@@ -1025,10 +1032,11 @@ const chartOptions = {
   .r-boss-metrics { flex-direction: row !important; gap: 20px !important;}
 }
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
-.d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.title { font-weight: 900; font-size: 24px; color: #1e293b; }
-.filters { display: flex; gap: 8px; }
-.f-sel { border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 8px; font-weight: 700; background: white; outline: none; }
+.dashboard-top-section { margin-bottom: 20px; }
+.d-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.title { font-weight: 900; font-size: 24px; color: #1e293b; margin: 0; white-space: nowrap; }
+.filters { display: flex; gap: 10px; width: 100%; }
+.f-sel { flex: 1; border: 1px solid #cbd5e1; padding: 10px; border-radius: 12px; font-weight: 800; background: white; outline: none; font-size: 13px; color: #475569; }
 .custom-date-box { background: #eef2ff; padding: 10px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border: 1px solid #c7d2fe; font-weight: 800; color: #4f46e2; }
 .d-inp { border: 1px solid #cbd5e1; padding: 5px; border-radius: 6px; outline: none; font-size: 16px;}
 .chart-wrapper { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; margin-bottom: 20px; margin-top: 10px; }
