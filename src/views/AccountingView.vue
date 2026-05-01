@@ -592,14 +592,12 @@ async function handleDeleteTransaction(t) {
 <style scoped>
 
 /* 💡 超強置頂樣式 */
-.super-sticky-header {
+.sticky-top-bar {
   position: -webkit-sticky; /* 這是專門給 iOS Safari / iPhone 的防彈衣 */
   position: sticky;
   top: 0;
   z-index: 100;
-  background-color: #f8fafc; /* 使用和你背景相同的淺灰色，這樣滑動時底下的字才不會透上來 */
-  
-  /* 填滿左右兩邊的間距，確保置頂列是滿版的 */
+  background-color: #f8fafc; 
   margin-top: -20px;
   margin-left: -20px;
   margin-right: -20px;
@@ -607,8 +605,6 @@ async function handleDeleteTransaction(t) {
   padding-left: 20px;
   padding-right: 20px;
   padding-bottom: 10px;
-  
-  /* 加上一層非常有質感的淡淡陰影，讓它有懸浮的感覺 */
   box-shadow: 0 6px 15px -3px rgba(248, 250, 252, 0.95);
 }
 
