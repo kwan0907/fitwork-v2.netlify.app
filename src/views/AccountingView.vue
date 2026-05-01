@@ -17,11 +17,12 @@ const getLocalYMD = () => {
 
 // 🟢 1. 先宣告狀態變數 (非常重要，順序不能錯)
 const activeCategory = ref('全部')
-const filterMonth = ref(getLocalYMD().substring(0, 7)) // 🟢 自動預設為「當前月份」
-const searchQuery = ref('') // 🟢 新增：搜尋關鍵字
+const filterMonth = ref(getLocalYMD().substring(0, 7)) 
+const searchQuery = ref('') 
+const filterBranch = ref('全部分店') // 🟢 新增：分店過濾狀態
 
-// 🟢 2. 然後才能設定監聽器：當切換「月份」、「分類」或「搜尋」時，畫面自動滾回第一行
-watch([filterMonth, activeCategory, searchQuery], () => {
+// 🟢 2. 加入 filterBranch 到監聽器
+watch([filterMonth, activeCategory, searchQuery, filterBranch], () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     const pageEl = document.querySelector('.page')
     if (pageEl) pageEl.scrollTo({ top: 0, behavior: 'smooth' })
@@ -186,6 +187,11 @@ const groupedTxns = computed(() => {
       (t?.note || '').toLowerCase().includes(q) ||
       (t?.category || '').toLowerCase().includes(q)
     )
+  }
+
+  // 4. 🟢 新增：根據選擇的分店過濾
+  if (filterBranch.value !== '全部分店') {
+    filteredList = filteredList.filter(t => t?.branch === filterBranch.value)
   }
 
   filteredList.forEach(t => {
@@ -481,11 +487,20 @@ async function handleDeleteTransaction(t) {
         ✅ 已經到底了，所有歷史交易皆已載入
       </div>
 
-     <div class="filter-row" style="margin-bottom: 5px;">
+   <div class="filter-row" style="margin-bottom: 5px;">
         <button v-for="cat in uniqueCategories" :key="cat" class="f-btn" :class="{ active: activeCategory === cat }" @click="activeCategory = cat">
           {{ cat }}
         </button>
       </div>
+      
+      <!-- 🟢 新增：分店篩選按鈕 -->
+      <div class="branch-tabs">
+        <button :class="{active: filterBranch==='全部分店'}" @click="filterBranch='全部分店'">🌍 全部</button>
+        <button :class="{active: filterBranch==='觀塘'}" @click="filterBranch='觀塘'">📍 觀塘</button>
+        <button :class="{active: filterBranch==='中環'}" @click="filterBranch='中環'">📍 中環</button>
+        <button :class="{active: filterBranch==='佐敦'}" @click="filterBranch='佐敦'">📍 佐敦</button>
+      </div>
+
       <!-- 🟢 新增：超強搜尋列 -->
       <div style="position: relative; margin-bottom: 10px;">
         <span style="position: absolute; left: 12px; top: 10px; font-size: 14px;">🔍</span>
@@ -683,4 +698,9 @@ async function handleDeleteTransaction(t) {
 .ad-title { font-weight: 900; color: #d97706; margin-bottom: 10px; font-size: 13px; }
 .btn-primary { background: #4f46e2; color: white; border: none; transition: 0.2s; cursor: pointer;}
 .btn-primary:active { transform: scale(0.96); }
+
+/* 分店過濾標籤 */
+.branch-tabs { display: flex; gap: 8px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 5px; }
+.branch-tabs button { flex: 1; padding: 8px 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 13px;}
+.branch-tabs button.active { background: #eef2ff; color: #4f46e2; border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(79,70,229,0.15);}
 </style>
