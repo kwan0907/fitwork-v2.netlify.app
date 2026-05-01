@@ -5,18 +5,27 @@ import { supabase } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
 
 const store = useMainStore()
-// 🟢 新增：當切換「月份」或「分類」時，畫面自動滾回第一行
+
+// 🟢 1. 先宣告狀態變數 (非常重要，順序不能錯)
+const activeCategory = ref('全部')
+
+// 🟢 2. 然後才能設定監聽器：當切換「月份」或「分類」時，畫面自動滾回第一行
 watch([filterMonth, activeCategory], () => {
   setTimeout(() => {
-    // 雙管齊下，保證無論係網頁定係 App 框架都會滾動
     window.scrollTo({ top: 0, behavior: 'smooth' })
     const pageEl = document.querySelector('.page')
     if (pageEl) pageEl.scrollTo({ top: 0, behavior: 'smooth' })
-  }, 50) // 延遲 50 毫秒等資料更新畫面
+  }, 50) 
 })
+
 // ==========================================
 // 🛡️ 終極防護大絕招：字串絕對隔離法
 // ==========================================
+const getLocalYMD = () => {
+  const d = new Date()
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+  return d.toISOString().split('T')[0]
+}
 const getLocalYMD = () => {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -108,10 +117,7 @@ const getDisplayData = (t) => {
   return { client, text }
 }
 
-// ==========================================
-// 🟢 新增：智能分類過濾器邏輯
-// ==========================================
-const activeCategory = ref('全部')
+
 
 // 自動抓取資料庫內所有出現過的分類，並依照「使用頻率」從多到少排序
 const uniqueCategories = computed(() => {
