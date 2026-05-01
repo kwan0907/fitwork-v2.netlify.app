@@ -98,14 +98,20 @@ const monthlyReport = computed(() => {
   // 6. 老闆級進階數據
   const grossProfit = totalRevenue - adSpend - otherExpenses 
   const netProfit = grossProfit - payoutToCoach 
+  
+  // 🟢 新增：預計套票產品消耗成本 (10點扣270，35點扣437.5)
+  const productCostEstimate = (renew10 * 270) + (renew35 * 437.5)
+  // 🟢 新增：預計實收淨利潤 (真正落袋的錢)
+  const expectedNetProfit = netProfit - productCostEstimate
+
   const cpa = newClientCount > 0 ? Math.round(adSpend / newClientCount) : 0 
   const conversionRate = (newClientCount + trialCount) > 0 ? Math.round((newClientCount / (newClientCount + trialCount)) * 100) : 0 
 
- return {
+  return {
     startMonth: startM, endMonth: endM, newClientCount, trialCount, referralCount,
     renew10, renew35, otherIncome, packageSalesList,
     totalRevenue, adSpend, otherExpenses, payoutToCoach,
-    grossProfit, netProfit, cpa, conversionRate
+    grossProfit, netProfit, productCostEstimate, expectedNetProfit, cpa, conversionRate
   }
 })
 
@@ -997,7 +1003,12 @@ const chartOptions = {
           <div class="f-row f-minus"><span>➖ 其他雜項支出 (租金/採購等)</span><span class="f-val">-${{ monthlyReport.otherExpenses.toLocaleString() }}</span></div>
           <div class="f-row f-minus"><span>➖ 教練/領班分潤 (10點抽250, 35點抽800)</span><span class="f-val">-${{ monthlyReport.payoutToCoach.toLocaleString() }}</span></div>
           <div class="f-divider"></div>
-          <div class="f-row f-total"><span>💎 最終淨利潤 (Net Profit)</span><span class="f-val text-green">${{ monthlyReport.netProfit.toLocaleString() }}</span></div>
+          
+          <div class="f-row" style="color: #475569;"><span>📊 帳面淨利潤 (未扣套票產品成本)</span><span class="f-val">${{ monthlyReport.netProfit.toLocaleString() }}</span></div>
+          <div class="f-row f-minus"><span>➖ 預計套票產品消耗成本 (10點扣270, 35點扣437.5)</span><span class="f-val">-${{ monthlyReport.productCostEstimate.toLocaleString() }}</span></div>
+          
+          <div class="f-divider" style="border-top: 2px dashed #cbd5e1; background: transparent; margin: 15px 0;"></div>
+          <div class="f-row f-total"><span>🏆 預計實收淨利潤 (真實落袋)</span><span class="f-val text-green">${{ monthlyReport.expectedNetProfit.toLocaleString() }}</span></div>
         </div>
 
         <div class="r-boss-metrics">
@@ -1006,10 +1017,10 @@ const chartOptions = {
             <div class="b-val">${{ monthlyReport.cpa }} / 人</div>
             <div class="b-desc">用 ${{ monthlyReport.adSpend }} 廣告費帶來 {{ monthlyReport.newClientCount }} 個新客</div>
           </div>
-         <div class="b-metric">
-            <span>淨利潤率 (Margin)</span>
-            <div class="b-val">{{ monthlyReport.totalRevenue > 0 ? Math.round((monthlyReport.netProfit / monthlyReport.totalRevenue)*100) : 0 }}%</div>
-            <div class="b-desc">每一百蚊營業額，最終落袋幾多蚊</div>
+          <div class="b-metric">
+            <span>真實淨利潤率 (Margin)</span>
+            <div class="b-val">{{ monthlyReport.totalRevenue > 0 ? Math.round((monthlyReport.expectedNetProfit / monthlyReport.totalRevenue)*100) : 0 }}%</div>
+            <div class="b-desc">扣除教練與產品成本後，真實落袋比例</div>
           </div>
         </div>
         
