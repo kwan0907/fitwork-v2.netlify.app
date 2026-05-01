@@ -8,15 +8,15 @@ const store = useMainStore()
 
 // 🟢 1. 先宣告狀態變數 (非常重要，順序不能錯)
 const activeCategory = ref('全部')
+const filterMonth = ref('all') // 👈 補返呢行！一定要喺 watch 嘅上面！
 
 // 🟢 2. 然後才能設定監聽器：當切換「月份」或「分類」時，畫面自動滾回第一行
 watch([filterMonth, activeCategory], () => {
-  setTimeout(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
     const pageEl = document.querySelector('.page')
     if (pageEl) pageEl.scrollTo({ top: 0, behavior: 'smooth' })
   }, 50) 
-})
+
 
 // ==========================================
 // 🛡️ 終極防護大絕招：字串絕對隔離法
@@ -62,7 +62,7 @@ onUnmounted(() => {
   const pageEl = document.querySelector('.page')
   if (pageEl) pageEl.removeEventListener('scroll', handleScroll)
 })
-const filterMonth = ref('all')
+
 
 // 自動抓取資料庫內所有出現過的月份 (由新到舊排序)
 const availableMonths = computed(() => {
