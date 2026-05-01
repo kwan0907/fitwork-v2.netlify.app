@@ -16,9 +16,10 @@ const consumeMyGift = ref(false)
 const activeTab = ref('basic') // 🚀 新增：用來控制目前顯示哪一個分頁 ('basic', 'source', 'advanced')
 
 const getLocalHKDate = () => {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-  return d.toISOString().split('T')[0]
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Hong_Kong', 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+  }).format(new Date());
 }
 const todayStr = getLocalHKDate()
 
@@ -311,7 +312,7 @@ async function handleAddClient() {
         category: 'MyGift消耗',
         handled_by: store.currentUser || '系統自動',
         own_email: user.email,
-        created_at: `${hkYMD}T${hh}:${mm}:${ss}`
+        created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00` // 👈 加上香港時區尾巴
       };
       await supabase.from('transactions').insert(dummyTxn);
     }
@@ -324,7 +325,7 @@ async function handleAddClient() {
       category: '試堂',
       handled_by: dataToInsert.handled_by || store.currentUser || '系統',
       own_email: user.email,
-      created_at: `${hkYMD}T${hh}:${mm}:${ss}`
+      created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00` // 👈 加上香港時區尾巴
     };
     await supabase.from('transactions').insert(trialIncomeTxn);
   }

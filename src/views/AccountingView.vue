@@ -10,9 +10,10 @@ const store = useMainStore()
 // 🛡️ 終極防護大絕招：字串絕對隔離法
 // ==========================================
 const getLocalYMD = () => {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-  return d.toISOString().split('T')[0]
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Hong_Kong', 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+  }).format(new Date());
 }
 
 // 🟢 1. 先宣告狀態變數 (非常重要，順序不能錯)
@@ -195,9 +196,14 @@ const groupedTxns = computed(() => {
   }
 
   filteredList.forEach(t => {
-    // 🛡️ 加上防護盾
-    const dateStr = String(t?.created_at || '').slice(0, 10)
-    if (!dateStr || dateStr.length < 10) return
+  if (!t?.created_at) return
+  
+  // 🟢 先轉成 JS Date 物件，它會自動處理時區轉換，再轉回本地日期字串
+  const localDate = new Date(t.created_at);
+  const y = localDate.getFullYear();
+  const m = String(localDate.getMonth() + 1).padStart(2, '0');
+  const d = String(localDate.getDate()).padStart(2, '0');
+  const dateStr = `${y}-${m}-${d}`;
     
     const [yyyy, mm, dd] = dateStr.split('-')
     const displayDate = `${dd}/${mm}/${yyyy}`
@@ -328,8 +334,9 @@ async function saveTransaction() {
   const mm = String(now.getMinutes()).padStart(2, '0')
   const ss = String(now.getSeconds()).padStart(2, '0')
   
-  const finalString = `${expForm.value.date}T${hh}:${mm}:${ss}`
-  const updatePayload = { ...data, created_at: finalString }
+  // 加上 +08:00 確保資料庫知道這是香港時間，不會亂減時數
+const finalString = `${expForm.value.date}T${hh}:${mm}:${ss}+08:00`
+const updatePayload = { ...data, created_at: finalString }
 
   let error
   if (editingTxn.value) {
