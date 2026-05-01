@@ -58,19 +58,52 @@ const monthlyReport = computed(() => {
   let trialCount = trialClientsList.length
   let referralCount = newClientsList.filter(c => c.source === '朋友介紹' || c.source === '廣告+朋友介紹').length
 
-  // 3. 財務數據初始化
-  let totalRevenue = 0
-  let adSpend = 0
-  let otherExpenses = 0
-  let payoutToCoach = 0 
-  
-  // 4. 續卡明細與清單收集器
+// 4. 續卡明細與清單收集器
   let renew10 = 0
   let renew35 = 0
   let otherIncome = 0
-  const packageSalesList = [] // 🟢 新增：用來裝所有續卡/售卡項目的清單
+  const packageSalesList = []
+  
+  // 🟢 新增：用來統計「新開」與「續卡」的總數量
+  let newSalesCount = 0
+  let renewSalesCount = 0
 
   // 5. 迴圈結算
+  txns.forEach(t => {
+    if (t.type === 'income') {
+      totalRevenue += Number(t.amount)
+      
+      const noteStr = t.note || ''
+      
+      // 🟢 智能擷取具體購買項目名稱
+      let itemName = t.category || '其他'
+      if (t.amount === 850 || noteStr.includes('10點')) itemName = '10點套票'
+      else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點')) itemName = '35點套票'
+      else if (noteStr) itemName = noteStr.replace(/^【.*?】\s*/, '') // 自動去掉名字開頭，只保留項目
+      
+      // 🟢 如果是套票、運動或試堂，加入明細清單
+      if (t.category === '運動套票' || t.category === '運動' || t.category === '試堂') {
+        let cName = t.client_name
+        if (!cName && noteStr) {
+            const match = noteStr.match(/^【(.*?)】/);
+            if (match) cName = match[1];
+        }
+        
+        // 判斷這筆交易是新開還是續卡，並進行統計 👈
+        let pType = '其他'
+        if (t.category === '試堂') {
+          pType = '👀 試堂'
+        } else if (t.category === '運動套票' || t.category === '運動') {
+          const order = txnPurchaseOrder[t.id]
+          if (order === 1) {
+             pType = '🆕 新開'
+             newSalesCount++ // 累加新開數量
+          }
+          else if (order > 1) {
+             pType = '🔄 續卡'
+             renewSalesCount++ // 累加續卡數量
+          }
+        }
   txns.forEach(t => {
     if (t.type === 'income') {
       totalRevenue += Number(t.amount)
@@ -146,7 +179,7 @@ const monthlyReport = computed(() => {
     totalRevenue, adSpend, otherExpenses, payoutToCoach,
     grossProfit, netProfit, productCostEstimate, expectedNetProfit, cpa, conversionRate
   }
-})
+
 
 const exportPDF = () => {
   window.print()
@@ -1057,11 +1090,18 @@ const chartOptions = {
           </div>
         </div>
         
-        <!-- 🟢 新增：續卡與售出項目明細表格 -->
-        <h2 class="r-section-title" style="margin-top: 30px;">📝 續卡與售出項目明細</h2>
-        <div style="font-size: 13px; margin-bottom: 10px; color: #64748b; font-weight: 800;">
-          區間內共售出 / 續卡：<strong style="color: #4f46e2;">{{ monthlyReport.packageSalesList.length }}</strong> 項
+       <h2 class="r-section-title" style="margin-top: 30px;">📝 續卡與售出項目明細</h2>
+        
+        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 12px;">
+          <div style="font-size: 13px; color: #64748b; font-weight: 800;">
+            總售出/續卡：<strong style="color: #4f46e2; font-size: 18px;">{{ monthlyReport.packageSalesList.length }}</strong> 項
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <span class="tag-new" style="font-size: 12px; padding: 4px 8px;">🆕 新開總計: {{ monthlyReport.newSalesCount }}</span>
+            <span class="tag-renew" style="font-size: 12px; padding: 4px 8px;">🔄 續卡總計: {{ monthlyReport.renewSalesCount }}</span>
+          </div>
         </div>
+        
         <table class="r-table">
           <thead>
             <tr>
