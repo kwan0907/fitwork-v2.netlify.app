@@ -1106,18 +1106,6 @@ const chartOptions = {
   .r-boss-metrics { flex-direction: column; gap: 10px;}
 }
 
-/* 🖨️ 魔法：列印時隱藏多餘元素 */
-@media print {
-  body * { visibility: hidden; }
-  .hide-on-print { display: none !important; }
-  
-  #printable-report, #printable-report * { visibility: visible; }
-  #printable-report { position: absolute; left: 0; top: 0; margin: 0; padding: 0; box-shadow: none; width: 100%; border: none; background: white;}
-  .a4-paper { width: 210mm !important; } /* 列印時鎖死 A4 尺寸 */
-  .r-grid-4 { grid-template-columns: repeat(4, 1fr) !important; }
-  .r-grid-3 { grid-template-columns: repeat(3, 1fr) !important; }
-  .r-boss-metrics { flex-direction: row !important; gap: 20px !important;}
-}
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .dashboard-top-section { margin-bottom: 20px; }
 .d-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
@@ -1315,4 +1303,46 @@ const chartOptions = {
   box-shadow: 0 4px 10px rgba(0,0,0,0.02);
 }
 .toggle-chart-btn:active { background: #f8fafc; }
+</style>
+<style>
+/* 🖨️ 終極全域列印魔法 (不加 scoped，才能徹底隱藏最外層導覽列與背景) */
+@media print {
+  /* 1. 隱藏整台手機/網頁的所有東西 */
+  body * {
+    visibility: hidden;
+  }
+
+  /* 2. 拔掉外層的干擾，解除所有的內距與定位 */
+  body, html, #app, .page, .report-modal-overlay {
+    position: static !important;
+    transform: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+  }
+
+  /* 3. 只有報表跟裡面的字可以顯示出來 */
+  #printable-report, #printable-report * {
+    visibility: visible;
+  }
+
+  /* 4. 把報表強行釘在左上角，並撐滿整張紙 */
+  #printable-report {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* 5. 確保裡面的排版在列印時，不會變成手機版的直排 */
+  .a4-paper { padding: 0 !important; width: 100% !important; max-width: none !important; }
+  .r-grid-4 { grid-template-columns: repeat(4, 1fr) !important; display: grid !important; }
+  .r-grid-3 { grid-template-columns: repeat(3, 1fr) !important; display: grid !important; }
+  .r-boss-metrics { flex-direction: row !important; display: flex !important; gap: 20px !important; }
+  
+  /* 隱藏不想印出來的按鈕與選擇器 */
+  .hide-on-print { display: none !important; }
+}
 </style>
