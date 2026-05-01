@@ -108,16 +108,23 @@ function openExpForm() {
 
 function openEditTransaction(t) {
   editingTxn.value = t?.id
-  // ... 擷取邏輯不變
+
   let extractedClient = t?.client_name || ''
   let extractedNote = t?.note || ''
+  
   const match = extractedNote.match(/^【(.*?)】\s*(.*)$/)
-  if (match) { if (!extractedClient) extractedClient = match[1]; extractedNote = match[2] } 
-  else if (extractedClient && extractedNote.startsWith(extractedClient + ' (')) { extractedNote = extractedNote.replace(extractedClient + ' ', '') }
+  if (match) {
+    if (!extractedClient) extractedClient = match[1]
+    extractedNote = match[2]
+  } else if (extractedClient && extractedNote.startsWith(extractedClient + ' (')) {
+    extractedNote = extractedNote.replace(extractedClient + ' ', '')
+  }
 
   expForm.value = {
     type: t?.type, amount: t?.amount, 
-    note: extractedNote, client_name: extractedClient, staff: t?.staff || t?.handled_by || '',
+    note: extractedNote, 
+    client_name: extractedClient, 
+    staff: t?.staff || t?.handled_by || '',
     category: t?.category, ad_inquiries: t?.ad_inquiries || 0, ad_phones: t?.ad_phones || 0,
     branch: t?.branch || '觀塘', // 🟢 讀取舊紀錄的分店
     date: String(t?.created_at || '').slice(0, 10) 
@@ -282,21 +289,6 @@ function handleRepeatOrder(t) {
   store.view = 'retail'
 }
 
-function openExpForm() {
-  editingTxn.value = null
-  expForm.value = {
-    type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
-    category: '廣告費用', ad_inquiries: 0, ad_phones: 0, 
-    date: getLocalYMD() 
-  }
-  showExpModal.value = true
-}
-
-function openEditTransaction(t) {
-  editingTxn.value = t?.id
-
-  let extractedClient = t?.client_name || ''
-  let extractedNote = t?.note || ''
   
   const match = extractedNote.match(/^【(.*?)】\s*(.*)$/)
   if (match) {
@@ -315,7 +307,6 @@ function openEditTransaction(t) {
     date: String(t?.created_at || '').slice(0, 10) 
   }
   showExpModal.value = true
-}
 
 async function saveTransaction() {
   if (!expForm.value.amount) return alert('請輸入金額！')
