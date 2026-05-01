@@ -1,11 +1,19 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
 
 const store = useMainStore()
-
+// 🟢 新增：當切換「月份」或「分類」時，畫面自動滾回第一行
+watch([filterMonth, activeCategory], () => {
+  setTimeout(() => {
+    // 雙管齊下，保證無論係網頁定係 App 框架都會滾動
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    const pageEl = document.querySelector('.page')
+    if (pageEl) pageEl.scrollTo({ top: 0, behavior: 'smooth' })
+  }, 50) // 延遲 50 毫秒等資料更新畫面
+})
 // ==========================================
 // 🛡️ 終極防護大絕招：字串絕對隔離法
 // ==========================================
@@ -580,6 +588,28 @@ async function handleDeleteTransaction(t) {
 </template>
 
 <style scoped>
+
+/* 💡 超強置頂樣式 */
+.super-sticky-header {
+  position: -webkit-sticky; /* 這是專門給 iOS Safari / iPhone 的防彈衣 */
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: #f8fafc; /* 使用和你背景相同的淺灰色，這樣滑動時底下的字才不會透上來 */
+  
+  /* 填滿左右兩邊的間距，確保置頂列是滿版的 */
+  margin-top: -20px;
+  margin-left: -20px;
+  margin-right: -20px;
+  padding-top: 20px;
+  padding-left: 20px;
+  padding-right: 20px;
+  padding-bottom: 10px;
+  
+  /* 加上一層非常有質感的淡淡陰影，讓它有懸浮的感覺 */
+  box-shadow: 0 6px 15px -3px rgba(248, 250, 252, 0.95);
+}
+
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; }
 
