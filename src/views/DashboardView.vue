@@ -9,6 +9,77 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
+// 📊 報表專用狀態
+const showReportModal = ref(false)
+const reportMonth = ref(new Date().toISOString().slice(0, 7))
+
+// 📊 核心結算大腦：自動化計算所有老闆級數據
+const monthlyReport = computed(() => {
+  const mStr = reportMonth.value
+  
+  // 1. 抓取該月交易與客戶
+  const txns = store.transactions.filter(t => String(t.created_at || '').startsWith(mStr))
+  const newClientsList = store.clients.filter(c => String(c.join_date || '').startsWith(mStr) && c.status === 'active')
+  const trialClientsList = store.clients.filter(c => String(c.trial_date || '').startsWith(mStr) && c.status === 'prospect')
+  
+  // 2. 基本客戶數據
+  let newClientCount = newClientsList.length
+  let trialCount = trialClientsList.length
+  let referralCount = newClientsList.filter(c => c.source === '朋友介紹' || c.source === '廣告+朋友介紹').length
+
+  // 3. 財務數據初始化
+  let totalRevenue = 0
+  let adSpend = 0
+  let otherExpenses = 0
+  let payoutToCoach = 0 
+  
+  // 4. 續卡明細
+  let renew10 = 0
+  let renew35 = 0
+  let otherIncome = 0
+
+  // 5. 迴圈結算
+  txns.forEach(t => {
+    if (t.type === 'income') {
+      totalRevenue += Number(t.amount)
+      
+      const noteStr = t.note || ''
+      if (t.amount === 850 || noteStr.includes('10點')) {
+        renew10++
+        payoutToCoach += 250
+      } else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點')) {
+        renew35++
+        payoutToCoach += 800
+      } else {
+        otherIncome += Number(t.amount)
+      }
+    } else if (t.type === 'expense') {
+      if (t.category === '廣告費用') {
+        adSpend += Number(t.amount)
+      } else {
+        otherExpenses += Number(t.amount)
+      }
+    }
+  })
+
+  // 6. 老闆級進階數據
+  const grossProfit = totalRevenue - adSpend - otherExpenses 
+  const netProfit = grossProfit - payoutToCoach 
+  const cpa = newClientCount > 0 ? Math.round(adSpend / newClientCount) : 0 
+  const conversionRate = (newClientCount + trialCount) > 0 ? Math.round((newClientCount / (newClientCount + trialCount)) * 100) : 0 
+
+  return {
+    month: mStr, newClientCount, trialCount, referralCount,
+    renew10, renew35, otherIncome,
+    totalRevenue, adSpend, otherExpenses, payoutToCoach,
+    grossProfit, netProfit, cpa, conversionRate
+  }
+})
+
+const exportPDF = () => {
+  window.print()
+}
+
 const getLocalHKDate = () => {
   const d = new Date()
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
@@ -491,6 +562,7 @@ const chartOptions = {
   <div class="page" style="padding-bottom: 150px;">
     <div class="d-header">
       <h2 class="title">數據中心 </h2>
+      <button class="btn-boss-export" @click="showReportModal = true">📊 匯出月報表</button>
       <div class="filters">
         <select v-model="filterTime" class="f-sel">
           <option value="today">今日</option>
@@ -827,10 +899,131 @@ const chartOptions = {
       </div>
     </div>
 
+    
+<!-- 📄 報表彈出視窗與 A4 畫布 -->
+    <div v-if="showReportModal" class="report-modal-overlay">
+      <div class="report-actions hide-on-print">
+        <input type="month" v-model="reportMonth" class="d-inp" style="background: white;">
+        <button class="btn-pdf" @click="exportPDF">🖨️ 儲存為 PDF</button>
+        <button class="btn-close-report" @click="showReportModal = false">✕ 關閉</button>
+      </div>
+
+      <div class="a4-paper" id="printable-report">
+        <div class="r-header">
+          <div>
+            <h1 class="r-title">FITWORK PRO 營運月報表</h1>
+            <p class="r-subtitle">結算月份：{{ reportMonth }} | 產出日期：{{ new Date().toLocaleDateString() }}</p>
+          </div>
+          <div class="r-logo">BLUE ZONE</div>
+        </div>
+
+        <h2 class="r-section-title">👥 客戶增長與廣告效益</h2>
+        <div class="r-grid-4">
+          <div class="r-stat-box"><span>新開客戶 (人)</span><strong>{{ monthlyReport.newClientCount }}</strong></div>
+          <div class="r-stat-box"><span>預約/試堂 (人)</span><strong>{{ monthlyReport.trialCount }}</strong></div>
+          <div class="r-stat-box"><span>試堂成交率</span><strong>{{ monthlyReport.conversionRate }}%</strong></div>
+          <div class="r-stat-box"><span>朋友介紹新客</span><strong style="color: #8b5cf6;">{{ monthlyReport.referralCount }}</strong></div>
+        </div>
+
+        <h2 class="r-section-title">🎟️ 續卡與銷售明細</h2>
+        <div class="r-grid-3">
+          <div class="r-stat-box highlight-blue"><span>總營業額 (HKD)</span><strong class="money">${{ monthlyReport.totalRevenue.toLocaleString() }}</strong></div>
+          <div class="r-stat-box"><span>10點 套票售出</span><strong>{{ monthlyReport.renew10 }} 張</strong><small>(${monthlyReport.renew10 * 850})</small></div>
+          <div class="r-stat-box"><span>35點 套票售出</span><strong>{{ monthlyReport.renew35 }} 張</strong><small>(${monthlyReport.renew35 * 2550})</small></div>
+        </div>
+
+        <h2 class="r-section-title">💰 財務與利潤結算</h2>
+        <div class="r-financial-breakdown">
+          <div class="f-row"><span>總營業額 (A)</span><span class="f-val">${{ monthlyReport.totalRevenue.toLocaleString() }}</span></div>
+          <div class="f-row f-minus"><span>➖ 廣告資金投入</span><span class="f-val">-${{ monthlyReport.adSpend.toLocaleString() }}</span></div>
+          <div class="f-row f-minus"><span>➖ 其他雜項支出 (租金/採購等)</span><span class="f-val">-${{ monthlyReport.otherExpenses.toLocaleString() }}</span></div>
+          <div class="f-row f-minus"><span>➖ 教練/領班分潤 (10點抽250, 35點抽800)</span><span class="f-val">-${{ monthlyReport.payoutToCoach.toLocaleString() }}</span></div>
+          <div class="f-divider"></div>
+          <div class="f-row f-total"><span>💎 最終淨利潤 (Net Profit)</span><span class="f-val text-green">${{ monthlyReport.netProfit.toLocaleString() }}</span></div>
+        </div>
+
+        <div class="r-boss-metrics">
+          <div class="b-metric">
+            <span>單一獲客成本 (CPA)</span>
+            <div class="b-val">${{ monthlyReport.cpa }} / 人</div>
+            <div class="b-desc">用 {{ monthlyReport.adSpend }} 廣告費帶來 {{ monthlyReport.newClientCount }} 個新客</div>
+          </div>
+          <div class="b-metric">
+            <span>淨利潤率 (Margin)</span>
+            <div class="b-val">{{ monthlyReport.totalRevenue > 0 ? Math.round((monthlyReport.netProfit / monthlyReport.totalRevenue)*100) : 0 }}%</div>
+            <div class="b-desc">每一百蚊營業額，最終落袋幾多蚊</div>
+          </div>
+        </div>
+        
+        <div class="r-footer">此報表由 FITWORK PRO 系統自動結算產生。</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+
+/* 📊 老闆報表專用 CSS */
+.btn-boss-export { background: linear-gradient(135deg, #1e293b, #0f172a); color: #fcd34d; font-weight: 900; padding: 8px 14px; border-radius: 12px; border: 1.5px solid #f59e0b; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); font-size: 13px;}
+.btn-boss-export:active { transform: scale(0.95); }
+
+.report-modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #e2e8f0; z-index: 999999; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+.report-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 20px; background: white; padding: 15px 25px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 500px;}
+.btn-pdf { background: #ef4444; color: white; border: none; padding: 10px 15px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 14px;}
+.btn-close-report { background: #f1f5f9; color: #475569; border: none; padding: 10px 15px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 14px;}
+
+.a4-paper { width: 210mm; min-height: 297mm; background: white; padding: 20mm; box-shadow: 0 20px 50px rgba(0,0,0,0.15); border-radius: 8px; box-sizing: border-box; font-family: 'Helvetica Neue', Arial, sans-serif; margin-bottom: 50px;}
+
+.r-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; }
+.r-title { font-size: 28px; font-weight: 900; color: #1e293b; margin: 0 0 5px 0; }
+.r-subtitle { font-size: 12px; color: #64748b; margin: 0; }
+.r-logo { font-size: 24px; font-weight: 900; color: #4f46e2; letter-spacing: 2px; }
+
+.r-section-title { font-size: 16px; font-weight: 900; color: #4f46e2; margin: 30px 0 15px 0; background: #eef2ff; padding: 8px 15px; border-left: 5px solid #4f46e2; border-radius: 4px;}
+
+.r-grid-4, .r-grid-3 { display: grid; gap: 15px; }
+.r-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.r-grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+.r-stat-box { background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; display: flex; flex-direction: column; }
+.r-stat-box span { font-size: 11px; font-weight: 800; color: #64748b; margin-bottom: 5px; }
+.r-stat-box strong { font-size: 24px; font-weight: 900; color: #1e293b; }
+.highlight-blue { background: #eef2ff; border-color: #c7d2fe; }
+
+.r-financial-breakdown { background: white; border: 2px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+.f-row { display: flex; justify-content: space-between; padding: 10px 0; font-size: 14px; font-weight: 700; color: #334155; }
+.f-minus { color: #ef4444; }
+.f-divider { height: 2px; background: #e2e8f0; margin: 10px 0; }
+.f-total { font-size: 18px; font-weight: 900; color: #1e293b; }
+.text-green { color: #10b981 !important; font-size: 22px;}
+
+.r-boss-metrics { display: flex; gap: 20px; margin-top: 20px; }
+.b-metric { flex: 1; background: #fffbeb; border: 1px solid #fde68a; padding: 15px; border-radius: 12px; }
+.b-metric span { font-size: 11px; font-weight: 800; color: #b45309; }
+.b-val { font-size: 20px; font-weight: 900; color: #92400e; margin: 5px 0; }
+.b-desc { font-size: 10px; color: #d97706; }
+
+.r-footer { margin-top: 40px; text-align: center; font-size: 10px; color: #cbd5e1; border-top: 1px solid #f1f5f9; padding-top: 15px; }
+
+/* 📱 手機瀏覽器縮放 A4 紙 (避免破版) */
+@media (max-width: 800px) {
+  .a4-paper { width: 100%; min-height: auto; padding: 15px; }
+  .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; }
+  .r-boss-metrics { flex-direction: column; gap: 10px;}
+}
+
+/* 🖨️ 魔法：列印時隱藏多餘元素 */
+@media print {
+  body * { visibility: hidden; }
+  .hide-on-print { display: none !important; }
+  
+  #printable-report, #printable-report * { visibility: visible; }
+  #printable-report { position: absolute; left: 0; top: 0; margin: 0; padding: 0; box-shadow: none; width: 100%; border: none; background: white;}
+  .a4-paper { width: 210mm !important; } /* 列印時鎖死 A4 尺寸 */
+  .r-grid-4 { grid-template-columns: repeat(4, 1fr) !important; }
+  .r-grid-3 { grid-template-columns: repeat(3, 1fr) !important; }
+  .r-boss-metrics { flex-direction: row !important; gap: 20px !important;}
+}
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .title { font-weight: 900; font-size: 24px; color: #1e293b; }
