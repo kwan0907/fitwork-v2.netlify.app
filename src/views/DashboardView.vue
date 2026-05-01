@@ -27,10 +27,31 @@ const monthlyReport = computed(() => {
     return mStr >= startM && mStr <= endM
   }
   
-  // 1. 抓取該區間交易與客戶
+// 1. 抓取該區間交易與客戶
   const txns = store.transactions.filter(t => isInRange(t.created_at))
   const newClientsList = store.clients.filter(c => isInRange(c.join_date) && c.status === 'active')
   const trialClientsList = store.clients.filter(c => isInRange(c.trial_date) && c.status === 'prospect')
+
+  // 🟢 智能追蹤：遍歷所有歷史紀錄，判斷每筆交易是該客戶的「第幾次購買」
+  const clientPurchaseCount = {}
+  const txnPurchaseOrder = {}
+  
+  const sortedAllTxns = [...store.transactions].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+  sortedAllTxns.forEach(t => {
+    if (t.type === 'income' && (t.category === '運動套票' || t.category === '運動')) {
+      let cName = t.client_name
+      if (!cName && t.note) {
+        const match = t.note.match(/^【(.*?)】/)
+        if (match) cName = match[1]
+      }
+      if (cName) {
+        cName = cName.trim()
+        if (!clientPurchaseCount[cName]) clientPurchaseCount[cName] = 0
+        clientPurchaseCount[cName]++
+        txnPurchaseOrder[t.id] = clientPurchaseCount[cName] // 紀錄這是該客戶第幾次買卡
+      }
+    }
+  })
   
   // 2. 基本客戶數據
   let newClientCount = newClientsList.length
@@ -69,10 +90,22 @@ const monthlyReport = computed(() => {
             const match = noteStr.match(/^【(.*?)】/);
             if (match) cName = match[1];
         }
+        
+        // 判斷這筆交易是新開還是續卡
+        let pType = '其他'
+        if (t.category === '試堂') {
+          pType = '👀 試堂'
+        } else if (t.category === '運動套票' || t.category === '運動') {
+          const order = txnPurchaseOrder[t.id]
+          if (order === 1) pType = '🆕 新開' // 第一次買套票
+          else if (order > 1) pType = '🔄 續卡' // 第二次或以上買套票
+        }
+
         packageSalesList.push({
            date: String(t.created_at).slice(5, 10), // 只顯示 MM-DD
            client: cName || '未記錄',
            item: itemName,
+           type: pType, // 👈 存入狀態
            amount: t.amount
         })
       }
@@ -1029,25 +1062,28 @@ const chartOptions = {
         <div style="font-size: 13px; margin-bottom: 10px; color: #64748b; font-weight: 800;">
           區間內共售出 / 續卡：<strong style="color: #4f46e2;">{{ monthlyReport.packageSalesList.length }}</strong> 項
         </div>
-        
         <table class="r-table">
           <thead>
             <tr>
               <th style="width: 15%;">日期</th>
               <th style="width: 25%;">客戶姓名</th>
-              <th style="width: 45%;">售出項目 (續卡內容)</th>
-              <th style="width: 15%; text-align: right;">金額</th>
+              <th style="width: 18%;">狀態</th>
+              <th style="width: 30%;">售出項目</th>
+              <th style="width: 12%; text-align: right;">金額</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(p, idx) in monthlyReport.packageSalesList" :key="idx">
               <td>{{ p.date }}</td>
               <td style="font-weight: 800; color: #4f46e2;">{{ p.client }}</td>
+              <td>
+                <span :class="p.type === '🆕 新開' ? 'tag-new' : (p.type === '🔄 續卡' ? 'tag-renew' : 'tag-trial')">{{ p.type }}</span>
+              </td>
               <td>{{ p.item }}</td>
               <td style="text-align: right; color: #10b981; font-weight: 900;">${{ p.amount }}</td>
             </tr>
             <tr v-if="monthlyReport.packageSalesList.length === 0">
-              <td colspan="4" style="text-align: center; color: #94a3b8; padding: 15px;">此區間無續卡或售出紀錄</td>
+              <td colspan="5" style="text-align: center; color: #94a3b8; padding: 15px;">此區間無續卡或售出紀錄</td>
             </tr>
           </tbody>
         </table>
@@ -1159,13 +1195,16 @@ const chartOptions = {
 .b-desc { font-size: 10px; color: #d97706; }
 
 .r-footer { margin-top: 40px; text-align: center; font-size: 10px; color: #cbd5e1; border-top: 1px solid #f1f5f9; padding-top: 15px; }
-
 /* 📊 報表表格專用樣式 */
 .r-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
 .r-table th { background: #f8fafc; color: #475569; padding: 10px 8px; text-align: left; border-bottom: 2px solid #cbd5e1; font-weight: 900; }
 .r-table td { padding: 10px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; font-weight: 600; vertical-align: middle;}
 .r-table tbody tr:nth-child(even) { background-color: #fafaf9; }
 
+/* 👇 將下面這三行加上去 */
+.tag-new { background: #dbeafe; color: #2563eb; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 900; white-space: nowrap; }
+.tag-renew { background: #fce7f3; color: #db2777; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 900; white-space: nowrap; }
+.tag-trial { background: #fef9c3; color: #ca8a04; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: 900; white-space: nowrap; }
 /* 📱 手機瀏覽器縮放 A4 紙 (避免破版) */
   .a4-paper { width: 100%; min-height: auto; padding: 15px; }
   .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; }
