@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../supabase'
 import VueEasyLightbox from 'vue-easy-lightbox' // 🟢 新增呢行
-import confetti from 'canvas-confetti' // 🟢 新增：引入撒花特效庫
 
 // 💡 管理員權限設定
 const currentUserEmail = ref('')
@@ -55,43 +54,6 @@ const displayedMonths = computed(() => {
 
 const monthlyStats = ref({})
 const isSyncing = ref(false)
-// 🟢 建立「達標記憶庫」
-const qualifiedMemory = ref(new Set())
-
-// 🟢 監聽成績變化，捕捉「瞬間達標」的那一刻！
-watch(promoStatus, (newStatuses) => {
-  // 如果系統仲喺度從雲端下載緊資料，就唔好亂噴
-  if (isSyncing.value) return
-
-  newStatuses.forEach(promo => {
-    const wasQualified = qualifiedMemory.value.has(promo.id)
-
-    // 💡 關鍵判斷：現在達標了 且 記憶庫沒有 (代表是剛剛達標！)
-    if (promo.isQualified && !wasQualified) {
-      
-      // 1. 全螢幕噴射彩帶特效！🎉
-      confetti({
-        particleCount: 150, // 紙碎數量
-        spread: 80,         // 噴射廣度
-        origin: { y: 0.6 }, // 從畫面中下方噴出
-        zIndex: 99999       // 確保喺最面層
-      })
-
-      // 2. 記錄落記憶庫，防止重複噴射
-      qualifiedMemory.value.add(promo.id)
-
-      // 3. 延遲半秒彈出祝賀提示，等彩帶飛一陣先
-      setTimeout(() => {
-        alert(`🎉 狂賀！您剛剛達成了【${promo.name}】！太神啦！`)
-      }, 500)
-
-    } 
-    // 💡 防呆：如果用戶手殘刪除咗數字，導致跌出達標線，就從記憶庫移除
-    else if (!promo.isQualified && wasQualified) {
-      qualifiedMemory.value.delete(promo.id)
-    }
-  })
-}, { deep: true })
 // 🟢 身份切換 (績優組/卓越組 vs 非績優組)
 const isTopTeam = ref(JSON.parse(localStorage.getItem('fitwork_isTopTeam')) || false)
 const toggleTopTeam = () => {
@@ -222,11 +184,9 @@ const loadCloudStats = async () => {
     })
   }
   
-  // 🟢 新增：載入完畢後，把「原本就已達標」的獎賞寫入記憶庫，保持安靜不噴彩帶
-  promoStatus.value.forEach(p => { if (p.isQualified) qualifiedMemory.value.add(p.id) })
-  
   isSyncing.value = false
 }
+
 // 🟢 智能判斷是否為「本月」
 const isCurrentMonth = (mStr) => {
   const today = new Date()
