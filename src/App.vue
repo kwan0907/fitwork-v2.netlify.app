@@ -155,6 +155,26 @@ async function handleLogout() {
     window.location.reload()
   }
 }
+// 🟢 FAB 懸浮按鈕專用邏輯
+const contentRef = ref(null) // 用嚟綁定滑動區塊
+const showBackToTop = ref(false)
+
+// 檢查滑動距離 (超過 300px 先顯示)
+const checkScroll = () => {
+  if (contentRef.value) {
+    showBackToTop.value = contentRef.value.scrollTop > 300
+  }
+}
+
+// 平滑滾動到最頂
+const scrollToTop = () => {
+  if (contentRef.value) {
+    contentRef.value.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    })
+  }
+}
 </script>
 
 <template>
@@ -260,7 +280,7 @@ async function handleLogout() {
       </div>
     </div>
 
-    <div class="content">
+    <div class="content" ref="contentRef" @scroll="checkScroll">
       <DashboardView v-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
       <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
@@ -300,6 +320,12 @@ async function handleLogout() {
     <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
       我知道了，開始使用！
     </button>
+    <!-- 🟢 懸浮回到頂部按鈕 -->
+  <Transition name="fab-fade">
+    <button v-if="showBackToTop" class="fab-back-to-top" @click="scrollToTop">
+      <span style="font-size: 22px;">⬆️</span>
+    </button>
+  </Transition>
   </BaseModal>
 </template>
 
@@ -389,4 +415,42 @@ html, body {
 .w-btn { width: 100%; padding: 16px; background: #4f46e2; color: white; border: none; border-radius: 16px; font-size: 18px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 20px rgba(79,70,229,0.3); }
 .w-btn:active { transform: scale(0.95); }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+/* 🟢 懸浮按鈕樣式 */
+.fab-back-to-top {
+  position: fixed;
+  bottom: 85px; /* 💡 避開你底部嘅 .nav 導覽列 */
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e2, #3730a3); /* 配合你主題嘅紫色漸變 */
+  color: white;
+  border: none;
+  box-shadow: 0 4px 15px rgba(79, 70, 226, 0.4);
+  cursor: pointer;
+  z-index: 99; /* 浮喺內容上面，但低過 nav */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 🟢 按下時嘅物理回饋效果 */
+.fab-back-to-top:active {
+  transform: scale(0.85) translateY(2px);
+  box-shadow: 0 2px 8px rgba(79, 70, 226, 0.3);
+}
+
+/* 🟢 淡入淡出 + 輕微彈跳動畫 */
+.fab-fade-enter-active,
+.fab-fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fab-fade-enter-from,
+.fab-fade-leave-to {
+  opacity: 0;
+  transform: translateY(20px) scale(0.5); /* 由下面縮細彈出嚟 */
+}
 </style>
