@@ -130,9 +130,31 @@ async function handleCheckout(staff) {
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
   if (selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free') {
+    
+    // 🟢 自動化引擎 1：計算一年後嘅到期日 (手動排版避開時差蟲)
+    const expiryDate = new Date(checkoutDate.value)
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1)
+    const y = expiryDate.getFullYear()
+    const m = String(expiryDate.getMonth() + 1).padStart(2, '0')
+    const d = String(expiryDate.getDate()).padStart(2, '0')
+    const newExpiryDateStr = `${y}-${m}-${d}`
+
+    // 🟢 自動化引擎 2：檢查加入日期是否需要「時光倒流」
+    let finalJoinDate = selectedClient.value.join_date
+    const purchaseDateObj = new Date(checkoutDate.value)
+    const currentJoinDateObj = new Date(finalJoinDate || '2100-01-01') // 防呆：如果無日期就當成未來
+    
+    // 如果客底無加入日期，或者今次買卡日期早過原本個加入日期，就直接覆蓋！
+    if (!finalJoinDate || purchaseDateObj < currentJoinDateObj) {
+        finalJoinDate = checkoutDate.value
+    }
+
+    // 🚀 執行客底資料全面自動更新！
     await supabase.from('clients').update({ 
       status: 'active', 
-      pkg_count: (selectedClient.value.pkg_count || 0) + 1 
+      pkg_count: (selectedClient.value.pkg_count || 0) + 1,
+      join_date: finalJoinDate,        // ✨ 自動對齊第一日
+      expiry_date: newExpiryDateStr    // ✨ 自動續命 365 日
     }).eq('id', selectedClient.value.id)
   }
 

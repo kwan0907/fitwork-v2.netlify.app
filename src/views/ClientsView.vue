@@ -305,8 +305,8 @@ async function handleAddClient() {
   if (consumeMyGift.value && dataToInsert.referred_by_id) {
     const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id);
     if (referrer) {
-      const dummyTxn = {
-        type: 'expense', amount: 0,
+     const dummyTxn = {
+        type: 'expense', amount: 52, cost: 52, profit: -52,
         note: `推薦新客: ${dataToInsert.name}`,
         client_name: referrer.name,
         category: 'MyGift消耗',
