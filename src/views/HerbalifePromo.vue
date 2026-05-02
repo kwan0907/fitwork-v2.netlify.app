@@ -1,18 +1,32 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../supabase'
+import VueEasyLightbox from 'vue-easy-lightbox' // 🟢 新增呢行
 
 // 💡 管理員權限設定
 const currentUserEmail = ref('')
 const isAdmin = computed(() => currentUserEmail.value === 'yimwingkwan0907@gmail.com')
 
-// 全螢幕看圖狀態與縮放控制
-const viewingImage = ref(null)
-const imgScale = ref(1)
+// 🟢 全新順滑全螢幕看圖狀態 (支援雙指縮放與左右滑動)
+const visibleRef = ref(false)
+const imgsRef = ref([])
+const indexRef = ref(0)
 
-const openImage = (imgStr) => {
-  viewingImage.value = imgStr
-  imgScale.value = 1 
+const openLightbox = (promo, startIndex = 0) => {
+  // 自動收集呢個活動有嘅所有相片，等客人可以左右滑動
+  const images = []
+  images.push(promo.customImages[0] || promo.defaultImage)
+  if (promo.customImages[1]) {
+    images.push(promo.customImages[1])
+  }
+  
+  imgsRef.value = images
+  indexRef.value = startIndex
+  visibleRef.value = true
+}
+
+const onHide = () => {
+  visibleRef.value = false
 }
 
 const availableMonths = computed(() => {
@@ -690,8 +704,8 @@ function exportToExcel() {
               <div class="p-date">🕒 {{ p.date }}</div>
               
               <div class="img-actions">
-                <button class="btn-view-img" @click="openImage(p.customImages[0] || p.defaultImage)">🔍 圖1</button>
-                <button v-if="p.customImages[1]" class="btn-view-img" @click="openImage(p.customImages[1])">🔍 圖2</button>
+               <button class="btn-view-img" @click="openLightbox(p, 0)">🔍 圖1</button>
+<button v-if="p.customImages[1]" class="btn-view-img" @click="openLightbox(p, 1)">🔍 圖2</button>
                 
                 <template v-if="isAdmin">
                   <input type="file" :id="'img-up-0-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p, 0)">
@@ -768,22 +782,13 @@ function exportToExcel() {
       </div>
     </div>
 
-    <div v-if="viewingImage" class="image-modal-overlay" @click="viewingImage = null">
-      
-      <!-- 圖片顯示區：加上 @click.stop，點圖片本身不會關閉 -->
-      <div class="img-scroll-container">
-        <img :src="viewingImage" class="full-size-img" :style="{ transform: `scale(${imgScale})` }" @click.stop />
-      </div>
-
-      <!-- 控制列移到底部：同樣加上 @click.stop -->
-      <div class="zoom-controls" @click.stop>
-        <button class="z-btn" @click="imgScale += 0.4">➕ 放大</button>
-        <button class="z-btn" @click="imgScale = Math.max(0.4, imgScale - 0.4)">➖ 縮小</button>
-        <button class="z-btn" @click="imgScale = 1">↺ 還原</button>
-        <button class="z-btn c-btn" @click="viewingImage = null">✕ 關閉</button>
-      </div>
-
-    </div>
+    <!-- 🟢 手機原生級別：雙指縮放與左右滑動圖庫 -->
+    <vue-easy-lightbox
+      :visible="visibleRef"
+      :imgs="imgsRef"
+      :index="indexRef"
+      @hide="onHide"
+    ></vue-easy-lightbox>
 
   </div>
 </template>
@@ -930,69 +935,4 @@ function exportToExcel() {
 
 .p-req { font-size: 12px; color: #94a3b8; font-weight: 800; text-align: right; }
 
-.image-modal-overlay { 
-  position: fixed; 
-  top: 0; 
-  left: 0; 
-  width: 100vw; 
-  height: 100vh; 
-  background: rgba(0,0,0,0.85); 
-  z-index: 99999; 
-  display: flex; 
-  flex-direction: column;
-  overscroll-behavior: none; 
-}
-.img-scroll-container { 
-  flex: 1; 
-  width: 100%;
-  overflow: auto; 
-  display: flex; 
-  align-items: center; 
-  justify-content: center; 
-  padding: 20px;
-  /* 💡 圖片底部留白加大，確保圖片滑到最底時，唔會被升高咗嘅按鈕遮住 */
-  padding-bottom: 180px; 
-}
-.full-size-img { 
-  max-width: 95%; 
-  max-height: 85vh; 
-  border-radius: 8px; 
-  object-fit: contain; 
-  transition: transform 0.25s cubic-bezier(0.2, 0, 0.2, 1); 
-  transform-origin: center center;
-}
-
-.zoom-controls { 
-  position: absolute; 
-  /* 💡 關鍵修改：大幅度拉高！110px 足夠跨過你 App 嘅底部導覽列同 iPhone 底線 */
-  bottom: calc(110px + env(safe-area-inset-bottom)); 
-  left: 50%; 
-  transform: translateX(-50%); 
-  display: flex; 
-  flex-wrap: wrap; 
-  justify-content: center;
-  gap: 10px; 
-  background: rgba(30, 41, 59, 0.85); 
-  backdrop-filter: blur(10px); 
-  padding: 12px 18px; 
-  border-radius: 20px; 
-  z-index: 100000;
-  width: max-content;
-  max-width: 90vw;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-}
-.z-btn { 
-  background: white; 
-  color: #1e293b; 
-  font-size: 14px; 
-  font-weight: 900; 
-  padding: 10px 14px; 
-  border-radius: 12px; 
-  border: none; 
-  cursor: pointer; 
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-  white-space: nowrap; 
-}
-.z-btn:active { transform: scale(0.9); }
-.c-btn { background: #ef4444; color: white; }
 </style>
