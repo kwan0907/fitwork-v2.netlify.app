@@ -45,6 +45,44 @@ function selectClient(c) {
   isNewCustomer.value = c.status === 'prospect'
 }
 
+// 🚀 極速新增專用變數
+const showQuickAddModal = ref(false)
+const quickNewClient = ref({ name: '', phone: '', branch: '觀塘' })
+
+async function handleQuickAdd() {
+  if (!quickNewClient.value.name || !quickNewClient.value.phone) return alert('請填寫姓名及電話！')
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
+
+  const dataToInsert = { 
+    name: quickNewClient.value.name,
+    phone: quickNewClient.value.phone,
+    branch: quickNewClient.value.branch,
+    source: '其他', 
+    status: 'prospect', // 預設試堂
+    join_date: getLocalHKDate(),
+    own_email: user.email,
+    user_id: user.id 
+  }
+
+  // 加上 .select() 才能拿回剛新增的資料
+  const { data, error } = await supabase.from('clients').insert([dataToInsert]).select()
+  
+  if (error) return alert('新增失敗: ' + error.message)
+  
+  await store.syncAll() 
+
+  // 自動選取剛剛極速新增的客人
+  if (data && data.length > 0) {
+    selectClient(data[0]) 
+  }
+
+  showQuickAddModal.value = false
+  quickNewClient.value = { name: '', phone: '', branch: '觀塘' }
+  setTimeout(() => alert('✅ 極速新增成功，已自動為你選取客戶！'), 100)
+}
+
 onMounted(() => {
   if (store.quickActionClient) {
     const targetName = store.quickActionClient
@@ -185,14 +223,26 @@ async function handleCheckout(staff) {
       <div class="form-item" style="margin-top:15px;"><label>2. 搜尋客戶 (必填) <span style="color:#ef4444">*</span></label>
         <div class="search-rel">
           <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="showDropdown = true" @input="showDropdown = true">
-          <div v-if="showDropdown && clientOptions.length > 0" class="drop-menu">
+          <!-- 🚀 改為只要有打字就顯示 Menu -->
+          <div v-if="showDropdown && searchClient" class="drop-menu">
             <div style="padding:8px; text-align:center; font-size:12px; color:#ef4444; background:#f8fafc; border-bottom:1px solid #eee; cursor:pointer;" @click="showDropdown = false">✕ 關閉搜尋</div>
-            <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
-              <span>{{ c.name }} <span class="sub-text">({{ c.phone }})</span></span>
-              <!-- 🟢 新增：直觀顯示該客戶所屬分店 -->
-              <span style="font-size: 10px; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 800; white-space: nowrap;">
-                📍 {{ c.branch || '未知分店' }}
-              </span>
+            
+            <!-- 有結果時顯示客戶列表 -->
+            <div v-if="clientOptions.length > 0">
+              <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+                <span>{{ c.name }} <span class="sub-text">({{ c.phone }})</span></span>
+                <span style="font-size: 10px; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 800; white-space: nowrap;">
+                  📍 {{ c.branch || '未知分店' }}
+                </span>
+              </div>
+            </div>
+
+            <!-- 🚀 無結果時顯示極速新增按鈕 -->
+            <div v-else style="padding: 15px; text-align: center;">
+              <div style="color: #64748b; font-size: 13px; font-weight: 800; margin-bottom: 10px;">找不到此客戶</div>
+              <button @click="showQuickAddModal = true; showDropdown = false; quickNewClient.name = isNaN(searchClient) ? searchClient : ''; quickNewClient.phone = !isNaN(searchClient) ? searchClient : ''" style="background: #4f46e2; color: white; border: none; padding: 10px 15px; border-radius: 10px; font-weight: 900; width: 100%; cursor: pointer; transition: 0.2s;">
+                ➕ 查無此人，立即新增
+              </button>
             </div>
           </div>
         </div>
@@ -217,6 +267,42 @@ async function handleCheckout(staff) {
       </div>
     </div>
 
+    <!-- 🚀 極速新增客戶 Modal -->
+    <div v-if="showQuickAddModal" class="modal-overlay" @click.self="showQuickAddModal = false">
+      <div class="center-modal action-modal" style="max-width: 350px;">
+        <div class="m-header">
+          ⚡ 極速新增客戶
+          <button class="close-x" @click="showQuickAddModal = false">✕</button>
+        </div>
+        
+        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #4f46e2;">
+          💡 極速通道：加完會自動為你選取這個新客！
+        </div>
+
+        <div class="form-item">
+          <label>姓名 <span style="color:#ef4444">*</span></label>
+          <input v-model="quickNewClient.name" class="modern-inp" placeholder="請輸入姓名">
+        </div>
+        
+        <div class="form-item" style="margin-top: 12px;">
+          <label>電話 <span style="color:#ef4444">*</span></label>
+          <input v-model="quickNewClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話">
+        </div>
+        
+        <div class="form-item" style="margin-top: 12px;">
+          <label>所屬分店</label>
+          <select v-model="quickNewClient.branch" class="modern-select">
+            <option value="觀塘">觀塘</option>
+            <option value="中環">中環</option>
+            <option value="佐敦">佐敦</option>
+          </select>
+        </div>
+
+        <button class="payee-btn style-0" style="width: 100%; margin-top: 20px;" @click="handleQuickAdd">
+          ✅ 確認新增並選取
+        </button>
+      </div>
+    </div>
     <div class="compact-total-display">
       <div class="t-label">應收總額 (營業額)</div>
       <div class="t-val">$ {{ exCalc.price }}</div>

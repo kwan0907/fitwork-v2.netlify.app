@@ -461,8 +461,6 @@ async function handleImport(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  // 🚀 終極修復：不要從 store 拿，直接跟 Supabase 要最新的登入憑證！
-  // 這樣不管你怎麼重新整理，只要你是登入狀態，就一定抓得到 Email。
   const { data: authData } = await supabase.auth.getSession();
   const currentUserEmail = authData?.session?.user?.email;
 
@@ -480,29 +478,63 @@ async function handleImport(e) {
       
       const rows = lines.slice(1).filter(line => line.trim() !== '');
       
-      let count = 0;
+      let insertedCount = 0;
+      let updatedCount = 0;
+      const processedPhones = new Set(); // 🚀 護城河 1：防止同一個 CSV 檔案裡面有重複電話
+
+      // 💡 溫馨提示，等同事知道系統會做防重檢查
+      const isConfirmed = confirm(`準備匯入 ${rows.length} 筆資料。\n系統會自動檢查「電話號碼」：\n🔄 若已存在 ➡️ 更新資料\n✨ 若未存在 ➡️ 新增客戶\n\n是否繼續？`);
+      if (!isConfirmed) { e.target.value = ''; return; }
+
       for (const line of rows) {
         const row = line.split(',');
         
         if (!row[0]) continue; 
 
-        const { error } = await supabase.from('clients').insert([{
+        // 取得電話號碼並清理前後空白
+        const phoneNum = String(row[1] || '').trim();
+
+        // 🚀 如果檔案內已經處理過這個電話，直接跳過，慳返時間！
+        if (phoneNum && processedPhones.has(phoneNum)) {
+            continue;
+        }
+        if (phoneNum) processedPhones.add(phoneNum);
+
+        // 🚀 護城河 2：檢查現有系統中是否已經有這個電話
+        // 如果無電話號碼，就當作新客 (因為無法比對)
+        const existingClient = phoneNum 
+            ? store.clients.find(c => c.phone === phoneNum) 
+            : null;
+
+        // 準備好要寫入的資料包
+        const payload = {
           name: String(row[0] || '').trim(),
-          phone: String(row[1] || '').trim(),
+          phone: phoneNum,
           branch: (row[2] || '觀塘').trim(),
           status: (row[3] || 'active').trim(),
           join_date: row[4] ? row[4].trim() : null,
           source: (row[5] || '其他').trim(),
           expiry_date: row[6] ? row[6].trim() : null,
           remark: (row[7] || '').trim(),
-          owner_email: currentUserEmail // 👈 強制寫入剛剛跟 Supabase 要到的 Email
-        }]);
+          owner_email: currentUserEmail 
+        };
 
-        if (!error) count++;
+        if (existingClient) {
+            // 🔄 撞電話：執行 Update (更新舊客資料)
+            const { error } = await supabase.from('clients').update(payload).eq('id', existingClient.id);
+            if (!error) updatedCount++;
+        } else {
+            // ✨ 唔撞電話：執行 Insert (新增客底)
+            const { error } = await supabase.from('clients').insert([payload]);
+            if (!error) insertedCount++;
+        }
       }
       
-      alert(`✅ 匯入成功！共有 ${count} 位客戶已歸屬到您的帳號 (${currentUserEmail})。`);
+      // 🚀 補上 await 等待畫面刷新，並顯示清晰的結果報告
       await store.syncAll(); 
+      setTimeout(() => {
+        alert(`✅ 匯入完畢！\n\n✨ 成功新增：${insertedCount} 位新客\n🔄 成功更新：${updatedCount} 位舊客\n\n資料已歸屬至 (${currentUserEmail})。`);
+      }, 100);
       
     } catch (err) {
       console.error('匯入出錯:', err);
