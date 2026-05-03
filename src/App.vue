@@ -156,23 +156,25 @@ async function handleLogout() {
   }
 }
 // 🟢 FAB 懸浮按鈕專用邏輯
-const contentRef = ref(null) // 用嚟綁定滑動區塊
+const contentRef = ref(null) 
 const showBackToTop = ref(false)
 
-// 檢查滑動距離 (超過 300px 先顯示)
-const checkScroll = () => {
-  if (contentRef.value) {
-    showBackToTop.value = contentRef.value.scrollTop > 300
-  }
+// 💡 防抖動 (Debounce) 的滑動檢查，效能更好
+let scrollTimeout
+const checkScroll = (e) => {
+  if (scrollTimeout) cancelAnimationFrame(scrollTimeout)
+  scrollTimeout = requestAnimationFrame(() => {
+    // 檢查 .content 區塊滑動咗幾多
+    if (e.target) {
+      showBackToTop.value = e.target.scrollTop > 400
+    }
+  })
 }
 
-// 平滑滾動到最頂
+// 💡 確保平滑滾動到最頂
 const scrollToTop = () => {
   if (contentRef.value) {
-    contentRef.value.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    })
+    contentRef.value.scrollTo({ top: 0, behavior: 'smooth' })
   }
 }
 </script>
@@ -320,13 +322,15 @@ const scrollToTop = () => {
     <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
       我知道了，開始使用！
     </button>
-    <!-- 🟢 懸浮回到頂部按鈕 -->
+    </BaseModal>
+
+  <!-- 🟢 將按鈕搬出 Modal，放喺最外層，咁先會全域顯示！ -->
   <Transition name="fab-fade">
     <button v-if="showBackToTop" class="fab-back-to-top" @click="scrollToTop">
       <span style="font-size: 22px;">⬆️</span>
     </button>
   </Transition>
-  </BaseModal>
+
 </template>
 
 <style>
@@ -418,24 +422,25 @@ html, body {
 /* 🟢 懸浮按鈕樣式 */
 .fab-back-to-top {
   position: fixed;
-  bottom: 85px; /* 💡 避開你底部嘅 .nav 導覽列 */
+  /* 💡 智能計算高度：避開 Nav 列 ＋ 避開 iPhone 底部黑線 */
+  bottom: calc(75px + env(safe-area-inset-bottom)); 
   right: 20px;
-  width: 50px;
-  height: 50px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4f46e2, #3730a3); /* 配合你主題嘅紫色漸變 */
+  background: linear-gradient(135deg, #4f46e2, #3730a3);
   color: white;
   border: none;
   box-shadow: 0 4px 15px rgba(79, 70, 226, 0.4);
   cursor: pointer;
-  z-index: 99; /* 浮喺內容上面，但低過 nav */
+  /* 💡 z-index 要大過 50，但細過 Nav 的 100 */
+  z-index: 90; 
   display: flex;
   align-items: center;
   justify-content: center;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   -webkit-tap-highlight-color: transparent;
 }
-
 /* 🟢 按下時嘅物理回饋效果 */
 .fab-back-to-top:active {
   transform: scale(0.85) translateY(2px);
