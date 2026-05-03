@@ -504,7 +504,8 @@ async function finalizeCheckout(payeeName) {
         </div>
     </BaseModal>
 
-    <BaseModal :show="showCheckoutModal" title="結帳確認" @close="showCheckoutModal = false">
+  <BaseModal :show="showCheckoutModal" title="結帳確認" @close="showCheckoutModal = false">
+      <div class="checkout-scroll-area"> <!-- 🟢 滑動保護罩開始 -->
         <div class="summary-box" style="margin-bottom: 20px; border-color: #4f46e2; background: #f5f3ff;">
           <div class="s-row">
             <span style="color:#4f46e2; font-weight:800;">📅 購買日期</span>
@@ -557,6 +558,7 @@ async function finalizeCheckout(payeeName) {
           </div>
           <button class="btn-back" @click="showCheckoutModal = false">← 返回繼續選購</button>
         </div>
+      </div> <!-- 🟢 滑動保護罩結束 -->
     </BaseModal>
 
     <div v-if="showDeleteConfirm" class="modal-overlay" style="z-index: 1000;" @click.self="showDeleteConfirm = false">
@@ -591,6 +593,15 @@ async function finalizeCheckout(payeeName) {
 .tier-tag { font-size: 10px; background: #eef2ff; color: #4f46e2; padding: 2px 6px; border-radius: 4px; float: right; }
 .selected-badge { background: #eef2ff; color: #4f46e2; padding: 10px 14px; border-radius: 10px; margin-top: 12px; font-weight: 800; font-size: 14px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* 🟢 解決結帳視窗無法滾動、背景跟著滑動的問題 */
+.checkout-scroll-area {
+  max-height: 65vh; /* 限制最大高度，強制產生內部捲軸 */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; /* 💡 魔法屬性：鎖死滑動，背景絕對唔會再跟著跑！ */
+  padding-bottom: 40px; /* 底部多留白，確保返回按鈕唔會俾截斷 */
+}
 
 /* 🟢 馬拉松套裝樣式 */
 .combo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
