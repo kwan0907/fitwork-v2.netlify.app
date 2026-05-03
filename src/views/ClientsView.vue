@@ -13,6 +13,7 @@ const filterStatus = ref('active')
 const filterMyGiftExpiring = ref(false) 
 const sortBy = ref('default') 
 const consumeMyGift = ref(false)
+const autoChargeTrial = ref(false) // 🚀 新增：控制是否自動收取試堂費
 const activeTab = ref('basic') // 🚀 新增：用來控制目前顯示哪一個分頁 ('basic', 'source', 'advanced')
 
 const getLocalHKDate = () => {
@@ -267,7 +268,8 @@ function handleActionRetail() {
 function openAddModal() {
     newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
     consumeMyGift.value = false 
-    referrerSearch.value = '' 
+    autoChargeTrial.value = false // 預設不勾選
+    referrerSearch.value = ''
     activeTab.value = 'basic' // 🚀 新增：每次打開都預設回到「基本資料」分頁
     showAddModal.value = true
 }
@@ -317,22 +319,32 @@ async function handleAddClient() {
       await supabase.from('transactions').insert(dummyTxn);
     }
   } 
-  else if (dataToInsert.status === 'prospect') {
+  
+  // 🚀 自動收取試堂費邏輯
+  if (autoChargeTrial.value) {
     const trialIncomeTxn = {
-      type: 'income', amount: 98, cost: 52, profit: 46,
+      type: 'income', 
+      amount: 98, 
+      cost: 52, 
+      profit: 46, // $98 - $52 = $46
       note: `預約試堂收費: ${dataToInsert.name}`,
       client_name: dataToInsert.name,
       category: '試堂',
       handled_by: dataToInsert.handled_by || store.currentUser || '系統',
       own_email: user.email,
-      created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00` // 👈 加上香港時區尾巴
+      created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00`
     };
     await supabase.from('transactions').insert(trialIncomeTxn);
   }
 
   showAddModal.value = false; 
   store.syncAll(); 
-  alert('✅ 新增成功') 
+  
+  if (autoChargeTrial.value) {
+     alert('✅ 新增成功！\n💰 已自動寫入 $98 試堂費紀錄。') 
+  } else {
+     alert('✅ 新增成功') 
+  }
 }
 
 async function handleUpdateClient() {
@@ -349,9 +361,31 @@ async function handleUpdateClient() {
 
   dataToUpdate.trial_date = dataToUpdate.trial_date ? dataToUpdate.trial_date.slice(0, 16) : null
 
+  // 🚀 智能引擎：偵測如果將客戶改為「缺席」，自動將其 98 蚊試堂費的成本改為 0
+  if (dataToUpdate.status === 'absent') {
+    const targetTxn = store.transactions.find(t => 
+      t.client_name === dataToUpdate.name && 
+      t.category === '試堂' && 
+      t.amount === 98
+    )
+
+    if (targetTxn && targetTxn.cost > 0) {
+      await supabase.from('transactions').update({
+        cost: 0,
+        profit: 98 // 利潤全收
+      }).eq('id', targetTxn.id)
+      console.log('✅ 已自動將缺席客人的試堂成本改為 0')
+    }
+  }
+
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
+  
   if (error) alert('更新失敗: ' + error.message)
-  else { showEditModal.value = false; store.syncAll(); alert('✅ 修改已儲存') }
+  else { 
+    showEditModal.value = false; 
+    store.syncAll(); 
+    alert(dataToUpdate.status === 'absent' ? '✅ 修改已儲存\n(已自動將試堂費成本設為 0)' : '✅ 修改已儲存') 
+  }
 }
 
 async function handleDeleteClient() {
@@ -716,6 +750,17 @@ async function handleImport(e) {
                </div>
                <div class="toggle-card" style="margin: 0;" :class="{active: consumeMyGift}" @click="consumeMyGift = !consumeMyGift">
                  {{ consumeMyGift ? '✅ 是，建立後自動扣減 1 張' : '❌ 否，不扣除' }}
+               </div>
+            </div>
+
+            <!-- 🚀 新增：極速收取 $98 試堂費按鈕 -->
+            <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-top: 15px; background: #f0fdf4; border: 1px dashed #86efac; padding: 15px; border-radius: 12px; animation: popIn 0.3s ease-out;">
+               <label style="color: #16a34a; font-size: 14px;">💰 是否同時收取 $98 留位費？</label>
+               <div style="font-size: 11px; color: #64748b; margin-bottom: 10px; font-weight: 700;">
+                 (將自動寫入一筆 $98 試堂收入流水帳)
+               </div>
+               <div class="toggle-card" style="margin: 0;" :class="{active: autoChargeTrial}" @click="autoChargeTrial = !autoChargeTrial">
+                 {{ autoChargeTrial ? '✅ 是，自動記帳 $98' : '❌ 否，稍後再收' }}
                </div>
             </div>
 

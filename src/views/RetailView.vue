@@ -616,7 +616,21 @@ async function finalizeCheckout(payeeName) {
 .new-p { font-size: 20px; font-weight: 900; color: #4f46e2; }
 .btn-gorgeous { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #4f46e2); color: white; font-weight: 900; font-size: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(79,70,229,0.3); }
 
-.float-bar { position: fixed; bottom: 85px; left: 5%; width: 90%; background: #1e293b; border-radius: 99px; padding: 14px 20px; display: flex; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 90; cursor: pointer; }
+.float-bar { 
+  position: fixed; 
+  /* 💡 將原本的 85px 改成 100px，並加上 iPhone 底部安全區的高度 */
+  bottom: calc(100px + env(safe-area-inset-bottom)); 
+  left: 5%; 
+  width: 90%; 
+  background: #1e293b; 
+  border-radius: 99px; 
+  padding: 14px 20px; 
+  display: flex; 
+  align-items: center; 
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2); 
+  z-index: 90; 
+  cursor: pointer; 
+}
 .badge-num { background: #4f46e2; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 16px; }
 .float-total { font-size: 22px; font-weight: 900; color: white; margin-right: 15px; }
 .float-btn { font-size: 14px; font-weight: 800; color: #cbd5e1; }
