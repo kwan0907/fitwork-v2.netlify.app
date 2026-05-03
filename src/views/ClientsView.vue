@@ -625,7 +625,7 @@ async function handleImport(e) {
         <div class="tab-content-area">
           <div v-show="activeTab === 'basic'" class="tab-pane">
             <div class="f-item"><label>姓名</label><input v-model="editingClient.name" class="modern-inp"></div>
-            <div class="f-item"><label>電話</label><input v-model="editingClient.phone" class="modern-inp"></div>
+           <div class="f-item"><label>電話</label><input v-model="editingClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話"></div>
             <div class="f-item">
               <label>分店</label>
               <select v-model="editingClient.branch" class="modern-select">
@@ -715,7 +715,7 @@ async function handleImport(e) {
         <div class="tab-content-area">
           <div v-show="activeTab === 'basic'" class="tab-pane">
             <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
-            <div class="f-item"><label>電話</label><input v-model="newClient.phone" class="modern-inp" placeholder="請輸入電話"></div>
+            <div class="f-item"><label>電話</label><input v-model="newClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話"></div>
             <div class="f-item">
                 <label>分店</label>
                 <select v-model="newClient.branch" class="modern-select">

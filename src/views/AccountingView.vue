@@ -604,14 +604,14 @@ async function handleDeleteTransaction(t) {
       <div v-if="expForm.category==='廣告費用'" class="ad-box">
         <div class="ad-title">📈 記錄廣告成效 (選填)</div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-          <div><label>產生查詢數</label><input class="modern-inp" type="text" inputmode="numeric" pattern="[0-9]*" v-model="expForm.ad_inquiries"></div>
-          <div><label>獲得電話數</label><input class="modern-inp" type="text" inputmode="numeric" pattern="[0-9]*" v-model="expForm.ad_phones"></div>
+          <div><label>產生查詢數</label><input class="modern-inp" type="tel" inputmode="numeric" pattern="[0-9]*" v-model="expForm.ad_inquiries"></div>
+          <div><label>獲得電話數</label><input class="modern-inp" type="tel" inputmode="numeric" pattern="[0-9]*" v-model="expForm.ad_phones"></div>
         </div>
       </div>
 
       <div class="form-item" style="margin-top:15px;">
      <label>金額 (HK$)</label>
-    <input class="modern-inp amt-inp" type="text" inputmode="decimal" pattern="[0-9.]*" v-model="expForm.amount">
+    <input class="modern-inp amt-inp" type="tel" inputmode="decimal" pattern="[0-9.]*" v-model="expForm.amount">
     </div>
       <div class="form-item" style="margin-top:15px;">
         <label>📝 補充購買項目 / 備註</label>
