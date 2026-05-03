@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { supabase } from '../supabase'
 import VueEasyLightbox from 'vue-easy-lightbox' // 🟢 新增呢行
+import confetti from 'canvas-confetti' // 🟢 新增：引入撒花特效庫
 
 // 💡 管理員權限設定
 const currentUserEmail = ref('')
@@ -54,6 +55,8 @@ const displayedMonths = computed(() => {
 
 const monthlyStats = ref({})
 const isSyncing = ref(false)
+const qualifiedMemory = ref(new Set()) // 🟢 新增：建立「達標記憶庫」
+
 // 🟢 身份切換 (績優組/卓越組 vs 非績優組)
 const isTopTeam = ref(JSON.parse(localStorage.getItem('fitwork_isTopTeam')) || false)
 const toggleTopTeam = () => {
@@ -179,11 +182,14 @@ const loadCloudStats = async () => {
           else match.customImages[0] = row.image_data
         } catch (e) {
           match.customImages[0] = row.image_data
-        }
+       }
       }
     })
   }
   
+  // 🟢 新增：載入完畢後，把「已達標」寫入記憶庫，避免一開網頁就噴彩帶
+  promoStatus.value.forEach(p => { if (p.isQualified) qualifiedMemory.value.add(p.id) })
+
   isSyncing.value = false
 }
 
@@ -604,9 +610,29 @@ const promoStatus = computed(() => {
         }
     }
 
-    return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText, avgVpNeeded, monthsLeft }
+   return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText, avgVpNeeded, monthsLeft }
   })
 })
+
+// 🟢 新增：將監聽器放喺最底，確保系統計好晒成績先監聽！
+watch(() => promoStatus.value, (newStatuses) => {
+  if (!newStatuses || isSyncing.value) return
+
+  newStatuses.forEach(promo => {
+    const wasQualified = qualifiedMemory.value.has(promo.id)
+
+    if (promo.isQualified && !wasQualified) {
+      // 噴射彩帶！
+      confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, zIndex: 99999 })
+      qualifiedMemory.value.add(promo.id)
+      setTimeout(() => { alert(`🎉 狂賀！您剛剛達成了【${promo.name}】！太神啦！`) }, 500)
+    } 
+    else if (!promo.isQualified && wasQualified) {
+      qualifiedMemory.value.delete(promo.id)
+    }
+  })
+}, { deep: true })
+
 function exportToExcel() {
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
   csvContent += "活動名稱,考核期限,該區間已累積(VP),已累積(VIP),已累積(PC),已累積(金級),已累積(領班),綜合完成率(%),達標狀態\n"

@@ -547,7 +547,7 @@ async function handleDeleteTransaction(t) {
           
           <div style="text-align:right;display:flex;align-items:center;gap:10px; margin-left: 10px; flex-shrink: 0;">
             <div class="t-amt" :class="t.type==='income'?'g':'r'">
-              {{ t.type==='income'?'+':'-' }}${{ t.amount }}
+              {{ t.type==='income'?'+':'-' }}${{ Math.round(t.amount * 100) / 100 }}
             </div>
             <div style="display:flex; flex-direction:column; gap:5px;">
               <button class="icon-btn" @click="openEditTransaction(t)">✏️</button>
@@ -680,7 +680,15 @@ async function handleDeleteTransaction(t) {
 .t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 10px; margin-bottom: 2px; }
 .t-desc { font-size: 12px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; margin-top: 2px !important; }
 .icon-lbl { font-size: 11px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
-.t-desc-val { color: #1e293b; font-weight: 900; font-size: 13px; word-break: break-word; } 
+.t-desc-val { 
+  color: #1e293b; 
+  font-weight: 900; 
+  font-size: 13px; 
+  word-break: break-word; 
+  white-space: pre-wrap; /* 🟢 確保正常換行 */
+  flex: 1; /* 🟢 填滿剩餘空間，避免被擠壓 */
+  min-width: 0;
+}
 .t-staff { font-weight: 900; color: #4f46e2; font-size: 13px; } 
 .t-ad { font-size: 11px; color: #d97706; margin-top: 4px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 2px 6px; border-radius: 6px; }
 

@@ -358,7 +358,7 @@ async function finalizeCheckout(payeeName) {
 
   // 1. 寫入流水帳
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', category: '零售收入', amount: totalRevenue.value, profit: netProfit.value, cost: totalCost.value,
+    type: 'income', category: '零售收入', amount: Math.round(totalRevenue.value * 100) / 100, profit: Math.round(netProfit.value * 100) / 100, cost: Math.round(totalCost.value * 100) / 100,
     branch: branchKey, client_id: selectedClient.value?.id || null, client_name: clientNameStr, 
     handled_by: payeeName, staff: payeeName, created_at: fullIsoCreatedAt,
     own_email: user.email, note: `${clientNameStr} (${itemsStr})`
@@ -542,7 +542,7 @@ async function finalizeCheckout(payeeName) {
         </div>
 
         <div class="summary-box">
-          <div class="s-row"><span style="color:#1e293b; font-weight:800;">總營業額</span> <span style="font-weight:900; font-size:18px;">$ {{ totalRevenue }}</span></div>
+          <div class="s-row"><span style="color:#1e293b; font-weight:800;">總營業額</span> <span style="font-weight:900; font-size:18px;">$ {{ Math.round(totalRevenue * 100) / 100 }}</span></div>
           <div class="s-row"><span style="color:#ef4444; font-weight:800;">總產品成本 (預估)</span> <span style="color:#ef4444; font-weight:900;">- $ {{ Math.round(totalCost) }}</span></div>
           <div class="divider-dash"></div>
           <div class="s-row" style="margin-top:10px;"><span style="color:#4f46e2; font-weight:900; font-size:16px;">🚀 實收淨利潤</span> <span style="color:#4f46e2; font-weight:900; font-size:26px;">$ {{ Math.round(netProfit) }}</span></div>
