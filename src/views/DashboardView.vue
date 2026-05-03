@@ -189,6 +189,7 @@ const showMyGiftModal = ref(false)
 const funnelViewType = ref('booked') 
 const editingClient = ref(null)
 const showTrendChart = ref(false) // 🚀 新增：預設收合七天走勢圖表
+const showProfitDetailModal = ref(false) // 🚀 新增：控制利潤明細視窗
 
 const getMonthStr = (dateStr) => {
   if (!dateStr || dateStr === '無紀錄') return '';
@@ -275,6 +276,7 @@ const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
   let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
   let inventoryCost = 0; 
+  const profitBreakdown = {}; // 🚀 新增：收集各分類的利潤明細
 
   store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
     if (filterBranch.value !== '全部分店' && t?.branch !== filterBranch.value) return;
@@ -285,8 +287,14 @@ const financialStats = computed(() => {
     
     if (t?.type === 'income') { 
       revenue += amt; 
-      profit += Number(t?.profit ?? amt); 
+      const txnProfit = Number(t?.profit ?? amt);
+      profit += txnProfit; 
       
+      // 🚀 將收入利潤加入明細
+      const cat = t?.category || '未分類收入';
+      if (!profitBreakdown[cat]) profitBreakdown[cat] = 0;
+      profitBreakdown[cat] += txnProfit;
+
       let owed = 0;
       if (t?.category === '運動套票' || t?.category === '試堂' || t?.category === '運動') {
         if (noteStr.includes('35點') || amt === 2550 || amt === 2452) owed = 800;
@@ -297,7 +305,7 @@ const financialStats = computed(() => {
       
       if (txDate <= 14) shopOwed1 += owed;
       else shopOwed2 += owed;
-    } 
+   } 
     else if (t?.type === 'expense') { 
       if (t?.category === '支付30%') {
         cost += amt;
@@ -307,6 +315,11 @@ const financialStats = computed(() => {
       } else {
         cost += amt;
         profit -= amt; 
+        
+        // 🚀 將支出成本加入明細 (扣減)
+        const cat = t?.category || '未分類支出';
+        if (!profitBreakdown[cat]) profitBreakdown[cat] = 0;
+        profitBreakdown[cat] -= amt;
       }
     }
   })
@@ -316,12 +329,12 @@ const financialStats = computed(() => {
   let paid = shopPaid;
   
   if (paid >= p1) { paid -= p1; p1 = 0; p2 -= paid; } else { p1 -= paid; }
-  
   return { 
       revenue, cost, profit, inventoryCost, 
       shopPending: shopOwed1 + shopOwed2 - shopPaid,
       pending1: p1,
-      pending2: p2
+      pending2: p2,
+      profitBreakdown // 🚀 新增導出明細
   };
 })
 
@@ -736,7 +749,13 @@ const chartOptions = {
       <div class="f-card"><div class="f-val" style="color: #f59e0b; font-weight: 900; font-size: 20px;">$ {{ financialStats.inventoryCost.toLocaleString() }}</div><div class="f-label">庫存產品成本</div></div>
     </div>
     
-    <div class="profit-box"><div class="p-title">💎 區間實收淨利潤</div><div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div></div>
+   <div class="profit-box hover-bg" style="cursor: pointer; transition: 0.2s;" @click="showProfitDetailModal = true">
+      <div>
+        <div class="p-title">💎 區間實收淨利潤</div>
+        <div style="font-size: 11px; font-weight: 800; color: #8b5cf6; margin-top: 4px; background: white; padding: 2px 6px; border-radius: 6px; display: inline-block;">🖱️ 點擊看拆解明細</div>
+      </div>
+      <div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div>
+    </div>
 
     <div class="shop-pending-box" v-if="financialStats.shopPending !== 0">
       <div style="display:flex; align-items:center; gap:12px;">
@@ -808,6 +827,34 @@ const chartOptions = {
           <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1; margin-top: 5px;">
             {{ packageStats.total }} <span style="font-size: 14px; color: #64748b;">張</span>
           </div>
+
+          <!-- 🚀 區間利潤拆解明細 Modal -->
+    <div v-if="showProfitDetailModal" class="modal-overlay" @click.self="showProfitDetailModal = false">
+      <div class="edit-modal" style="max-width: 450px; width: 95%;">
+        <div class="m-header">💎 區間利潤拆解明細 <button class="close-x" @click="showProfitDetailModal = false">✕</button></div>
+        
+        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          💡 這裡顯示您選擇的日期區間內，淨利潤是由哪些項目所構成的。
+        </div>
+
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
+          <div v-for="(amount, category) in financialStats.profitBreakdown" :key="category" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px dashed #f1f5f9;">
+            <div style="font-weight: 800; color: #475569; font-size: 14px;">📁 {{ category }}</div>
+            <div style="font-weight: 900; font-size: 16px;" :class="amount >= 0 ? 'text-green' : 'text-red'">
+              {{ amount >= 0 ? '+' : '' }}${{ amount.toLocaleString() }}
+            </div>
+          </div>
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; margin-top: 5px; border-top: 2px solid #cbd5e1;">
+            <div style="font-weight: 900; color: #1e293b; font-size: 16px;">總淨利潤</div>
+            <div style="font-weight: 900; font-size: 24px; color: #4f46e2;">
+              ${{ financialStats.profit.toLocaleString() }}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
           <!-- 🟢 新增：直觀顯示新開與續卡 -->
           <div style="font-size: 11px; font-weight: 800; margin-top: 6px; display: flex; justify-content: flex-end; gap: 6px;">
             <span style="color: #2563eb; background: #dbeafe; padding: 3px 6px; border-radius: 6px;">新開: {{ packageStats.newSales }}</span>
