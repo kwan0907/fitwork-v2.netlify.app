@@ -422,8 +422,8 @@ html, body {
 /* 🟢 懸浮按鈕樣式 */
 .fab-back-to-top {
   position: fixed;
-  /* 💡 智能計算高度：避開 Nav 列 ＋ 避開 iPhone 底部黑線 */
-  bottom: calc(75px + env(safe-area-inset-bottom)); 
+  /* 💡 完美計算高度：避開 Nav 列 + 避開各分頁原有的「＋」按鈕！ */
+  bottom: calc(145px + env(safe-area-inset-bottom)); 
   right: 20px;
   width: 48px;
   height: 48px;
