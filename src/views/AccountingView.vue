@@ -102,8 +102,9 @@ function openExpForm() {
   expForm.value = {
     type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
     category: '廣告費用', ad_inquiries: 0, ad_phones: 0, 
-    branch: '觀塘', // 🟢 新增
-    date: getLocalYMD() 
+    branch: '觀塘', 
+    date: getLocalYMD(),
+    originalTime: '' // 🚀 補丁 1：新增時清空時間記憶
   }
   showExpModal.value = true
 }
@@ -122,14 +123,18 @@ function openEditTransaction(t) {
     extractedNote = extractedNote.replace(extractedClient + ' ', '')
   }
 
+ // 🚀 補丁 2：精準擷取這筆紀錄原本的「時:分:秒」
+  const originalTimePart = String(t?.created_at || '').slice(11, 19) || ''
+
   expForm.value = {
     type: t?.type, amount: t?.amount, 
     note: extractedNote, 
     client_name: extractedClient, 
     staff: t?.staff || t?.handled_by || '',
     category: t?.category, ad_inquiries: t?.ad_inquiries || 0, ad_phones: t?.ad_phones || 0,
-    branch: t?.branch || '觀塘', // 🟢 讀取舊紀錄的分店
-    date: String(t?.created_at || '').slice(0, 10) 
+    branch: t?.branch || '觀塘', 
+    date: String(t?.created_at || '').slice(0, 10),
+    originalTime: originalTimePart // 🚀 補丁 2：記住它！
   }
   showExpModal.value = true
 }
@@ -283,11 +288,12 @@ function handleRepeatOrder(t) {
     // 🟢 智能正則：只用逗號分隔「不在括號內」的產品
     const parts = itemString.split(/,\s*(?![^()]*\))/)
     parts.forEach(p => {
-      const lastX = p.lastIndexOf('x')
+     const lastX = p.lastIndexOf('x')
       if (lastX !== -1) {
+        const cleanQty = p.substring(lastX + 1).replace(/\s/g, '') // 🛡️ 消除所有多餘空白
         items.push({
           name: p.substring(0, lastX).trim(),
-          qty: parseInt(p.substring(lastX + 1))
+          qty: parseInt(cleanQty, 10) || 1 // 🛡️ 轉換數字，若失敗則預設為 1
         })
       }
     })
@@ -330,9 +336,16 @@ async function saveTransaction() {
   const mm = String(now.getMinutes()).padStart(2, '0')
   const ss = String(now.getSeconds()).padStart(2, '0')
   
-// 🟢 直接儲存，唔加時區標記，當作純字串處理
-  const finalString = `${expForm.value.date}T${hh}:${mm}:${ss}`
+  // 🚀 補丁 3：智能判斷！如果是編輯舊紀錄且有舊時間，就沿用；否則用現在時間
+  const timeString = (editingTxn.value && expForm.value.originalTime) 
+    ? expForm.value.originalTime 
+    : `${hh}:${mm}:${ss}`
+
+  const finalString = `${expForm.value.date}T${timeString}`
+  
+  // 組合準備上傳的資料，並確保刪掉不需要上傳資料庫的 originalTime 變數
   const updatePayload = { ...data, created_at: finalString }
+  delete updatePayload.originalTime
 
   let error
   if (editingTxn.value) {
@@ -365,11 +378,13 @@ async function handleDeleteTransaction(t) {
     const parts = str.split(/,\s*(?![^()]*\))/)
     parts.forEach(p => {
       const lastXIndex = p.lastIndexOf('x')
-      if (lastXIndex !== -1) {
-        let pNameFull = p.substring(0, lastXIndex).trim()
-        const pQty = parseInt(p.substring(lastXIndex + 1))
-        
-        if (pNameFull && !isNaN(pQty)) {
+          if (lastXIndex !== -1) {
+            let pNameFull = p.substring(0, lastXIndex).trim()
+            // 🛡️ 防呆：將 x 後面的字串「清空所有空白」後再轉數字
+            const cleanQtyStr = p.substring(lastXIndex + 1).replace(/\s/g, '')
+            const pQty = parseInt(cleanQtyStr, 10)
+            
+            if (pNameFull && !isNaN(pQty)) {
            // 偵測是否為馬拉松套裝
            const comboMatch = pNameFull.match(/^(.*?)\s*(?:\((.*?)\))?$/)
            const baseName = comboMatch ? comboMatch[1].trim() : pNameFull
@@ -430,25 +445,25 @@ async function handleDeleteTransaction(t) {
   const { error } = await supabase.from('transactions').delete().eq('id', t.id)
   if (error) return alert('刪除失敗: ' + error.message)
 
-  // 開始退還(或扣除)庫存
+// 開始退還(或扣除)庫存 (🛡️ 修正：呼叫後端 RPC 絕對防止併發衝突！)
   if (itemsToRefund.length > 0) {
     let stockUpdateFailed = false
     
     for (const item of itemsToRefund) {
-      const { data: stockData } = await supabase.from('stock')
-        .select('quantity').eq('prod_name', item.name).eq('branch', t.branch || '觀塘').eq('user_id', user.id).maybeSingle()
+      // 採購紀錄刪除代表「退貨」要扣庫存，其他紀錄刪除代表「退還」要加庫存
+      const qtyChange = isProcurement ? -item.qty : item.qty; 
+      
+      const { error: rpcError } = await supabase.rpc('adjust_stock', {
+        p_prod_name: item.name,
+        p_branch: t.branch || '觀塘',
+        p_qty_change: qtyChange,
+        p_user_id: user.id,
+        p_email: user.email
+      });
 
-      const currentQty = stockData ? stockData.quantity : 0
-      const newQty = isProcurement ? currentQty - item.qty : currentQty + item.qty 
-
-      if (stockData) {
-        const { error: updateErr } = await supabase.from('stock').update({ quantity: newQty }).eq('prod_name', item.name).eq('branch', t.branch || '觀塘').eq('user_id', user.id)
-        if (updateErr) stockUpdateFailed = true
-      } else {
-        const { error: insertErr } = await supabase.from('stock').insert({
-            prod_name: item.name, branch: t.branch || '觀塘', quantity: newQty, user_id: user.id, own_email: user.email
-        })
-        if (insertErr) stockUpdateFailed = true
+      if (rpcError) {
+        console.error("庫存還原失敗:", rpcError);
+        stockUpdateFailed = true;
       }
     }
 

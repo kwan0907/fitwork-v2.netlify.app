@@ -337,14 +337,17 @@ async function handleAddClient() {
     await supabase.from('transactions').insert(trialIncomeTxn);
   }
 
+  await store.syncAll(); // 🚀 補丁 1：強制等待資料庫最新數據下載完成
   showAddModal.value = false; 
-  store.syncAll(); 
   
-  if (autoChargeTrial.value) {
-     alert('✅ 新增成功！\n💰 已自動寫入 $98 試堂費紀錄。') 
-  } else {
-     alert('✅ 新增成功') 
-  }
+  // 🚀 補丁 2：延遲 0.1 秒彈出，讓 Vue 有時間把新客戶畫到畫面上！
+  setTimeout(() => {
+    if (autoChargeTrial.value) {
+       alert('✅ 新增成功！\n💰 已自動寫入 $98 試堂費紀錄。') 
+    } else {
+       alert('✅ 新增成功') 
+    }
+  }, 100);
 }
 
 async function handleUpdateClient() {
@@ -382,9 +385,11 @@ async function handleUpdateClient() {
   
   if (error) alert('更新失敗: ' + error.message)
   else { 
+    await store.syncAll(); // 🚀 等待同步
     showEditModal.value = false; 
-    store.syncAll(); 
-    alert(dataToUpdate.status === 'absent' ? '✅ 修改已儲存\n(已自動將試堂費成本設為 0)' : '✅ 修改已儲存') 
+    setTimeout(() => {
+      alert(dataToUpdate.status === 'absent' ? '✅ 修改已儲存\n(已自動將試堂費成本設為 0)' : '✅ 修改已儲存') 
+    }, 100);
   }
 }
 
@@ -392,7 +397,11 @@ async function handleDeleteClient() {
   if(!confirm(`⚠️ 徹底刪除「${editingClient.value.name}」？此操作不可還原！`)) return
   const { error } = await supabase.from('clients').delete().eq('id', editingClient.value.id)
   if (error) alert('刪除失敗')
-  else { showEditModal.value = false; store.syncAll(); alert('已刪除') }
+  else { 
+    await store.syncAll(); // 🚀 等待同步
+    showEditModal.value = false; 
+    setTimeout(() => alert('已刪除'), 100);
+  }
 }
 
 function openEditModal(client) {

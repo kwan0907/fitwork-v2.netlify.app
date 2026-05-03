@@ -387,28 +387,20 @@ async function finalizeCheckout(payeeName) {
     }
   })
 
-  // 3. 執行庫存扣除
+  // 3. 執行庫存扣除 (🛡️ 修正：呼叫後端 RPC 絕對防止併發衝突！)
   let stockUpdateFailed = false;
   for (const d of stockDeductions) {
-    const { data: stockData, error: selectError } = await supabase.from('stock')
-      .select('quantity').eq('prod_name', d.name).eq('branch', branchKey).eq('user_id', user.id).maybeSingle()
-      
-    if (selectError) {
-      stockUpdateFailed = true; continue;
-    }
-
-    const currentDbQty = stockData ? stockData.quantity : 0;
-    const newQty = currentDbQty - d.qty;
-
-    if (stockData) {
-      const { error: updateError } = await supabase.from('stock')
-        .update({ quantity: newQty, own_email: user.email })
-        .eq('prod_name', d.name).eq('branch', branchKey).eq('user_id', user.id)
-      if (updateError) stockUpdateFailed = true;
-    } else {
-      const { error: insertError } = await supabase.from('stock')
-        .insert({ prod_name: d.name, branch: branchKey, quantity: newQty, user_id: user.id, own_email: user.email })
-      if (insertError) stockUpdateFailed = true;
+    const { error: rpcError } = await supabase.rpc('adjust_stock', {
+      p_prod_name: d.name,
+      p_branch: branchKey,
+      p_qty_change: -d.qty, // 賣出扣除庫存，所以係負數
+      p_user_id: user.id,
+      p_email: user.email
+    });
+    
+    if (rpcError) {
+      console.error("庫存扣除失敗:", rpcError);
+      stockUpdateFailed = true;
     }
   }
 
