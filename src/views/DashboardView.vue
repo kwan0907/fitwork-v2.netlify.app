@@ -259,6 +259,18 @@ const branchCounts = computed(() => {
   }
 })
 
+// 🚀 新增：精準判斷日期是否為「聽日 (香港時間)」
+const isTomorrow = (dateStr) => {
+  if (!dateStr) return false;
+  const tmr = new Date();
+  tmr.setDate(tmr.getDate() + 1);
+  // 鎖死香港時區計算聽日嘅 YYYY-MM-DD
+  const tmrStr = new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Hong_Kong', 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+  }).format(tmr);
+  return String(dateStr).slice(0, 10) === tmrStr;
+}
 const upcomingTrials = computed(() => {
   const todayYMD = getLocalHKDate();
   return prospectClients.value
@@ -272,10 +284,13 @@ const upcomingTrials = computed(() => {
     // 🚀 解除限制：刪除了 .slice(0, 5)，現在無論幾多個預約都會全部顯示！
 })
 
+const showSimpleShopModal = ref(false) // 🚀 新增：控制極簡對單視窗
+
 const financialStats = computed(() => {
   let revenue = 0, cost = 0, profit = 0;
-  let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0; 
-  let inventoryCost = 0; 
+  let shopOwed1 = 0, shopOwed2 = 0, shopPaid = 0;
+  let inventoryCost = 0;
+  const shopOwedDetails = []; // 🚀 新增：用來裝對單明細的空籃子
   const profitBreakdown = {}; // 🚀 新增：收集各分類的利潤明細
 
   store.transactions.filter(t => isDateInRange(t?.created_at)).forEach(t => {
@@ -296,15 +311,32 @@ const financialStats = computed(() => {
       profitBreakdown[cat] += txnProfit;
 
       let owed = 0;
+      let itemType = '';
       if (t?.category === '運動套票' || t?.category === '試堂' || t?.category === '運動') {
-        if (noteStr.includes('35點') || amt === 2550 || amt === 2452) owed = 800;
-        else if (noteStr.includes('10點') || amt === 850 || amt === 752) owed = 250;
-        else if (noteStr.includes('體驗卡30人次')) owed = 750;
-        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) owed = 25;
+        if (noteStr.includes('35點') || amt === 2550 || amt === 2452) { owed = 800; itemType = '35點'; }
+        else if (noteStr.includes('10點') || amt === 850 || amt === 752) { owed = 250; itemType = '10點'; }
+        else if (noteStr.includes('體驗卡30人次')) { owed = 750; itemType = '體驗卡'; }
+        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) { owed = 25; itemType = '試堂'; }
       }
       
       if (txDate <= 14) shopOwed1 += owed;
       else shopOwed2 += owed;
+
+      // 🚀 收集對單明細
+      if (owed > 0) {
+        let clientName = t?.client_name || '';
+        // 如果無記名，嘗試從備註【】中抽出名字
+        if (!clientName && noteStr) {
+           const match = noteStr.match(/^【(.*?)】/);
+           if (match) clientName = match[1];
+        }
+        shopOwedDetails.push({
+          date: String(t?.created_at || '').slice(5, 10), // 只抽 MM-DD
+          client: clientName || '未記名',
+          item: itemType,
+          amount: owed
+        });
+      }
    } 
     else if (t?.type === 'expense') { 
       if (t?.category === '支付30%') {
@@ -329,12 +361,13 @@ const financialStats = computed(() => {
   let paid = shopPaid;
   
   if (paid >= p1) { paid -= p1; p1 = 0; p2 -= paid; } else { p1 -= paid; }
-  return { 
+ return { 
       revenue, cost, profit, inventoryCost, 
       shopPending: shopOwed1 + shopOwed2 - shopPaid,
       pending1: p1,
       pending2: p2,
-      profitBreakdown // 🚀 新增導出明細
+      profitBreakdown,
+      shopOwedDetails // 🚀 導出對單明細
   };
 })
 
@@ -726,8 +759,14 @@ const chartOptions = {
           
           <div class="p-info">
             <div class="p-info-text">
-              <div class="name-wrapper">
+             <div class="name-wrapper" style="display: flex; align-items: center; flex-wrap: wrap;">
                 <span class="name-text">{{ p.name }}</span>
+                
+                <!-- 🚀 聽日提示標籤 -->
+                <span v-if="isTomorrow(p.trial_date)" style="background: #ef4444; color: white; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-left: 6px; margin-right: 6px; box-shadow: 0 2px 4px rgba(239,68,68,0.3); letter-spacing: 0.5px;">
+                  ⏰ 聽日!
+                </span>
+
                 <span class="time">{{ getTimeStr(p.trial_date) }}</span>
               </div>
               <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
@@ -757,7 +796,7 @@ const chartOptions = {
       <div class="p-val">$ {{ financialStats.profit.toLocaleString() }}</div>
     </div>
 
-    <div class="shop-pending-box" v-if="financialStats.shopPending !== 0">
+    <div class="shop-pending-box" v-if="financialStats.shopPending !== 0" @click="showSimpleShopModal = true" style="cursor: pointer;">
       <div style="display:flex; align-items:center; gap:12px;">
         <div class="sp-icon">🏠</div>
         <div>
@@ -1193,6 +1232,38 @@ const chartOptions = {
       </div>
     </div>
   </div>
+
+  <!-- 🚀 極簡版：30% 抽成對單明細 Modal -->
+    <div v-if="showSimpleShopModal" class="modal-overlay" @click.self="showSimpleShopModal = false">
+      <div class="edit-modal" style="max-width: 380px; width: 90%;">
+        <div class="m-header" style="font-size: 16px;">
+          📋 舖頭抽成對單明細
+          <button class="close-x" @click="showSimpleShopModal = false">✕</button>
+        </div>
+        
+        <div style="font-size: 12px; color: #64748b; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 8px;">
+          💡 顯示本月所有產生 30% 抽成的項目，方便對單。
+        </div>
+
+        <div style="max-height: 50vh; overflow-y: auto;">
+          <div v-if="financialStats.shopOwedDetails.length === 0" style="text-align: center; color: #94a3b8; font-size: 13px; padding: 20px;">
+            本月暫無抽成紀錄
+          </div>
+          
+          <div v-for="(item, idx) in financialStats.shopOwedDetails" :key="idx" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
+            <div>
+              <span style="color: #94a3b8; font-size: 12px; margin-right: 8px;">{{ item.date }}</span>
+              <span style="font-weight: 800; color: #1e293b; font-size: 14px;">{{ item.client }}</span>
+              <span style="font-size: 11px; background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 900;">{{ item.item }}</span>
+            </div>
+            <div style="font-weight: 900; color: #ef4444; font-size: 15px;">
+              ${{ item.amount }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
 </template>
 
 <style scoped>
