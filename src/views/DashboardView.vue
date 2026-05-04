@@ -269,7 +269,7 @@ const upcomingTrials = computed(() => {
     })
     .filter(c => filterBranch.value === '全部分店' ? true : c?.branch === filterBranch.value)
     .sort((a,b) => String(a?.trial_date || '').localeCompare(String(b?.trial_date || '')))
-    .slice(0, 5)
+    // 🚀 解除限制：刪除了 .slice(0, 5)，現在無論幾多個預約都會全部顯示！
 })
 
 const financialStats = computed(() => {
