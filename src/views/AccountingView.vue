@@ -496,31 +496,27 @@ async function handleDeleteTransaction(t) {
 // 🚀 對齊 Google Sheet 專屬 Export 功能
 // ==========================================
 
-// 1. 匯出零售產品紀錄 (圖1格式)
 function exportRetail() {
   let list = []
   groupedTxns.value.forEach(g => { list.push(...g.items.filter(t => t.category === '零售收入')) })
   if(list.length === 0) return alert('當前條件下沒有零售收入紀錄！')
 
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-  csvContent += "日期,收錢,客戶名稱,產品最多一行選四個,客戶級別\n" // 對齊你的表頭
+  csvContent += "日期,收錢,客戶名稱,產品最多一行選四個,客戶級別\n"
 
   list.forEach(t => {
-    const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : '' // 只抽日子例如 15, 7
+    const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : '' 
     const staff = t.staff || t.handled_by || ''
     const clientName = t.client_name || ''
     
-    // 抓取客戶級別
     const clientObj = store.clients.find(c => c.name === clientName)
     const vipTier = clientObj ? (clientObj.vip_tier || '') : ''
 
-    // 產品明細提取
     let products = ''
     const match = t.note?.match(/\((.*)\)$/)
     if (match) products = match[1].replace(/,/g, ' / ') 
     else products = t.note?.replace(/【.*?】\s*/, '').replace(/,/g, ' / ') || ''
 
-    // 加入引號保護，避免 CSV 錯位
     csvContent += `"${day}","${staff}","${clientName}","${products}","${vipTier}"\n`
   })
 
@@ -530,14 +526,14 @@ function exportRetail() {
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
 
-// 2. 匯出運動套票紀錄 (圖2格式)
 function exportMovement() {
   let list = []
   groupedTxns.value.forEach(g => { list.push(...g.items.filter(t => t.category === '運動套票' || t.category === '試堂' || t.category === '運動')) })
   if(list.length === 0) return alert('當前條件下沒有運動/套票紀錄！')
 
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-  csvContent += "日期,分店,來源,負責聯繫,客戶名稱,購買項目\n" // 對齊你的表頭 (抽起提醒MyGift)
+  // 🚀 關鍵更新：加入一個空列來對齊你的 "提醒MyGift" 欄位，確保貼上時完全吻合
+  csvContent += "日期,分店,來源,負責聯繫,提醒MyGift,客戶名稱,購買項目\n"
 
   list.forEach(t => {
     const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : ''
@@ -545,14 +541,13 @@ function exportMovement() {
     const staff = t.staff || t.handled_by || ''
     const clientName = t.client_name || ''
     
-    // 抓取客戶來源
     const clientObj = store.clients.find(c => c.name === clientName)
     const source = clientObj ? (clientObj.source || '') : ''
 
-    // 購買項目提取
     let item = t.note?.replace(/【.*?】\s*/, '').replace(/,/g, ' / ') || ''
 
-    csvContent += `"${day}","${branch}","${source}","${staff}","${clientName}","${item}"\n`
+    // 🚀 關鍵更新：中間加多咗一個 `""` 代表留空 MyGift 嗰欄
+    csvContent += `"${day}","${branch}","${source}","${staff}","","${clientName}","${item}"\n`
   })
 
   const link = document.createElement("a")
