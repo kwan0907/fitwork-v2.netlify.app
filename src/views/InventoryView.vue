@@ -219,9 +219,13 @@ function openModal(type, item) {
 
 async function confirmAction() {
   const item = actionModal.value.item; const valStr = actionModal.value.inputValue; const type = actionModal.value.type
-  if (!valStr || isNaN(valStr)) return alert('⚠️ 請輸入有效的數字')
+  
+  // 🚀 修正：只要不是「完全空白」且「是數字」，0 也可以通過
+  if (valStr === '' || valStr === null || isNaN(valStr)) {
+    return alert('⚠️ 請輸入有效的數字')
+  }
+  
   const inputNum = parseInt(valStr)
-
   if (type === 'restock') {
     const newQty = item.current_qty + inputNum
     const result = await updateStock(item.name, newQty)
@@ -235,7 +239,8 @@ async function confirmAction() {
     else { alert('✅ 盤點數量已強制覆蓋更新'); store.syncAll() }
   } 
   else if (type === 'selfUse') {
-    if (inputNum <= 0) return alert('⚠️ 自用數量必須大於 0！')
+  // 🚀 改為只檢查負數，容許 0
+  if (inputNum < 0) return alert('⚠️ 自用數量不可為負數！')
     if (item.current_qty < inputNum) return alert('❌ 操作失敗：目前庫存數量不足以提取！')
     const newQty = item.current_qty - inputNum
     const stockResult = await updateStock(item.name, newQty)
