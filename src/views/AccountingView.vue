@@ -285,31 +285,32 @@ function handleRepeatOrder(t) {
   const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
     const itemString = match[1]
-    // 🚀 升級：支援全形/半形逗號、加號分隔
-    const parts = itemString.split(/[,+，、]\s*(?![^()]*\))/)
+    const parts = itemString.split(/,\s*(?![^()]*\))/)
     
     parts.forEach(p => {
-      p = p.trim()
-      if (!p) return
-      
-      // 🚀 終極正則：精準分離「產品名」與「數量 (x數字)」，支援大小寫 X 及全形 ｘ
-      const qtyMatch = p.match(/^(.*?)(?:\s*[xXｘ*]\s*(\d+))$/)
-      
-      let parsedName = qtyMatch ? qtyMatch[1].trim() : p
-      let parsedQty = qtyMatch ? parseInt(qtyMatch[2], 10) || 1 : 1
+      const lastX = p.lastIndexOf('x')
+      if (lastX !== -1) {
+        let parsedName = p.substring(0, lastX).trim()
+        const cleanQty = p.substring(lastX + 1).replace(/\s/g, '')
+        let parsedQty = parseInt(cleanQty, 10) || 1
 
-      // 🛡️ 智能校正 (Fuzzy Match)：防止產品曾被改名 (如加減空格、橫線) 導致購物車找不到而消失
-      const exactProduct = store.products.find(prod => prod.name === parsedName)
-      if (!exactProduct) {
-        const simplify = str => (str||'').replace(/[\s\-]/g, '').toLowerCase()
-        const simpleParsed = simplify(parsedName)
-        const fuzzyProduct = store.products.find(prod => simplify(prod.name) === simpleParsed)
-        if (fuzzyProduct) {
-          parsedName = fuzzyProduct.name // 自動替換為最新的正確產品名！
+        // 🛡️ 核心修復：智能校正產品名稱 (Fuzzy Match)
+        // 自動無視「空格」與「橫線」，確保「蘆薈汁-柑橘味」能成功對應到庫存的「蘆薈汁 - 柑橘味」
+        const exactProduct = store.products.find(prod => prod.name === parsedName)
+        if (!exactProduct) {
+          const simplify = str => (str||'').replace(/[\s\-]/g, '').toLowerCase()
+          const simpleParsed = simplify(parsedName)
+          const fuzzyProduct = store.products.find(prod => simplify(prod.name) === simpleParsed)
+          if (fuzzyProduct) {
+            parsedName = fuzzyProduct.name // 💡 成功搵到！自動替換為系統庫存內最標準的名字
+          }
         }
-      }
 
-      items.push({ name: parsedName, qty: parsedQty })
+        items.push({
+          name: parsedName,
+          qty: parsedQty
+        })
+      }
     })
   }
 
