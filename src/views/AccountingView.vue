@@ -285,23 +285,31 @@ function handleRepeatOrder(t) {
   const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
     const itemString = match[1]
-    // 🚀 升級：支援逗號 (,) 或加號 (+) 分隔，且不在括號內的產品
-    const parts = itemString.split(/[,+]\s*(?![^()]*\))/)
+    // 🚀 升級：支援全形/半形逗號、加號分隔
+    const parts = itemString.split(/[,+，、]\s*(?![^()]*\))/)
+    
     parts.forEach(p => {
-      const lastX = p.lastIndexOf('x')
-      if (lastX !== -1) {
-        const cleanQty = p.substring(lastX + 1).replace(/\s/g, '') 
-        items.push({
-          name: p.substring(0, lastX).trim(),
-          qty: parseInt(cleanQty, 10) || 1 
-        })
-      } else if (p.trim() !== '') {
-        // 🚀 終極防漏：如果產品沒寫 x1 (例如只寫「蘆薈汁」)，系統會自動抓取並預設為 1 件！
-        items.push({
-          name: p.trim(),
-          qty: 1
-        })
+      p = p.trim()
+      if (!p) return
+      
+      // 🚀 終極正則：精準分離「產品名」與「數量 (x數字)」，支援大小寫 X 及全形 ｘ
+      const qtyMatch = p.match(/^(.*?)(?:\s*[xXｘ*]\s*(\d+))$/)
+      
+      let parsedName = qtyMatch ? qtyMatch[1].trim() : p
+      let parsedQty = qtyMatch ? parseInt(qtyMatch[2], 10) || 1 : 1
+
+      // 🛡️ 智能校正 (Fuzzy Match)：防止產品曾被改名 (如加減空格、橫線) 導致購物車找不到而消失
+      const exactProduct = store.products.find(prod => prod.name === parsedName)
+      if (!exactProduct) {
+        const simplify = str => (str||'').replace(/[\s\-]/g, '').toLowerCase()
+        const simpleParsed = simplify(parsedName)
+        const fuzzyProduct = store.products.find(prod => simplify(prod.name) === simpleParsed)
+        if (fuzzyProduct) {
+          parsedName = fuzzyProduct.name // 自動替換為最新的正確產品名！
+        }
       }
+
+      items.push({ name: parsedName, qty: parsedQty })
     })
   }
 
