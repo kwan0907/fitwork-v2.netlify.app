@@ -285,15 +285,21 @@ function handleRepeatOrder(t) {
   const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
     const itemString = match[1]
-    // 🟢 智能正則：只用逗號分隔「不在括號內」的產品
-    const parts = itemString.split(/,\s*(?![^()]*\))/)
+    // 🚀 升級：支援逗號 (,) 或加號 (+) 分隔，且不在括號內的產品
+    const parts = itemString.split(/[,+]\s*(?![^()]*\))/)
     parts.forEach(p => {
-     const lastX = p.lastIndexOf('x')
+      const lastX = p.lastIndexOf('x')
       if (lastX !== -1) {
-        const cleanQty = p.substring(lastX + 1).replace(/\s/g, '') // 🛡️ 消除所有多餘空白
+        const cleanQty = p.substring(lastX + 1).replace(/\s/g, '') 
         items.push({
           name: p.substring(0, lastX).trim(),
-          qty: parseInt(cleanQty, 10) || 1 // 🛡️ 轉換數字，若失敗則預設為 1
+          qty: parseInt(cleanQty, 10) || 1 
+        })
+      } else if (p.trim() !== '') {
+        // 🚀 終極防漏：如果產品沒寫 x1 (例如只寫「蘆薈汁」)，系統會自動抓取並預設為 1 件！
+        items.push({
+          name: p.trim(),
+          qty: 1
         })
       }
     })
@@ -478,6 +484,74 @@ async function handleDeleteTransaction(t) {
 
   await store.syncAll()
 }
+// ==========================================
+// 🚀 對齊 Google Sheet 專屬 Export 功能
+// ==========================================
+
+// 1. 匯出零售產品紀錄 (圖1格式)
+function exportRetail() {
+  let list = []
+  groupedTxns.value.forEach(g => { list.push(...g.items.filter(t => t.category === '零售收入')) })
+  if(list.length === 0) return alert('當前條件下沒有零售收入紀錄！')
+
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+  csvContent += "日期,收錢,客戶名稱,產品最多一行選四個,客戶級別\n" // 對齊你的表頭
+
+  list.forEach(t => {
+    const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : '' // 只抽日子例如 15, 7
+    const staff = t.staff || t.handled_by || ''
+    const clientName = t.client_name || ''
+    
+    // 抓取客戶級別
+    const clientObj = store.clients.find(c => c.name === clientName)
+    const vipTier = clientObj ? (clientObj.vip_tier || '') : ''
+
+    // 產品明細提取
+    let products = ''
+    const match = t.note?.match(/\((.*)\)$/)
+    if (match) products = match[1].replace(/,/g, ' / ') 
+    else products = t.note?.replace(/【.*?】\s*/, '').replace(/,/g, ' / ') || ''
+
+    // 加入引號保護，避免 CSV 錯位
+    csvContent += `"${day}","${staff}","${clientName}","${products}","${vipTier}"\n`
+  })
+
+  const link = document.createElement("a")
+  link.setAttribute("href", encodeURI(csvContent))
+  link.setAttribute("download", `零售產品紀錄_${filterMonth.value}.csv`)
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+
+// 2. 匯出運動套票紀錄 (圖2格式)
+function exportMovement() {
+  let list = []
+  groupedTxns.value.forEach(g => { list.push(...g.items.filter(t => t.category === '運動套票' || t.category === '試堂' || t.category === '運動')) })
+  if(list.length === 0) return alert('當前條件下沒有運動/套票紀錄！')
+
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+  csvContent += "日期,分店,來源,負責聯繫,客戶名稱,購買項目\n" // 對齊你的表頭 (抽起提醒MyGift)
+
+  list.forEach(t => {
+    const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : ''
+    const branch = t.branch || '觀塘'
+    const staff = t.staff || t.handled_by || ''
+    const clientName = t.client_name || ''
+    
+    // 抓取客戶來源
+    const clientObj = store.clients.find(c => c.name === clientName)
+    const source = clientObj ? (clientObj.source || '') : ''
+
+    // 購買項目提取
+    let item = t.note?.replace(/【.*?】\s*/, '').replace(/,/g, ' / ') || ''
+
+    csvContent += `"${day}","${branch}","${source}","${staff}","${clientName}","${item}"\n`
+  })
+
+  const link = document.createElement("a")
+  link.setAttribute("href", encodeURI(csvContent))
+  link.setAttribute("download", `運動套票紀錄_${filterMonth.value}.csv`)
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
 </script>
 
 <template>
@@ -519,11 +593,16 @@ async function handleDeleteTransaction(t) {
         <button :class="{active: filterBranch==='佐敦'}" @click="filterBranch='佐敦'">📍 佐敦</button>
       </div>
 
-      <!-- 🟢 新增：超強搜尋列 -->
       <div style="position: relative; margin-bottom: 10px;">
         <span style="position: absolute; left: 12px; top: 10px; font-size: 14px;">🔍</span>
         <input class="modern-inp" v-model="searchQuery" placeholder="搜尋客戶名稱、項目或備註..." style="padding: 10px 10px 10px 35px; border-radius: 12px; font-size: 14px; background: white; border: 1px solid #cbd5e1; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); width: 100%; outline: none; transition: 0.2s;">
       </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 5px;">
+        <button @click="exportRetail" style="flex: 1; background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📊 匯出零售表格</button>
+        <button @click="exportMovement" style="flex: 1; background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📊 匯出套票表格</button>
+      </div>
+
     </div>
     <!-- 💡 置頂區塊 Wrapper 結束 -->
     <div v-if="groupedTxns.length === 0" style="text-align: center; color: #94a3b8; font-weight: 800; margin-top: 50px;">

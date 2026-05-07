@@ -115,8 +115,14 @@ async function submitPromoRecord() {
 }
 
 // --- 🌟 3. 歷史紀錄列表與資料統計 ---
+const filterMonth = ref('') // 🚀 新增：控制顯示與匯出的月份 (留空代表顯示全部)
+
 const promoList = computed(() => {
-  const list = store.promotions || []
+  let list = store.promotions || []
+  // 🚀 新增：如果選了月份，就過濾出該月份的紀錄
+  if (filterMonth.value) {
+    list = list.filter(p => p.promo_date && p.promo_date.startsWith(filterMonth.value))
+  }
   // 💡 修復即時刷新問題：拷貝一份陣列再排序，不再卡住 Vue 的大腦
   return [...list].sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
 })
@@ -218,10 +224,11 @@ function exportToExcel() {
     csvContent += row + "\n"
   })
 
-  const encodedUri = encodeURI(csvContent)
+ const encodedUri = encodeURI(csvContent)
   const link = document.createElement("a")
   link.setAttribute("href", encodedUri)
-  const dateStr = new Date().toISOString().slice(0, 10)
+  // 🚀 優化：檔名會自動顯示你匯出的是哪個月份，如果是全部就顯示今日日期
+  const dateStr = filterMonth.value ? filterMonth.value : new Date().toISOString().slice(0, 10)
   link.setAttribute("download", `宣傳成效總表_${dateStr}.csv`)
   document.body.appendChild(link)
   link.click()
@@ -232,9 +239,13 @@ function exportToExcel() {
 <template>
   <div class="page" style="padding-bottom: 120px;">
     
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
       <h2 class="page-title" style="margin-bottom: 0;">宣傳成效追蹤</h2>
-      <button class="btn-export" @click="exportToExcel">📥 匯出統計報表</button>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <!-- 🚀 新增：月份篩選器 -->
+        <input type="month" v-model="filterMonth" class="mod-inp" style="padding: 8px 12px; font-size: 14px; width: 140px; border-color: #10b981; color: #1e293b; font-weight: 800;">
+        <button class="btn-export" @click="exportToExcel">📥 匯出報表</button>
+      </div>
     </div>
 
     <div class="card summary-card" v-if="promoList.length > 0">
@@ -259,7 +270,7 @@ function exportToExcel() {
       
       <div class="grid-2">
         <div class="form-item"><label>活動類型</label>
-          <select v-model="form.type" class="mod-inp"><option value="派傳單">📄 派傳單</option><option value="Road Show">🎪 Road Show</option></select>
+          <select v-model="form.type" class="mod-inp"><option value="派傳單">📄 派傳單</option><option value="Road Show">🎪 Road Show</option><option value="Walk & Talk">🚶 Walk & Talk</option></select>
         </div>
         <div class="form-item"><label>活動日期</label><input type="date" v-model="form.promo_date" class="mod-inp"></div>
       </div>
@@ -296,8 +307,9 @@ function exportToExcel() {
     <div v-if="promoList.length === 0" style="text-align:center; color:#94a3b8; padding: 30px;">目前尚無紀錄</div>
     
     <div v-for="p in promoList" :key="p.id" class="card result-card">
-      <div class="r-head">
-        <div class="r-title">{{ p.type === '派傳單' ? '📄' : '🎪' }} {{ p.type }} <span class="r-date">{{ p.promo_date }}</span></div>
+     <div class="r-head">
+        <!-- 🚀 新增：判斷 Walk & Talk 的專屬 Emoji -->
+        <div class="r-title">{{ p.type === '派傳單' ? '📄' : (p.type === 'Road Show' ? '🎪' : '🚶') }} {{ p.type }} <span class="r-date">{{ p.promo_date }}</span></div>
         <button class="btn-edit" @click="openEditModal(p)">✏️ 編輯</button>
       </div>
       
