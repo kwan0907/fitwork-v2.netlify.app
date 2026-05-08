@@ -282,33 +282,49 @@ function handleRepeatOrder(t) {
   const { client, text } = getDisplayData(t)
   let items = []
   
+  // 支援有括號與無括號的備註
+  let itemString = ''
   const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
-    const itemString = match[1]
+    itemString = match[1]
+  } else {
+    itemString = (t?.note || '').replace(/^【.*?】\s*/, '').replace(/^(售出|採購)\s*/, '')
+  }
+
+  if (itemString) {
+    // 支援全形/半形逗號、加號分隔
     const parts = itemString.split(/[,+，、]\s*(?![^()]*\))/)
-    let notFoundList = [] // 🚀 用來收集對不上庫存的商品
+    let notFoundList = [] // 收集找不到的商品
 
     parts.forEach(p => {
       p = p.trim()
       if (!p) return
 
-      // 精準分離名稱與數量
+      // 精準分離「產品名」與「數量 (x數字)」
       const qtyMatch = p.match(/^(.*?)(?:\s*[xXｘ*]\s*(\d+))$/)
       let parsedName = qtyMatch ? qtyMatch[1].trim() : p
       let parsedQty = qtyMatch ? parseInt(qtyMatch[2], 10) || 1 : 1
 
-      // 🚀 超強配對：去除所有括號、橫線、空白進行配對 (例如讓 "蘆薈汁-柑橘味" 能對上 "蘆薈汁(柑橘味)")
+      // 🛡️ 終極大腦：無視「濃縮/即溶/克數/口味差異/括號/空格」
       const simplify = str => (str||'').replace(/[\s\-\(\)（）【】]/g, '').toLowerCase()
+                                       .replace('濃縮','').replace('即溶','')
+                                       .replace('50克','').replace('100克','')
+                                       .replace('蜜桃','桃').replace('味','')
+
       const simpleParsed = simplify(parsedName)
 
       let finalName = parsedName
       let exactProduct = store.products.find(prod => prod.name === parsedName)
 
       if (!exactProduct) {
-        let fuzzyProduct = store.products.find(prod => simplify(prod.name) === simpleParsed)
+        // 如果找不到 100% 一樣的，就用「終極大腦」去配對
+        let fuzzyProduct = store.products.find(prod => {
+          let sProd = simplify(prod.name)
+          return sProd === simpleParsed || sProd.includes(simpleParsed) || simpleParsed.includes(sProd)
+        })
 
         if (fuzzyProduct) {
-          finalName = fuzzyProduct.name // 自動替換為庫存內的正確名字
+          finalName = fuzzyProduct.name // 💡 成功搵到！自動替換為系統庫存內最標準的名字
         } else {
           notFoundList.push(parsedName) // 真的找不到！記錄下來
         }
@@ -319,10 +335,12 @@ function handleRepeatOrder(t) {
       else items.push({ name: finalName, qty: parsedQty })
     })
 
-    // 💡 貼心提示：如果庫存改過名對唔上，彈窗告訴老闆！
+    // 💡 貼心彈窗提示：如果有貨品對唔上，直接爆出嚟！
     if (notFoundList.length > 0) {
-      alert(`⚠️ 系統已成功擷取所有商品，但以下商品在您的「庫存列表」中找不到 (可能已改名或刪除)：\n\n❌ ${notFoundList.join('\n❌ ')}\n\n已為您加入能成功對應的其餘 ${items.length - notFoundList.length} 件商品！`)
+      alert(`⚠️ 系統成功拆解，但在「庫存」找不到以下商品 (可能是您庫存裡的名字不一樣)：\n\n❌ ${notFoundList.join('\n❌ ')}\n\n(已為您加入其餘 ${items.length - notFoundList.length} 件)\n\n👉 提示：請檢查庫存系統中的產品名稱是否被修改過。`)
     }
+  } else {
+    return alert('⚠️ 無法從備註中辨識任何產品，請手動結帳。')
   }
 
   store.pendingRepeatOrder = { clientName: client, branch: t?.branch, items: items }
