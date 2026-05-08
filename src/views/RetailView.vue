@@ -158,21 +158,50 @@ onMounted(() => {
     data.items.forEach(item => {
       let flavor = ''
       let baseName = item.name
+      
+      // 🚀 智能大腦：如果備註的格式是 "產品-口味"，先嘗試拆開
       if (item.name.includes('-')) {
         const parts = item.name.split('-')
         baseName = parts[0].trim()
         flavor = parts.slice(1).join('-').trim()
       }
       
-      const product = store.products.find(p => p.name === baseName)
-      if (product) {
-        cart.value.push({
-           ...product, 
-           qty: item.qty,
-           selectedFlavor: flavor || (product.flavors ? product.flavors[0] : ''),
-           isCombo: false
-        })
+      // 1. 嘗試完全匹配
+      let product = store.products.find(p => p.name === baseName)
+      
+      // 2. 🛡️ 終極防護：如果找不到，直接無視所有空格、橫線進行配對！
+      if (!product) {
+         const simplify = str => (str||'').replace(/[\s\-]/g, '').toLowerCase()
+         const simpleBase = simplify(baseName)
+         // 嘗試找完整名稱 (例如備註寫 "蘆薈汁-柑橘味"，但庫存叫 "蘆薈汁 - 柑橘味")
+         let fuzzyProduct = store.products.find(p => simplify(p.name) === simplify(item.name))
+         
+         if (fuzzyProduct) {
+             product = fuzzyProduct
+             flavor = '' // 庫存名稱已經自帶口味，所以清空額外的 flavor
+         } else {
+             // 嘗試找 Base Name
+             fuzzyProduct = store.products.find(p => simplify(p.name) === simpleBase)
+             if (fuzzyProduct) product = fuzzyProduct
+         }
       }
+
+      // 3. 如果真的還是找不到，我們「強制」將它塞進購物車，不讓它消失！
+      if (!product) {
+          product = {
+             id: 'unknown_' + Math.random(),
+             name: item.name,
+             price_standard: 0, retail_price: 0 // 預設 0 元
+          }
+          alert(`⚠️ 注意：在購物車中無法識別「${item.name}」的正確庫存項目，已強制加入，但可能無法正確扣除庫存。`)
+      }
+
+      cart.value.push({
+         ...product, 
+         qty: item.qty,
+         selectedFlavor: flavor || (product.flavors ? product.flavors[0] : ''),
+         isCombo: false
+      })
     })
 
     store.pendingRepeatOrder = null
@@ -677,11 +706,12 @@ async function finalizeCheckout(payeeName) {
 
 /* 🟢 解決結帳視窗無法滾動、背景跟著滑動的問題 */
 .checkout-scroll-area {
-  max-height: 65vh; /* 限制最大高度，強制產生內部捲軸 */
+  /* 🚀 優化：使用 safe-area-inset 保護 iPhone 底部，並且計算更精準的最大高度 */
+  max-height: calc(85vh - 80px); 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain; /* 💡 魔法屬性：鎖死滑動，背景絕對唔會再跟著跑！ */
-  padding-bottom: 40px; /* 底部多留白，確保返回按鈕唔會俾截斷 */
+  overscroll-behavior: contain; 
+  padding-bottom: calc(20px + env(safe-area-inset-bottom)); /* 確保返回按鈕唔會俾 iPhone 條底線遮住 */
 }
 
 /* 🟢 馬拉松套裝樣式 */
