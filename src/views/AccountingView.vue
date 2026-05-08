@@ -282,7 +282,7 @@ function handleRepeatOrder(t) {
   const { client, text } = getDisplayData(t)
   let items = []
   
-  // 支援有括號與無括號的備註
+  // 1. 抓取備註文字
   let itemString = ''
   const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
@@ -291,60 +291,40 @@ function handleRepeatOrder(t) {
     itemString = (t?.note || '').replace(/^【.*?】\s*/, '').replace(/^(售出|採購)\s*/, '')
   }
 
+  // 2. 簡單暴力切開所有產品
   if (itemString) {
-    // 支援全形/半形逗號、加號分隔
-    const parts = itemString.split(/[,+，、]\s*(?![^()]*\))/)
-    let notFoundList = [] // 收集找不到的商品
-
+    // 遇到任何逗號或加號都直接切開
+    const parts = itemString.split(/[,+，、]/) 
+    
     parts.forEach(p => {
       p = p.trim()
       if (!p) return
 
-      // 精準分離「產品名」與「數量 (x數字)」
-      const qtyMatch = p.match(/^(.*?)(?:\s*[xXｘ*]\s*(\d+))$/)
-      let parsedName = qtyMatch ? qtyMatch[1].trim() : p
-      let parsedQty = qtyMatch ? parseInt(qtyMatch[2], 10) || 1 : 1
+      let parsedName = p
+      let parsedQty = 1
 
-      // 🛡️ 終極大腦：無視「濃縮/即溶/克數/口味差異/括號/空格」
-      const simplify = str => (str||'').replace(/[\s\-\(\)（）【】]/g, '').toLowerCase()
-                                       .replace('濃縮','').replace('即溶','')
-                                       .replace('50克','').replace('100克','')
-                                       .replace('蜜桃','桃').replace('味','')
-
-      const simpleParsed = simplify(parsedName)
-
-      let finalName = parsedName
-      // 1. 先嘗試 100% 完全匹配
-      let exactProduct = store.products.find(prod => prod.name === parsedName)
-
-      if (!exactProduct) {
-        // 2. 如果找不到，使用超級模糊配對自動尋找庫存內的真名
-        let fuzzyProduct = store.products.find(prod => {
-          if (!prod.name) return false;
-          let sProd = simplify(prod.name)
-          return sProd === simpleParsed || sProd.includes(simpleParsed) || simpleParsed.includes(sProd)
-        })
-
-        if (fuzzyProduct) {
-          finalName = fuzzyProduct.name // 💡 成功搵到庫存真名！替換上去！
-        } else {
-          notFoundList.push(parsedName) // 真的找不到！記錄下來準備彈窗
-        }
+      // 找最後一個 x 或 X 來分離數量
+      const lastX = p.toLowerCase().lastIndexOf('x')
+      if (lastX !== -1) {
+         parsedName = p.substring(0, lastX).trim()
+         const cleanQty = p.substring(lastX + 1).replace(/\s/g, '')
+         parsedQty = parseInt(cleanQty, 10) || 1
       }
 
-      const existing = items.find(x => x.name === finalName)
-      if (existing) existing.qty += parsedQty
-      else items.push({ name: finalName, qty: parsedQty })
+      if (parsedName) {
+        const existing = items.find(x => x.name === parsedName)
+        if (existing) existing.qty += parsedQty
+        else items.push({ name: parsedName, qty: parsedQty })
+      }
     })
-
-    // 💡 貼心彈窗提示：如果有貨品對唔上，直接爆出嚟！
-    if (notFoundList.length > 0) {
-      alert(`⚠️ 系統已成功拆解 5 件產品，但在您的「庫存系統」中找不到以下商品：\n\n❌ ${notFoundList.join('\n❌ ')}\n\n(已為您加入能成功對應的其餘 ${items.length - notFoundList.length} 件商品)\n\n👉 死因：您庫存清單裡的名字，與備註不完全相同 (可能多/少了空格或改了名)，請檢查。`)
-    }
-  } else {
-    return alert('⚠️ 無法從備註中辨識任何產品，請手動結帳。')
   }
 
+  if (items.length === 0) return alert('⚠️ 無法從備註中辨識產品，請手動結帳。')
+
+  // 🚀 【終極診斷彈窗】這行會證明系統到底抽出了幾件！
+  alert(`🔍 系統診斷報告：\n成功從備註中抽出 ${items.length} 件產品！\n\n清單如下：\n` + items.map(i => `👉 ${i.name} (數量: ${i.qty})`).join('\n') + `\n\n💡 如果這裡顯示 5 件，但跳轉後畫面只有 3 件，代表是「購物車畫面」隱藏了產品！`)
+
+  // 3. 送入購物車
   store.pendingRepeatOrder = { clientName: client, branch: t?.branch, items: items }
   store.view = 'retail'
 }
