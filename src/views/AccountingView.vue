@@ -314,19 +314,21 @@ function handleRepeatOrder(t) {
       const simpleParsed = simplify(parsedName)
 
       let finalName = parsedName
+      // 1. 先嘗試 100% 完全匹配
       let exactProduct = store.products.find(prod => prod.name === parsedName)
 
       if (!exactProduct) {
-        // 如果找不到 100% 一樣的，就用「終極大腦」去配對
+        // 2. 如果找不到，使用超級模糊配對自動尋找庫存內的真名
         let fuzzyProduct = store.products.find(prod => {
+          if (!prod.name) return false;
           let sProd = simplify(prod.name)
           return sProd === simpleParsed || sProd.includes(simpleParsed) || simpleParsed.includes(sProd)
         })
 
         if (fuzzyProduct) {
-          finalName = fuzzyProduct.name // 💡 成功搵到！自動替換為系統庫存內最標準的名字
+          finalName = fuzzyProduct.name // 💡 成功搵到庫存真名！替換上去！
         } else {
-          notFoundList.push(parsedName) // 真的找不到！記錄下來
+          notFoundList.push(parsedName) // 真的找不到！記錄下來準備彈窗
         }
       }
 
@@ -337,7 +339,7 @@ function handleRepeatOrder(t) {
 
     // 💡 貼心彈窗提示：如果有貨品對唔上，直接爆出嚟！
     if (notFoundList.length > 0) {
-      alert(`⚠️ 系統成功拆解，但在「庫存」找不到以下商品 (可能是您庫存裡的名字不一樣)：\n\n❌ ${notFoundList.join('\n❌ ')}\n\n(已為您加入其餘 ${items.length - notFoundList.length} 件)\n\n👉 提示：請檢查庫存系統中的產品名稱是否被修改過。`)
+      alert(`⚠️ 系統已成功拆解 5 件產品，但在您的「庫存系統」中找不到以下商品：\n\n❌ ${notFoundList.join('\n❌ ')}\n\n(已為您加入能成功對應的其餘 ${items.length - notFoundList.length} 件商品)\n\n👉 死因：您庫存清單裡的名字，與備註不完全相同 (可能多/少了空格或改了名)，請檢查。`)
     }
   } else {
     return alert('⚠️ 無法從備註中辨識任何產品，請手動結帳。')
