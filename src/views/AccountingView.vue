@@ -285,33 +285,44 @@ function handleRepeatOrder(t) {
   const match = t?.note?.match(/\((.*)\)$/)
   if (match) {
     const itemString = match[1]
-    const parts = itemString.split(/,\s*(?![^()]*\))/)
-    
+    const parts = itemString.split(/[,+，、]\s*(?![^()]*\))/)
+    let notFoundList = [] // 🚀 用來收集對不上庫存的商品
+
     parts.forEach(p => {
-      const lastX = p.lastIndexOf('x')
-      if (lastX !== -1) {
-        let parsedName = p.substring(0, lastX).trim()
-        const cleanQty = p.substring(lastX + 1).replace(/\s/g, '')
-        let parsedQty = parseInt(cleanQty, 10) || 1
+      p = p.trim()
+      if (!p) return
 
-        // 🛡️ 核心修復：智能校正產品名稱 (Fuzzy Match)
-        // 自動無視「空格」與「橫線」，確保「蘆薈汁-柑橘味」能成功對應到庫存的「蘆薈汁 - 柑橘味」
-        const exactProduct = store.products.find(prod => prod.name === parsedName)
-        if (!exactProduct) {
-          const simplify = str => (str||'').replace(/[\s\-]/g, '').toLowerCase()
-          const simpleParsed = simplify(parsedName)
-          const fuzzyProduct = store.products.find(prod => simplify(prod.name) === simpleParsed)
-          if (fuzzyProduct) {
-            parsedName = fuzzyProduct.name // 💡 成功搵到！自動替換為系統庫存內最標準的名字
-          }
+      // 精準分離名稱與數量
+      const qtyMatch = p.match(/^(.*?)(?:\s*[xXｘ*]\s*(\d+))$/)
+      let parsedName = qtyMatch ? qtyMatch[1].trim() : p
+      let parsedQty = qtyMatch ? parseInt(qtyMatch[2], 10) || 1 : 1
+
+      // 🚀 超強配對：去除所有括號、橫線、空白進行配對 (例如讓 "蘆薈汁-柑橘味" 能對上 "蘆薈汁(柑橘味)")
+      const simplify = str => (str||'').replace(/[\s\-\(\)（）【】]/g, '').toLowerCase()
+      const simpleParsed = simplify(parsedName)
+
+      let finalName = parsedName
+      let exactProduct = store.products.find(prod => prod.name === parsedName)
+
+      if (!exactProduct) {
+        let fuzzyProduct = store.products.find(prod => simplify(prod.name) === simpleParsed)
+
+        if (fuzzyProduct) {
+          finalName = fuzzyProduct.name // 自動替換為庫存內的正確名字
+        } else {
+          notFoundList.push(parsedName) // 真的找不到！記錄下來
         }
-
-        items.push({
-          name: parsedName,
-          qty: parsedQty
-        })
       }
+
+      const existing = items.find(x => x.name === finalName)
+      if (existing) existing.qty += parsedQty
+      else items.push({ name: finalName, qty: parsedQty })
     })
+
+    // 💡 貼心提示：如果庫存改過名對唔上，彈窗告訴老闆！
+    if (notFoundList.length > 0) {
+      alert(`⚠️ 系統已成功擷取所有商品，但以下商品在您的「庫存列表」中找不到 (可能已改名或刪除)：\n\n❌ ${notFoundList.join('\n❌ ')}\n\n已為您加入能成功對應的其餘 ${items.length - notFoundList.length} 件商品！`)
+    }
   }
 
   store.pendingRepeatOrder = { clientName: client, branch: t?.branch, items: items }
