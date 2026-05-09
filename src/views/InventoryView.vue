@@ -394,24 +394,25 @@ async function confirmAction() {
 
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
-/* 🌟 庫存列表卡片 (極致壓縮版) */
-.inv-item { background: white; padding: 10px 12px; border-radius: 16px; margin-bottom: 8px; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 8px;}
+/* 🌟 庫存列表卡片 (壓縮空間 + 保留完整顏色版) */
+.inv-item { background: white; padding: 12px 15px; border-radius: 18px; margin-bottom: 10px; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 10px;}
 .inv-top-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .inv-info-area { display: flex; flex-direction: column; flex: 1; }
 .inv-name { font-weight: 900; font-size: 15px; color: #1e293b; line-height: 1.2;}
 .inv-sub { font-size: 11px; color: #94a3b8; font-weight: 700; margin-top: 4px; }
 .inv-qty-area { display: flex; flex-direction: column; align-items: flex-end; min-width: 50px; }
-
-/* ⬇️ 這裡把大數字變小了 */
-.inv-qty { font-size: 24px; font-weight: 900; color: #10b981; line-height: 1;}
+.inv-qty { font-size: 26px; font-weight: 900; color: #10b981; line-height: 1;}
 .inv-qty.warn { color: #ef4444; } 
 .inv-qty-lbl { font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 2px; text-transform: uppercase;}
 
-/* 四宮格按鈕變幼 */
-.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding-top: 8px; border-top: 1px dashed #f1f5f9;}
-.act-btn { padding: 6px 2px; border-radius: 8px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
-.branch-tabs button { flex: 1; padding: 12px; border-radius: 16px; border: 2px solid transparent; background: #e2e8f0; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s;}
-.branch-tabs button.active { background: #4f46e2; color: #fff; border-color: #c7d2fe; box-shadow: 0 4px 15px rgba(79,70,229,0.25); transform: translateY(-2px);}
+/* 四宮格按鈕 */
+.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 10px; border-top: 1px dashed #f1f5f9;}
+.act-btn { padding: 8px 2px; border-radius: 10px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
+.act-btn:active { transform: scale(0.95); }
+.btn-purple { background: #f3e8ff; color: #7e22ce; }
+.btn-blue { background: #eef2ff; color: #4f46e2; }
+.btn-gray { background: #f1f5f9; color: #475569; }
+.btn-orange { background: #fff7ed; color: #d97706; }
 
 /* 搜尋框與分類 */
 .search-box { width: 100%; border: 2px solid #e2e8f0; padding: 14px 14px 14px 45px; border-radius: 16px; font-weight: 700; color: #1e293b; outline: none; background: white; font-size: 16px; appearance: none; transition: 0.2s;}
