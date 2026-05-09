@@ -967,15 +967,16 @@ async function handleImport(e) {
 .edit-modal, .center-modal { 
   background: white; width: 100%; max-width: 480px; 
   border-radius: 24px; 
-  padding: 25px 25px 50px 25px; /* 內部底部多加一點 padding，讓按鈕有呼吸空間 */
+  padding: 25px 25px 50px 25px; 
   box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
   animation: popIn 0.3s ease-out; position: relative; 
-  
-  /* 2️⃣ 自動填滿剛剛設定的安全空間，只要內容超過，就會在內部產生順滑捲軸 */
   margin: 0; 
   max-height: 100%; 
-  overflow-y: auto; -webkit-overflow-scrolling: touch; 
+  overflow-y: auto; 
+  overflow-x: hidden; /* 🚀 鎖死左右滑動 */
+  -webkit-overflow-scrolling: touch; 
   overscroll-behavior: contain;
+  box-sizing: border-box; /* 🚀 防止 padding 撐破寬度 */
 }
 
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -983,7 +984,7 @@ async function handleImport(e) {
 .close-x { background: #f1f5f9; border-radius: 50%; width: 30px; height: 30px; border: none; font-size: 14px; font-weight: 900; color: #475569; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0;}
 .section-title { font-size: 12px; font-weight: 900; color: #6366f1; margin: 20px 0 10px; text-transform: uppercase; letter-spacing: 1px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
+.modern-inp, .modern-select, .modern-date { width: 100%; background: #f8fafc; border: 2px solid #f1f5f9; padding: 12px 15px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; box-sizing: border-box; /* 🚀 防止輸入框撐破 */ }
 .modern-inp:focus, .modern-select:focus { border-color: #6366f1; background: white; }
 .f-item { margin-bottom: 12px; }
 .f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
