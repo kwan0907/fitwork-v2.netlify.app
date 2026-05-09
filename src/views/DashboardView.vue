@@ -312,11 +312,12 @@ const financialStats = computed(() => {
 
       let owed = 0;
       let itemType = '';
-      if (t?.category === '運動套票' || t?.category === '試堂' || t?.category === '運動') {
+     if (t?.category === '運動套票' || t?.category === '試堂' || t?.category === '運動') {
         if (noteStr.includes('35點') || amt === 2550 || amt === 2452) { owed = 800; itemType = '35點'; }
         else if (noteStr.includes('10點') || amt === 850 || amt === 752) { owed = 250; itemType = '10點'; }
         else if (noteStr.includes('體驗卡30人次')) { owed = 750; itemType = '體驗卡'; }
-        else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) { owed = 25; itemType = '試堂'; }
+        // 🚀 已經隱藏：不再將試堂當作 $25 的舖頭抽成，因為體驗卡已一次性支付 $750
+        // else if ((noteStr.includes('試堂') || amt === 98) && !noteStr.includes('贈堂')) { owed = 25; itemType = '試堂'; }
       }
       
       if (txDate <= 14) shopOwed1 += owed;
