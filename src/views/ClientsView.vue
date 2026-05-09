@@ -167,6 +167,12 @@ const filteredClients = computed(() => {
   // 1️⃣ 智能修復：遍歷所有客戶，校正加入日期與狀態
   let list = store.clients.map(c => {
     let fixedClient = { ...c }
+    
+    // 🚀 終極包容魔法：讀取時一律當作小寫處理，無視資料庫原始大小寫
+    if (fixedClient.status) {
+      fixedClient.status = fixedClient.status.toLowerCase()
+    }
+
     let earliest = getEarliestTxnDate(c.name)
     
     if (earliest) {
@@ -406,6 +412,12 @@ async function handleDeleteClient() {
 
 function openEditModal(client) {
   editingClient.value = { ...client }
+  
+  // 🚀 防呆機制：打開編輯視窗時，自動將狀態視為小寫，確保頂部按鈕能正確亮起
+  if (editingClient.value.status) {
+    editingClient.value.status = editingClient.value.status.toLowerCase()
+  }
+
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
