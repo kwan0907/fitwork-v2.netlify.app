@@ -405,15 +405,14 @@ async function confirmAction() {
 .inv-qty.warn { color: #ef4444; } 
 .inv-qty-lbl { font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 2px; text-transform: uppercase;}
 
-/* 四宮格按鈕 */
-.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 10px; border-top: 1px dashed #f1f5f9;}
+/* 四宮格按鈕 (緊湊版 + 保留顏色) */
+.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 8px; border-top: 1px dashed #f1f5f9;}
 .act-btn { padding: 8px 2px; border-radius: 10px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
 .act-btn:active { transform: scale(0.95); }
 .btn-purple { background: #f3e8ff; color: #7e22ce; }
 .btn-blue { background: #eef2ff; color: #4f46e2; }
 .btn-gray { background: #f1f5f9; color: #475569; }
 .btn-orange { background: #fff7ed; color: #d97706; }
-
 /* 搜尋框與分類 */
 .search-box { width: 100%; border: 2px solid #e2e8f0; padding: 14px 14px 14px 45px; border-radius: 16px; font-weight: 700; color: #1e293b; outline: none; background: white; font-size: 16px; appearance: none; transition: 0.2s;}
 .search-box:focus { border-color: #4f46e2; box-shadow: 0 0 0 4px rgba(79,70,229,0.1);}
@@ -434,9 +433,9 @@ async function confirmAction() {
 .inv-qty.warn { color: #ef4444; } 
 .inv-qty-lbl { font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 2px; text-transform: uppercase;}
 
-/* 四宮格按鈕變幼 */
-.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding-top: 8px; border-top: 1px dashed #f1f5f9;}
-.act-btn { padding: 6px 2px; border-radius: 8px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
+/* 四宮格按鈕 (緊湊版 + 保留顏色) */
+.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 8px; border-top: 1px dashed #f1f5f9;}
+.act-btn { padding: 8px 2px; border-radius: 10px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
 .act-btn:active { transform: scale(0.95); }
 .btn-purple { background: #f3e8ff; color: #7e22ce; }
 .btn-blue { background: #eef2ff; color: #4f46e2; }
