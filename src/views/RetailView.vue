@@ -754,8 +754,8 @@ async function finalizeCheckout(payeeName) {
   cursor: pointer; 
 }
 .badge-num { background: #4f46e2; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 16px; }
-.float-total { font-size: 22px; font-weight: 900; color: white; margin-right: 15px; }
-.float-btn { font-size: 14px; font-weight: 800; color: #cbd5e1; }
+.float-total { font-size: clamp(18px, 5vw, 24px); font-weight: 900; color: white; margin-right: 15px; }
+.float-btn { font-size: clamp(13px, 3.5vw, 16px); font-weight: 800; color: #cbd5e1; }
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-end; justify-content: center; }
 .checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 28px 28px 0 0; padding: 30px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; max-height: 88vh; overflow-y: auto; }
@@ -765,12 +765,12 @@ async function finalizeCheckout(payeeName) {
 
 .cart-items { max-height: 250px; overflow-y: auto; margin-bottom: 20px; padding-right: 10px; }
 .c-item { display: flex; align-items: center; margin-bottom: 15px; background: #f8fafc; padding: 12px; border-radius: 16px; border: 1px solid #e2e8f0; }
-.c-name { font-weight: 800; font-size: 15px; color: #1e293b; display: flex; flex-wrap: wrap; align-items: center; }
-.c-sub { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 700; }
-.c-price { font-weight: 900; font-size: 18px; color: #4f46e2; margin-right: 15px; }
+.c-name { font-weight: 800; font-size: clamp(14px, 4vw, 18px); color: #1e293b; display: flex; flex-wrap: wrap; align-items: center; }
+.c-sub { font-size: clamp(11px, 3vw, 14px); color: #64748b; margin-top: 4px; font-weight: 700; }
+.c-price { font-weight: 900; font-size: clamp(16px, 4.5vw, 20px); color: #4f46e2; margin-right: 15px; }
 .qty-control { display: flex; align-items: center; background: white; border-radius: 10px; border: 1px solid #cbd5e1; }
 .qty-control button { border: none; background: transparent; padding: 8px 14px; font-weight: 900; cursor: pointer; color: #1e293b; font-size: 16px; }
-.qty-control span { font-weight: 900; font-size: 15px; width: 24px; text-align: center; color: #4f46e2; }
+.qty-control span { font-weight: 900; font-size: clamp(14px, 4vw, 16px); width: 24px; text-align: center; color: #4f46e2; }
 
 .summary-box { background: #f8fafc; border-radius: 20px; padding: 20px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
 .s-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }

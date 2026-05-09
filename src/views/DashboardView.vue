@@ -1437,12 +1437,12 @@ const chartOptions = {
 
 /* 名字與時間的彈性排版，名字太長自動變 ... */
 .name-wrapper { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.name-text { font-weight: 800; font-size: 16px; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.time { font-size: 11px; color: #d97706; background: #fff7ed; padding: 2px 6px; border-radius: 6px; font-weight: 800; flex-shrink: 0; }
-.meta { font-size: 12px; color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name-text { font-weight: 800; font-size: clamp(14px, 4vw, 18px); color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.time { font-size: clamp(10px, 3vw, 13px); color: #d97706; background: #fff7ed; padding: 2px 6px; border-radius: 6px; font-weight: 800; flex-shrink: 0; }
+.meta { font-size: clamp(11px, 3vw, 14px); color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 永遠置右的 WhatsApp 藥丸按鈕 */
-.wts-btn-pill { background: #25D366; color: white; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.3); white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
+.wts-btn-pill { background: #25D366; color: white; padding: 6px 14px; border-radius: 99px; font-size: clamp(11px, 3vw, 14px); font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.3); white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
 .wts-btn-pill:active { transform: scale(0.95); background: #1da851; }
 
 /* 📱 手機瀏覽器縮放 (統一處理所有手機排版) */
@@ -1472,8 +1472,8 @@ const chartOptions = {
 .clickable { cursor: pointer; transition: background 0.2s; }
 .clickable:hover { background: #f8fafc; border-radius: 12px; padding: 10px; }
 .p-date { background: #fffbeb; color: #d97706; padding: 10px 12px; border-radius: 12px; text-align: center; }
-.p-date .m { font-size: 11px; font-weight: 800; text-transform: uppercase;}
-.p-date .d { font-size: 18px; font-weight: 900; line-height: 1.1; margin-top:2px; }
+.p-date .m { font-size: clamp(10px, 2.5vw, 12px); font-weight: 800; text-transform: uppercase;}
+.p-date .d { font-size: clamp(16px, 4.5vw, 20px); font-weight: 900; line-height: 1.1; margin-top:2px; }
 .name { font-weight: 800; font-size: 16px; }
 .time { font-size: 12px; color: #d97706; background: #fff7ed; padding: 2px 8px; border-radius: 6px; margin-left: 8px; font-weight: 800;}
 .meta { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;}
