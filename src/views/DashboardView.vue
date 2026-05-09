@@ -388,13 +388,16 @@ const clientStats = computed(() => {
     let isNew = false;
     let displayDate = '無紀錄';
 
-    // 🟢 嚴格優先使用「加入日期」判定！如果你設定了3月，他絕對不會在4月出現。
-    if (c?.join_date) {
-        isNew = isDateInRange(c.join_date);
+   // 🟢 智能判定：只要「加入日期」或「試堂日期」落喺區間內，就當係新客
+    if (c?.join_date && isDateInRange(c.join_date)) {
+        isNew = true;
         displayDate = c.join_date;
-    } else if (firstTxnMap[c?.id]) {
-        // 只有在完全沒有輸入加入日期時，才用第一筆消費日當作備案
-        isNew = isDateInRange(firstTxnMap[c.id]);
+    } else if (c?.trial_date && isDateInRange(c.trial_date)) {
+        // 🚀 解決你講嘅問題：就算4月預定，只要5月試堂，都算係5月新客
+        isNew = true;
+        displayDate = c.trial_date.slice(0, 10);
+    } else if (firstTxnMap[c?.id] && isDateInRange(firstTxnMap[c.id])) {
+        isNew = true;
         displayDate = firstTxnMap[c.id].slice(0, 10);
     }
 
