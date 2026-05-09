@@ -6,6 +6,7 @@ import { supabase } from '../supabase'
 const store = useMainStore()
 
 const searchClient = ref('')
+const filterBranch = ref('全部') // 🟢 新增：預設全部分店
 const selectedClient = ref(null)
 const selectedPkg = ref('pkg_10')
 const isNewCustomer = ref(false)
@@ -35,7 +36,11 @@ const packages = {
 const clientOptions = computed(() => {
   const q = searchClient.value.toLowerCase()
   if (!q) return []
-  return store.clients.filter(c => (c.name?.toLowerCase().includes(q) || c.phone?.includes(q))).slice(0, 5)
+  return store.clients.filter(c => {
+    const matchKeyword = c.name?.toLowerCase().includes(q) || c.phone?.includes(q)
+    const matchBranch = filterBranch.value === '全部' || c.branch === filterBranch.value
+    return matchKeyword && matchBranch
+  }).slice(0, 5)
 })
 
 function selectClient(c) {
@@ -220,7 +225,15 @@ async function handleCheckout(staff) {
         <select v-model="selectedPkg" class="modern-select highlight-sel"><option v-for="(pkg, key) in packages" :key="key" :value="key">{{ pkg.name }}</option></select>
       </div>
 
-      <div class="form-item" style="margin-top:15px;"><label>2. 搜尋客戶 (必填) <span style="color:#ef4444">*</span></label>
+     <div class="form-item" style="margin-top:15px;"><label>2. 搜尋客戶 (必填) <span style="color:#ef4444">*</span></label>
+        
+        <div class="branch-tabs">
+          <button :class="{active: filterBranch === '全部'}" @click="filterBranch = '全部'">🌍 全部</button>
+          <button :class="{active: filterBranch === '觀塘'}" @click="filterBranch = '觀塘'">📍 觀塘</button>
+          <button :class="{active: filterBranch === '中環'}" @click="filterBranch = '中環'">📍 中環</button>
+          <button :class="{active: filterBranch === '佐敦'}" @click="filterBranch = '佐敦'">📍 佐敦</button>
+        </div>
+
         <div class="search-rel">
           <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="showDropdown = true" @input="showDropdown = true">
           <!-- 🚀 改為只要有打字就顯示 Menu -->
@@ -350,4 +363,8 @@ async function handleCheckout(staff) {
 .payee-btn:active { transform: scale(0.95); }
 .style-0 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
 .style-1 { background: linear-gradient(135deg, #ec4899, #db2777); }
+/* 🟢 新增：分店標籤樣式 */
+.branch-tabs { display: flex; gap: 8px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 5px; }
+.branch-tabs button { flex: 1; padding: 8px 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 13px;}
+.branch-tabs button.active { background: #eef2ff; color: #4f46e2; border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(79,70,229,0.15);}
 </style>

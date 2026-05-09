@@ -567,6 +567,118 @@ function exportMovement() {
   link.setAttribute("download", `運動套票紀錄_${filterMonth.value}.csv`)
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
+
+// ==========================================
+// 🚀 新增：批量匯入交易紀錄功能
+// ==========================================
+function downloadTxnCSVTemplate() {
+  const BOM = "\uFEFF";
+  const header = "日期(YYYY-MM-DD),時間(HH:MM:SS),收支(income或expense),分類(運動套票/試堂/零售收入/廣告費用/產品採購等),金額,成本,客戶名稱(無則留空),分店(觀塘/中環/佐敦),經手人,備註\n";
+  const sample1 = "2026-05-01,14:30:00,income,運動套票,2550,1272.5,陳大文,觀塘,kwan,售出 35點套票\n";
+  const sample2 = "2026-05-02,15:00:00,expense,廣告費用,500,500,,中環,Cat,IG 廣告費\n";
+
+  const csvContent = BOM + header + sample1 + sample2;
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", "fitwork_transactions_template.csv");
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function triggerTxnFileInput() {
+  document.getElementById('txnCsvFileInput').click()
+}
+
+async function handleTxnImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const { data: authData } = await supabase.auth.getSession();
+  const userEmail = authData?.session?.user?.email;
+
+  if (!userEmail) {
+    alert('❌ 系統偵測不到登入狀態，請確認網路連線或重新登入。');
+    e.target.value = ''; return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (evt) => {
+    try {
+      const content = evt.target.result;
+      const lines = content.split(/\r?\n/);
+      const rows = lines.slice(1).filter(line => line.trim() !== '');
+
+      const isConfirmed = confirm(`準備匯入 ${rows.length} 筆交易紀錄。\n請確定格式無誤 (備註內請勿包含英文逗號)，是否繼續？`);
+      if (!isConfirmed) { e.target.value = ''; return; }
+
+      let insertedCount = 0;
+      const payloads = [];
+
+      for (const line of rows) {
+        const row = line.split(',');
+        if (!row[0]) continue;
+
+        const dateStr = (row[0] || '').trim();
+        const timeStr = (row[1] || '00:00:00').trim();
+        const typeStr = (row[2] || 'income').trim();
+        const catStr = (row[3] || '其他收入').trim();
+        const amtStr = parseFloat(row[4]) || 0;
+        const costStr = parseFloat(row[5]) || 0;
+        const clientName = (row[6] || '').trim();
+        const branchStr = (row[7] || '觀塘').trim();
+        const staffStr = (row[8] || '').trim();
+        const noteStr = (row[9] || '').trim();
+
+        const createdAt = `${dateStr}T${timeStr}`;
+        const profit = typeStr === 'income' ? (amtStr - costStr) : -amtStr;
+
+        let clientId = null;
+        if (clientName) {
+          const foundClient = store.clients.find(c => c.name === clientName);
+          if (foundClient) clientId = foundClient.id;
+        }
+
+        payloads.push({
+          created_at: createdAt,
+          type: typeStr,
+          category: catStr,
+          amount: amtStr,
+          cost: costStr,
+          profit: profit,
+          client_name: clientName || null,
+          client_id: clientId,
+          branch: branchStr,
+          staff: staffStr,
+          handled_by: staffStr,
+          note: noteStr,
+          own_email: userEmail
+        });
+      }
+
+      if (payloads.length > 0) {
+         const chunkSize = 100;
+         for (let i = 0; i < payloads.length; i += chunkSize) {
+            const chunk = payloads.slice(i, i + chunkSize);
+            const { error } = await supabase.from('transactions').insert(chunk);
+            if (!error) insertedCount += chunk.length;
+            else console.error('匯入錯誤:', error);
+         }
+      }
+
+      await store.syncAll();
+      setTimeout(() => alert(`✅ 匯入完畢！\n\n✨ 成功新增：${insertedCount} 筆交易紀錄。`), 100);
+
+    } catch (err) {
+      console.error('匯入出錯:', err);
+      alert('❌ 檔案讀取失敗，請確保使用正確的 CSV 格式。');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
 </script>
 
 <template>
@@ -616,6 +728,12 @@ function exportMovement() {
       <div style="display: flex; gap: 8px; margin-bottom: 5px;">
         <button @click="exportRetail" style="flex: 1; background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📊 匯出零售表格</button>
         <button @click="exportMovement" style="flex: 1; background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📊 匯出套票表格</button>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+        <button @click="downloadTxnCSVTemplate" style="flex: 1; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📥 下載匯入格式</button>
+        <button @click="triggerTxnFileInput" style="flex: 1; background: #eef2ff; color: #4f46e2; border: 1px solid #c7d2fe; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📤 批量匯入紀錄</button>
+        <input type="file" id="txnCsvFileInput" accept=".csv" style="display: none;" @change="handleTxnImport">
       </div>
 
     </div>
