@@ -279,9 +279,9 @@ async function confirmAction() {
       <button :class="{active: selectedBranch==='佐敦'}" @click="selectedBranch='佐敦'">📍 佐敦分庫</button>
     </div>
 
-    <div class="filter-bar" style="margin-bottom:20px;">
+    <div class="filter-bar" style="margin-bottom:10px;">
       <div style="position: relative;">
-        <span style="position: absolute; left: 15px; top: 14px; font-size: 16px;">🔍</span>
+        <span style="position: absolute; left: 15px; top: 10px; font-size: 16px;">🔍</span>
         <input class="search-box" v-model="searchProduct" placeholder="搜尋中/英文或代號...">
       </div>
       <div class="tags-row" style="margin-top:12px;">
@@ -394,16 +394,22 @@ async function confirmAction() {
 
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
-.page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
+/* 🌟 庫存列表卡片 (極致壓縮版) */
+.inv-item { background: white; padding: 10px 12px; border-radius: 16px; margin-bottom: 8px; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 8px;}
+.inv-top-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.inv-info-area { display: flex; flex-direction: column; flex: 1; }
+.inv-name { font-weight: 900; font-size: 15px; color: #1e293b; line-height: 1.2;}
+.inv-sub { font-size: 11px; color: #94a3b8; font-weight: 700; margin-top: 4px; }
+.inv-qty-area { display: flex; flex-direction: column; align-items: flex-end; min-width: 50px; }
 
-/* 成本卡片微調 */
-.cost-card { display: flex; align-items: center; gap: 20px; padding: 25px; background: linear-gradient(135deg, #ffffff, #f8fafc); border-radius: 24px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); }
-.cost-icon { font-size: 40px; background: #eef2ff; width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; border-radius: 20px; }
-.cost-label { color: #64748b; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;}
-.cost-val { font-size: 32px; font-weight: 900; color: #4f46e2; margin-top: 4px; line-height: 1;}
+/* ⬇️ 這裡把大數字變小了 */
+.inv-qty { font-size: 24px; font-weight: 900; color: #10b981; line-height: 1;}
+.inv-qty.warn { color: #ef4444; } 
+.inv-qty-lbl { font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 2px; text-transform: uppercase;}
 
-/* 分店標籤 */
-.branch-tabs { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; }
+/* 四宮格按鈕變幼 */
+.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding-top: 8px; border-top: 1px dashed #f1f5f9;}
+.act-btn { padding: 6px 2px; border-radius: 8px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
 .branch-tabs button { flex: 1; padding: 12px; border-radius: 16px; border: 2px solid transparent; background: #e2e8f0; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s;}
 .branch-tabs button.active { background: #4f46e2; color: #fff; border-color: #c7d2fe; box-shadow: 0 4px 15px rgba(79,70,229,0.25); transform: translateY(-2px);}
 
@@ -414,20 +420,22 @@ async function confirmAction() {
 .cat-btn { padding: 8px 18px; border-radius: 99px; background: white; border: 1px solid #cbd5e1; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; cursor: pointer; transition: 0.2s;}
 .cat-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
 
-/* 🌟 庫存列表卡片 */
-.inv-item { background: white; padding: 12px; border-radius: 18px; margin-bottom: 10px; border: 1px solid #f1f5f9; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 10px;}
-.inv-top-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
+/* 🌟 庫存列表卡片 (極致壓縮版) */
+.inv-item { background: white; padding: 10px 12px; border-radius: 16px; margin-bottom: 8px; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 8px;}
+.inv-top-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .inv-info-area { display: flex; flex-direction: column; flex: 1; }
-.inv-name { font-weight: 900; font-size: 16px; color: #1e293b; line-height: 1.3;}
-.inv-sub { font-size: 12px; color: #94a3b8; font-weight: 700; margin-top: 6px; }
-.inv-qty-area { display: flex; flex-direction: column; align-items: flex-end; min-width: 60px; }
-.inv-qty { font-size: 32px; font-weight: 900; color: #10b981; line-height: 1;}
-.inv-qty.warn { color: #ef4444; } 
-.inv-qty-lbl { font-size: 10px; font-weight: 800; color: #cbd5e1; margin-top: 4px; text-transform: uppercase;}
+.inv-name { font-weight: 900; font-size: 15px; color: #1e293b; line-height: 1.2;}
+.inv-sub { font-size: 11px; color: #94a3b8; font-weight: 700; margin-top: 4px; }
+.inv-qty-area { display: flex; flex-direction: column; align-items: flex-end; min-width: 50px; }
 
-/* 四宮格按鈕 */
-.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 10px; border-top: 1px dashed #f1f5f9;}
-.act-btn { padding: 8px 5px; border-radius: 12px; border: none; font-size: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
+/* ⬇️ 這裡把大數字變小了 */
+.inv-qty { font-size: 24px; font-weight: 900; color: #10b981; line-height: 1;}
+.inv-qty.warn { color: #ef4444; } 
+.inv-qty-lbl { font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 2px; text-transform: uppercase;}
+
+/* 四宮格按鈕變幼 */
+.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding-top: 8px; border-top: 1px dashed #f1f5f9;}
+.act-btn { padding: 6px 2px; border-radius: 8px; border: none; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
 .act-btn:active { transform: scale(0.95); }
 .btn-purple { background: #f3e8ff; color: #7e22ce; }
 .btn-blue { background: #eef2ff; color: #4f46e2; }
