@@ -515,7 +515,7 @@ async function handleImport(e) {
           name: String(row[0] || '').trim(),
           phone: phoneNum,
           branch: (row[2] || '觀塘').trim(),
-          status: (row[3] || 'active').trim(),
+          status: String(row[3] || 'active').trim().toLowerCase(),
           join_date: row[4] ? row[4].trim() : null,
           source: (row[5] || '其他').trim(),
           expiry_date: row[6] ? row[6].trim() : null,
