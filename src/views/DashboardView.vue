@@ -474,8 +474,9 @@ const funnelModalData = computed(() => {
 
 const packageStats = computed(() => {
   let pkg850 = 0, pkg2550 = 0;
-  let newSales = 0;
-  let renewSales = 0;
+  let newSales = 0, renewSales = 0;
+  let newSales10 = 0, newSales35 = 0;
+  let renewSales10 = 0, renewSales35 = 0;
   let list = [];
   
   // 🟢 1. 建立全域購買次數追蹤 (查歷史紀錄判定新開/續卡)
@@ -506,7 +507,6 @@ const packageStats = computed(() => {
       let isPkg = false;
       let typeStr = '';
       
-      // 兼容各種記錄格式
       if (t.amount === 850 || (t.note && t.note.includes('pkg_10')) || (t.note && t.note.includes('10點'))) { pkg850++; isPkg = true; typeStr = '10點套票'; }
       if (t.amount === 2550 || t.amount === 2800 || (t.note && t.note.includes('pkg_35')) || (t.note && t.note.includes('35點'))) { pkg2550++; isPkg = true; typeStr = '35點套票'; }
       
@@ -517,17 +517,26 @@ const packageStats = computed(() => {
            if (match) cName = match[1];
         }
 
-        // 判斷這筆交易是新開還是續卡
         let pType = '其他'
         const order = txnPurchaseOrder[t.id]
-        if (order === 1) { pType = '🆕 新開'; newSales++; }
-        else if (order > 1) { pType = '🔄 續卡'; renewSales++; }
+        if (order === 1) { 
+            pType = '🆕 新開'; 
+            newSales++; 
+            if (typeStr === '10點套票') newSales10++;
+            else if (typeStr === '35點套票') newSales35++;
+        }
+        else if (order > 1) { 
+            pType = '🔄 續卡'; 
+            renewSales++; 
+            if (typeStr === '10點套票') renewSales10++;
+            else if (typeStr === '35點套票') renewSales35++;
+        }
         
         list.push({
           ...t,
           display_client_name: cName || '未記錄',
           pkg_type: typeStr,
-          sale_type: pType, // 存入狀態供名單顯示
+          sale_type: pType,
           display_date: String(t.created_at).slice(0, 10)
         });
       }
@@ -536,7 +545,12 @@ const packageStats = computed(() => {
   
   list.sort((a,b) => String(b?.created_at || '').localeCompare(String(a?.created_at || '')));
   
-  return { pkg850, pkg2550, total: pkg850 + pkg2550, newSales, renewSales, list }
+  return { 
+    pkg850, pkg2550, total: pkg850 + pkg2550, 
+    newSales, renewSales, 
+    newSales10, newSales35, renewSales10, renewSales35,
+    list 
+  }
 })
 
 const parseLocal = (dateStr) => {
@@ -896,9 +910,24 @@ const chartOptions = {
       </div>
     </div>
           <!-- 🟢 新增：直觀顯示新開與續卡 -->
-          <div style="font-size: 11px; font-weight: 800; margin-top: 6px; display: flex; justify-content: flex-end; gap: 6px;">
-            <span style="color: #2563eb; background: #dbeafe; padding: 3px 6px; border-radius: 6px;">新開: {{ packageStats.newSales }}</span>
-            <span style="color: #db2777; background: #fce7f3; padding: 3px 6px; border-radius: 6px;">續卡: {{ packageStats.renewSales }}</span>
+          <div style="font-size: 11px; font-weight: 800; margin-top: 8px; display: flex; flex-direction: column; align-items: flex-end; gap: 5px;">
+            
+            <div style="display: flex; gap: 4px;">
+              <span style="color: #2563eb; background: #dbeafe; padding: 3px 6px; border-radius: 6px;">🆕 新開: {{ packageStats.newSales }}</span>
+              <span style="color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 3px 6px; border-radius: 6px;">
+                小: <span style="font-weight:900;">{{ packageStats.newSales10 }}</span> | 
+                大: <span style="font-weight:900; color:#2563eb;">{{ packageStats.newSales35 }}</span>
+              </span>
+            </div>
+
+            <div style="display: flex; gap: 4px;">
+              <span style="color: #db2777; background: #fce7f3; padding: 3px 6px; border-radius: 6px;">🔄 續卡: {{ packageStats.renewSales }}</span>
+              <span style="color: #9d174d; background: #fdf2f8; border: 1px solid #fbcfe8; padding: 3px 6px; border-radius: 6px;">
+                小: <span style="font-weight:900;">{{ packageStats.renewSales10 }}</span> | 
+                大: <span style="font-weight:900; color:#db2777;">{{ packageStats.renewSales35 }}</span>
+              </span>
+            </div>
+
           </div>
         </div>
 
