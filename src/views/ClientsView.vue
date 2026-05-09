@@ -168,30 +168,24 @@ const filteredClients = computed(() => {
   let list = store.clients.map(c => {
     let fixedClient = { ...c }
     
-    // 🚀 終極包容魔法：讀取時一律當作小寫處理，無視資料庫原始大小寫
-    if (fixedClient.status) {
-      fixedClient.status = fixedClient.status.toLowerCase()
-    }
+    // 🚀 終極防彈裝甲：無論是空值、大寫、還是多咗空格，全部強制轉做標準小寫！
+    fixedClient.status = String(fixedClient.status || 'active').trim().toLowerCase()
 
     let earliest = getEarliestTxnDate(c.name)
     
     if (earliest) {
-        // 1. 校正日期 (試堂日期都算係加入日期)
         if (!fixedClient.join_date || fixedClient.join_date > earliest) {
             fixedClient.join_date = earliest
         }
 
-        // 2. 🟢 關鍵修正：檢查是否有買過「真正嘅套票」(排除試堂)
         const nameLower = c.name.trim().toLowerCase();
         const hasRealPackage = store.transactions.some(t => {
             const tClientName = (t.client_name || '').trim().toLowerCase();
             const tNote = (t.note || '').trim().toLowerCase();
             const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
-            // 💡 只有買了「運動套票」或「運動」類別，先會觸發自動升級
             return isMatch && t.type === 'income' && (t.category === '運動套票' || t.category === '運動');
         });
 
-        // 如果有買過套票，先至強制轉為「正式會員」
         if (hasRealPackage && (fixedClient.status === 'prospect' || fixedClient.status === 'absent')) {
             fixedClient.status = 'active'
         }
@@ -413,16 +407,14 @@ async function handleDeleteClient() {
 function openEditModal(client) {
   editingClient.value = { ...client }
   
-  // 🚀 防呆機制：打開編輯視窗時，自動將狀態視為小寫，確保頂部按鈕能正確亮起
-  if (editingClient.value.status) {
-    editingClient.value.status = editingClient.value.status.toLowerCase()
-  }
+  // 🚀 彈窗防護：打開時自動校正狀態
+  editingClient.value.status = String(editingClient.value.status || 'active').trim().toLowerCase()
 
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
   referrerSearch.value = '' 
-  activeTab.value = 'basic' // 🚀 新增：每次打開都預設回到「基本資料」分頁
+  activeTab.value = 'basic' 
   showEditModal.value = true
 }
 
