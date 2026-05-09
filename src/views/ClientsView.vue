@@ -507,7 +507,7 @@ async function handleImport(e) {
             : null;
 
         // 準備好要寫入的資料包
-        const payload = {
+       const payload = {
           name: String(row[0] || '').trim(),
           phone: phoneNum,
           branch: (row[2] || '觀塘').trim(),
@@ -516,9 +516,9 @@ async function handleImport(e) {
           source: (row[5] || '其他').trim(),
           expiry_date: row[6] ? row[6].trim() : null,
           remark: (row[7] || '').trim(),
-          owner_email: currentUserEmail 
+          own_email: currentUserEmail, // 🚀 修正：正確的欄位名稱
+          user_id: authData?.session?.user?.id // 🚀 修正：加入 user_id 確保符合安全規則
         };
-
         if (existingClient) {
             // 🔄 撞電話：執行 Update (更新舊客資料)
             const { error } = await supabase.from('clients').update(payload).eq('id', existingClient.id);
