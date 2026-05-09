@@ -415,7 +415,7 @@ async function confirmAction() {
 .cat-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
 
 /* 🌟 庫存列表卡片 */
-.inv-item { background: white; padding: 18px; border-radius: 24px; margin-bottom: 15px; border: 1px solid #f1f5f9; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 15px;}
+.inv-item { background: white; padding: 12px; border-radius: 18px; margin-bottom: 10px; border: 1px solid #f1f5f9; box-shadow: 0 4px 15px rgba(0,0,0,0.02); display: flex; flex-direction: column; gap: 10px;}
 .inv-top-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; }
 .inv-info-area { display: flex; flex-direction: column; flex: 1; }
 .inv-name { font-weight: 900; font-size: 16px; color: #1e293b; line-height: 1.3;}
@@ -426,7 +426,7 @@ async function confirmAction() {
 .inv-qty-lbl { font-size: 10px; font-weight: 800; color: #cbd5e1; margin-top: 4px; text-transform: uppercase;}
 
 /* 四宮格按鈕 */
-.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 15px; border-top: 1px dashed #f1f5f9;}
+.inv-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding-top: 10px; border-top: 1px dashed #f1f5f9;}
 .act-btn { padding: 8px 5px; border-radius: 12px; border: none; font-size: 12px; font-weight: 900; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 2px;}
 .act-btn:active { transform: scale(0.95); }
 .btn-purple { background: #f3e8ff; color: #7e22ce; }
