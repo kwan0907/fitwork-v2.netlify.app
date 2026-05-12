@@ -156,7 +156,6 @@ async function finalizePurchase(payeeName) {
     type: 'expense',
     category: '產品採購',
     amount: totalCost,
-    profit: -totalCost,
     branch: selectedBranch.value,
     handled_by: payeeName,
     staff: payeeName,
@@ -231,8 +230,8 @@ async function confirmAction() {
     const newQty = item.current_qty + inputNum
     const result = await updateStock(item.name, newQty)
     
+    // 🚀 新增：如果是「入貨」(正數) 且更新成功，自動寫入流水帳
     if (result.success && inputNum > 0) {
-      // 🟢 修正1：直接抓取成本，不需要依賴外部函數
       const unitCost = Number(item.cost) || Number(item.price_50) || 0
       const totalExpense = unitCost * inputNum
       const { data: { user } } = await supabase.auth.getUser()
