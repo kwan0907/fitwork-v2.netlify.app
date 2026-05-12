@@ -20,6 +20,7 @@ const sortedProducts = computed(() => {
       if (n.includes('佳能')) return 2
       if (n.includes('蘆薈汁')) return 3
       if (n.includes('茶')) return 4
+      if (n.includes('健肝')) return 5  // 新增這行
       return 999 
     }
     return getW(a) - getW(b) || (a.name || '').localeCompare(b.name || '')
@@ -229,9 +230,27 @@ async function confirmAction() {
   if (type === 'restock') {
     const newQty = item.current_qty + inputNum
     const result = await updateStock(item.name, newQty)
+    
+    // 🚀 新增：如果是「入貨」(正數) 且更新成功，自動寫入流水帳
+    if (result.success && inputNum > 0) {
+      const unitCost = getExactCost(item)
+      const totalExpense = unitCost * inputNum
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      await supabase.from('transactions').insert({
+        type: 'expense',
+        category: '產品採購',
+        amount: totalExpense,
+        branch: selectedBranch.value,
+        staff: '系統自動(微調)', 
+        note: `單件入貨: ${item.name} x${inputNum}`,
+        owner_email: user?.email
+      })
+    }
+    
     if (!result.success) alert('❌ 更新失敗: ' + result.message)
     else { alert(`✅ 已成功${inputNum >= 0 ? '入貨' : '扣除'}數量`); store.syncAll() }
-  } 
+  }
   else if (type === 'stocktake') {
     if (inputNum < 0) return alert('⚠️ 盤點總數不可為負數！')
     const result = await updateStock(item.name, inputNum)
