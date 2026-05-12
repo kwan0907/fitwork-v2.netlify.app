@@ -424,12 +424,19 @@ async function finalizeCheckout(payeeName) {
   const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
   const fullIsoCreatedAt = txnDate.toISOString()
 
-  // 1. 寫入流水帳
+  // 1. 寫入流水帳 (移除會報錯的 profit 與 cost 欄位)
   const { error: txnError } = await supabase.from('transactions').insert([{
-    type: 'income', category: '零售收入', amount: Math.round(totalRevenue.value * 100) / 100, profit: Math.round(netProfit.value * 100) / 100, cost: Math.round(totalCost.value * 100) / 100,
-    branch: branchKey, client_id: selectedClient.value?.id || null, client_name: clientNameStr, 
-    handled_by: payeeName, staff: payeeName, created_at: fullIsoCreatedAt,
-    own_email: user.email, note: `${clientNameStr} (${itemsStr})`
+    type: 'income', 
+    category: '零售收入', 
+    amount: Math.round(totalRevenue.value * 100) / 100, 
+    branch: branchKey, 
+    client_id: selectedClient.value?.id || null, 
+    client_name: clientNameStr, 
+    handled_by: payeeName, 
+    staff: payeeName, 
+    created_at: fullIsoCreatedAt,
+    own_email: user.email, 
+    note: `[淨利: $${Math.round(netProfit.value)}] ${clientNameStr} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
