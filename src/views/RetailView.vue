@@ -419,12 +419,16 @@ async function finalizeCheckout(payeeName) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
-  const [yyyy, mm, dd] = checkoutDate.value.split('-')
+const [yyyy, mm, dd] = checkoutDate.value.split('-')
   const now = new Date()
-  const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
-  const fullIsoCreatedAt = txnDate.toISOString()
+  
+  // 🟢 終極時區修正：強制組合成香港時間的格式，防止凌晨結帳被推回昨天
+  const hh = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  const correctIsoString = `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`
 
-  // 1. 寫入流水帳 (移除會報錯的 profit 與 cost 欄位)
+  // 1. 寫入流水帳
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
@@ -434,7 +438,7 @@ async function finalizeCheckout(payeeName) {
     client_name: clientNameStr, 
     handled_by: payeeName, 
     staff: payeeName, 
-    created_at: fullIsoCreatedAt,
+    created_at: correctIsoString, // 🟢 改用修正後的時間
     own_email: user.email, 
     note: `[淨利: $${Math.round(netProfit.value)}] ${clientNameStr} (${itemsStr})`
   }])
