@@ -5,14 +5,15 @@ import { supabase } from '../supabase'
 
 const store = useMainStore()
 
-// --- 🌟 1. 建立新紀錄的表單狀態 ---
 const form = ref({
   type: '派傳單',
   promo_date: new Date().toISOString().split('T')[0],
   start_time: '',
   end_time: '',
   flyers_count: '',
-  note: '' 
+  note: '',
+  wnt_customer: '', // 🚀 新增：Walk & Talk 客戶名稱
+  wnt_details: ''   // 🚀 新增：Walk & Talk 傾談詳情
 })
 
 // 💡 編輯視窗狀態
@@ -117,14 +118,35 @@ async function submitPromoRecord() {
 // --- 🌟 3. 歷史紀錄列表與資料統計 ---
 const filterMonth = ref('') // 🚀 新增：控制顯示與匯出的月份 (留空代表顯示全部)
 
-const promoList = computed(() => {
-  let list = store.promotions || []
-  // 🚀 新增：如果選了月份，就過濾出該月份的紀錄
-  if (filterMonth.value) {
-    list = list.filter(p => p.promo_date && p.promo_date.startsWith(filterMonth.value))
+// 🚀 全新計算：將數據依照模式分開
+const promoStatsByType = computed(() => {
+  const stats = {
+    '派傳單': { icon: '📄', mins: 0, flyers: 0, inquiries: 0, trials: 0, conversions: 0 },
+    'Road Show': { icon: '🎪', mins: 0, flyers: 0, inquiries: 0, trials: 0, conversions: 0 },
+    'Walk & Talk': { icon: '🚶', mins: 0, flyers: 0, inquiries: 0, trials: 0, conversions: 0 }
   }
-  // 💡 修復即時刷新問題：拷貝一份陣列再排序，不再卡住 Vue 的大腦
-  return [...list].sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
+
+  promoList.value.forEach(p => {
+    const type = p.type || '派傳單'
+    if (!stats[type]) return
+
+    const hrsMatch = (p.duration || '').match(/(\d+)\s*小時/)
+    const minsMatch = (p.duration || '').match(/(\d+)\s*分鐘/)
+    stats[type].mins += (hrsMatch ? parseInt(hrsMatch[1]) * 60 : 0) + (minsMatch ? parseInt(minsMatch[1]) : 0)
+    
+    stats[type].flyers += Number(p.flyers_count) || 0
+    stats[type].inquiries += Number(p.inquiries) || 0
+    stats[type].trials += Number(p.trials) || 0
+    stats[type].conversions += Number(p.conversions) || 0
+  })
+
+  Object.keys(stats).forEach(k => {
+    const s = stats[k]
+    s.durStr = `${Math.floor(s.mins / 60)}h ${s.mins % 60}m`
+    s.overallRate = s.flyers > 0 ? ((s.conversions / s.flyers) * 100).toFixed(1) : "0.0"
+  })
+
+  return stats
 })
 
 // 💡 【完美修復版】統計大腦：計算 Sum 與 轉換率
@@ -261,7 +283,17 @@ function exportToExcel() {
         <div class="rate-item text-green">成交率 <b class="text-white">{{ promoSummary.conversionRate }}%</b></div>
       </div>
     </div>
-
+<div v-if="promoList.length > 0" class="stats-wrapper">
+      <div v-for="(stat, type) in promoStatsByType" :key="type" class="type-stat-card">
+        <div class="st-head">{{ stat.icon }} {{ type }}</div>
+        <div class="st-grid">
+          <div class="st-item"><span>耗時</span><b>{{ stat.durStr }}</b></div>
+          <div class="st-item"><span>接觸</span><b>{{ stat.flyers.toLocaleString() }}</b></div>
+          <div class="st-item"><span>開卡</span><b class="text-green">{{ stat.conversions }}</b></div>
+          <div class="st-item"><span>轉換率</span><b class="text-green">{{ stat.overallRate }}%</b></div>
+        </div>
+      </div>
+    </div>
     <div class="card add-card">
       <div class="card-header">
         📋 新增推廣活動
@@ -295,7 +327,17 @@ function exportToExcel() {
         <div class="form-item"><label>派發 / 接觸 (總數)</label><input type="number" v-model="form.flyers_count" class="mod-inp" placeholder="輸入數字..."></div>
       </div>
 
-      <div class="form-item" style="margin-top:15px;">
+      <div v-if="form.type === 'Walk & Talk'" style="margin-top:15px; padding: 15px; background: #f0fdf4; border: 1px solid #10b981; border-radius: 12px;">
+        <div class="form-item">
+          <label style="color:#059669;">👤 客戶名稱 / 特徵</label>
+          <input v-model="form.wnt_customer" class="mod-inp" placeholder="例如：陳生 (著紅衫)" style="margin-bottom: 10px;">
+        </div>
+        <div class="form-item">
+          <label style="color:#059669;">📝 傾談詳情記錄</label>
+          <textarea v-model="form.wnt_details" class="mod-inp" placeholder="例如：想減脂，留了WhatsApp，約了下星期二試堂..." rows="2" style="resize: vertical;"></textarea>
+        </div>
+      </div>
+      <div v-else class="form-item" style="margin-top:15px;">
         <label>📝 備註 (當天發生什麼事？)</label>
         <textarea v-model="form.note" class="mod-inp" placeholder="例如：今天下大雨、人流較少..." rows="2" style="resize: vertical;"></textarea>
       </div>
@@ -383,6 +425,15 @@ function exportToExcel() {
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
+/* 🚀 全新分類統計卡片容器 */
+.stats-wrapper { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
+.type-stat-card { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 15px 20px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+.st-head { color: white; font-weight: 900; font-size: 16px; margin-bottom: 12px; border-bottom: 1px dashed #334155; padding-bottom: 8px; }
+.st-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }
+.st-item { display: flex; flex-direction: column; gap: 4px; }
+.st-item span { font-size: 11px; color: #94a3b8; font-weight: 700; }
+.st-item b { font-size: 16px; color: white; font-weight: 900; }
+.text-green { color: #10b981 !important; }
 
 /* 💡 強制保護總結卡片的背景和文字顏色，徹底解決隱形文字問題！ */
 .card.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a) !important; color: white !important; border: none; padding: 25px 20px; margin-bottom: 25px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
