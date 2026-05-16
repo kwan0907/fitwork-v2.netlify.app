@@ -4,6 +4,21 @@ import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
+// 🟢 終極防護：鎖死香港時區
+const getLocalHKDate = () => {
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Hong_Kong', 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+  }).format(new Date());
+}
+
+// 🟢 取得完整香港時間戳記 (包含時間)
+const getLocalHKTimestamp = () => {
+  const now = new Date();
+  const hkDate = getLocalHKDate();
+  const timeString = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Hong_Kong', hour12: false });
+  return `${hkDate}T${timeString}+08:00`;
+}
 const searchProduct = ref('')
 const selectedBranch = ref('觀塘')
 
@@ -107,7 +122,7 @@ async function updateStock(itemName, newQty) {
 // ==========================================
 const purchaseCart = ref([])
 const showPurchaseModal = ref(false)
-const purchaseDate = ref(new Date().toISOString().split('T')[0])
+const purchaseDate = ref(getLocalHKDate())
 const payees = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
 const purchaseCartWithCosts = computed(() => {
@@ -236,14 +251,15 @@ async function confirmAction() {
       const totalExpense = unitCost * inputNum
       const { data: { user } } = await supabase.auth.getUser()
       
-      await supabase.from('transactions').insert({
+     await supabase.from('transactions').insert({
         type: 'expense',
         category: '產品採購',
         amount: totalExpense,
         branch: selectedBranch.value,
         staff: '系統自動(微調)', 
         note: `單件入貨: ${item.name} x${inputNum}`,
-        own_email: user?.email // 🟢 修正2：配合你資料庫的 own_email
+        own_email: user?.email,
+        created_at: getLocalHKTimestamp() // 🟢 關鍵修正：強制寫入正確的香港時間
       })
     }
     
@@ -270,7 +286,8 @@ async function confirmAction() {
 
     const { error: txnError } = await supabase.from('transactions').insert({
       type: 'expense', category: '自用消耗', amount: totalExpense, staff: '內部自用', 
-      branch: selectedBranch.value, note: `提取自用: ${item.name} x${inputNum}`, own_email: user?.email
+      branch: selectedBranch.value, note: `提取自用: ${item.name} x${inputNum}`, own_email: user?.email,
+      created_at: getLocalHKTimestamp() // 🟢 關鍵修正：強制寫入正確的香港時間
     })
     if (txnError) return alert('流水帳紀錄失敗: ' + txnError.message)
     alert('✅ 已成功扣除庫存並記錄為內部自用！'); store.syncAll() 
