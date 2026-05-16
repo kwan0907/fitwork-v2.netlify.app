@@ -12,15 +12,14 @@ const form = ref({
   end_time: '',
   flyers_count: '',
   note: '',
-  wnt_customer: '', // 🚀 新增：Walk & Talk 客戶名稱
-  wnt_details: ''   // 🚀 新增：Walk & Talk 傾談詳情
+  wnt_customer: '', // 🚀 Walk & Talk 客戶名稱
+  wnt_details: ''   // 🚀 Walk & Talk 傾談詳情
 })
 
-// 💡 編輯視窗狀態
 const showEditModal = ref(false)
 const editingPromo = ref({})
+const filterMonth = ref('') 
 
-// 💡 草稿讀取
 onMounted(() => {
   const savedDraft = localStorage.getItem('fitwork_promo_draft')
   if (savedDraft) {
@@ -35,12 +34,10 @@ onMounted(() => {
   }
 })
 
-// 💡 自動存檔
 watch(form, (newVal) => {
   localStorage.setItem('fitwork_promo_draft', JSON.stringify(newVal))
 }, { deep: true })
 
-// 💡 一鍵填入當下時間
 const setTimeNow = (field) => {
   const now = new Date()
   const hh = String(now.getHours()).padStart(2, '0')
@@ -55,7 +52,6 @@ const setEditTimeNow = (field) => {
   editingPromo.value[field] = `${hh}:${mm}`
 }
 
-// --- 🌟 2. 自動計算花費時間 ---
 const calculatedDuration = computed(() => {
   if (!form.value.start_time || !form.value.end_time) return '0 小時 0 分鐘'
   const start = new Date(`2000-01-01T${form.value.start_time}`)
@@ -78,47 +74,16 @@ const editCalculatedDuration = computed(() => {
   return `${hrs} 小時 ${mins} 分鐘`
 })
 
-// 提交新紀錄
-async function submitPromoRecord() {
-  if (!form.value.start_time) return alert('請輸入或點擊設定「開始時間」！')
-  if (!form.value.end_time) return alert('請輸入或點擊設定「結束時間」！')
-  if (!form.value.flyers_count) return alert('請輸入「派發數量」！')
-
-  // 💡 取得當前帳號的 Email
-  const { data: { session } } = await supabase.auth.getSession()
-  const userEmail = session?.user?.email
-  if (!userEmail) return alert('請先登入！')
-
-  // 💡 寫入時加上 owner_email
-  const { error } = await supabase.from('promotions').insert({
-    owner_email: userEmail,
-    type: form.value.type,
-    promo_date: form.value.promo_date,
-    start_time: form.value.start_time,
-    end_time: form.value.end_time,
-    duration: calculatedDuration.value,
-    flyers_count: parseInt(form.value.flyers_count),
-    note: form.value.note, 
-    inquiries: 0,
-    trials: 0,
-    conversions: 0
-  })
-
-  if (error) return alert('新增失敗: ' + error.message)
-  alert(`✅ ${form.value.type} 紀錄已成功建立！`)
-  
-  form.value = {
-    type: '派傳單', promo_date: new Date().toISOString().split('T')[0],
-    start_time: '', end_time: '', flyers_count: '', note: '' 
+// --- 🌟 資料列表 (這段之前被你刪掉了，現在補回來並放在最前面) ---
+const promoList = computed(() => {
+  let list = store.promotions || []
+  if (filterMonth.value) {
+    list = list.filter(p => p.promo_date && p.promo_date.startsWith(filterMonth.value))
   }
-  localStorage.removeItem('fitwork_promo_draft')
-  store.syncAll()
-}
+  return [...list].sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
+})
 
-// --- 🌟 3. 歷史紀錄列表與資料統計 ---
-const filterMonth = ref('') // 🚀 新增：控制顯示與匯出的月份 (留空代表顯示全部)
-
-// 🚀 全新計算：將數據依照模式分開
+// --- 🌟 分類統計 ---
 const promoStatsByType = computed(() => {
   const stats = {
     '派傳單': { icon: '📄', mins: 0, flyers: 0, inquiries: 0, trials: 0, conversions: 0 },
@@ -149,17 +114,15 @@ const promoStatsByType = computed(() => {
   return stats
 })
 
-// 💡 【完美修復版】統計大腦：計算 Sum 與 轉換率
+// --- 🌟 總結統計 ---
 const promoSummary = computed(() => {
   let totalMins = 0, flyers = 0, inquiries = 0, trials = 0, conversions = 0
   
   promoList.value.forEach(p => {
-    // 時間拆解
     const hrsMatch = (p.duration || '').match(/(\d+)\s*小時/)
     const minsMatch = (p.duration || '').match(/(\d+)\s*分鐘/)
     totalMins += (hrsMatch ? parseInt(hrsMatch[1]) * 60 : 0) + (minsMatch ? parseInt(minsMatch[1]) : 0)
     
-    // 💡 安全的數字轉換，防止有空格或空值導致計算崩潰
     flyers += Number(p.flyers_count) || 0
     inquiries += Number(p.inquiries) || 0
     trials += Number(p.trials) || 0
@@ -170,7 +133,6 @@ const promoSummary = computed(() => {
   const finalMins = totalMins % 60
   const durStr = `${finalHrs} 小時 ${finalMins} 分鐘`
 
-  // 轉換率計算
   const inquiryRate = flyers > 0 ? ((inquiries / flyers) * 100).toFixed(1) : "0.0"
   const trialRate = inquiries > 0 ? ((trials / inquiries) * 100).toFixed(1) : "0.0"
   const conversionRate = trials > 0 ? ((conversions / trials) * 100).toFixed(1) : "0.0"
@@ -179,7 +141,47 @@ const promoSummary = computed(() => {
   return { durStr, flyers, inquiries, trials, conversions, inquiryRate, trialRate, conversionRate, overallRate }
 })
 
-// 漏斗數據更新
+// 提交新紀錄 (包含 Walk & Talk 智能排版)
+async function submitPromoRecord() {
+  if (!form.value.start_time) return alert('請輸入或點擊設定「開始時間」！')
+  if (!form.value.end_time) return alert('請輸入或點擊設定「結束時間」！')
+  if (!form.value.flyers_count) return alert('請輸入「派發/接觸數量」！')
+
+  const { data: { session } } = await supabase.auth.getSession()
+  const userEmail = session?.user?.email
+  if (!userEmail) return alert('請先登入！')
+
+  // 🚀 智能合併備註
+  let finalNote = form.value.note
+  if (form.value.type === 'Walk & Talk') {
+    finalNote = `【客戶對象】${form.value.wnt_customer || '未填寫'}\n【詳情記錄】${form.value.wnt_details || '無'}`
+  }
+
+  const { error } = await supabase.from('promotions').insert({
+    owner_email: userEmail,
+    type: form.value.type,
+    promo_date: form.value.promo_date,
+    start_time: form.value.start_time,
+    end_time: form.value.end_time,
+    duration: calculatedDuration.value,
+    flyers_count: parseInt(form.value.flyers_count),
+    note: finalNote, 
+    inquiries: 0,
+    trials: 0,
+    conversions: 0
+  })
+
+  if (error) return alert('新增失敗: ' + error.message)
+  alert(`✅ ${form.value.type} 紀錄已成功建立！`)
+  
+  form.value = {
+    type: '派傳單', promo_date: new Date().toISOString().split('T')[0],
+    start_time: '', end_time: '', flyers_count: '', note: '', wnt_customer: '', wnt_details: ''
+  }
+  localStorage.removeItem('fitwork_promo_draft')
+  store.syncAll()
+}
+
 async function updatePerformance(p) {
   const { error } = await supabase.from('promotions').update({
     inquiries: parseInt(p.inquiries || 0),
@@ -192,13 +194,30 @@ async function updatePerformance(p) {
   store.syncAll()
 }
 
-// --- 🌟 4. 編輯與刪除功能 ---
+// 開啟編輯視窗 (智能拆解 Walk & Talk 備註)
 function openEditModal(p) {
   editingPromo.value = { ...p }
+  
+  if (p.type === 'Walk & Talk' && p.note) {
+    const cMatch = p.note.match(/【客戶對象】(.*?)\n/);
+    const dMatch = p.note.match(/【詳情記錄】(.*)/s);
+    editingPromo.value.wnt_customer = cMatch ? cMatch[1] : '';
+    editingPromo.value.wnt_details = dMatch ? dMatch[1] : p.note;
+  } else {
+    editingPromo.value.wnt_customer = '';
+    editingPromo.value.wnt_details = '';
+  }
+  
   showEditModal.value = true
 }
 
+// 儲存編輯 (再次智能合併備註)
 async function saveEditPromo() {
+  let finalNote = editingPromo.value.note
+  if (editingPromo.value.type === 'Walk & Talk') {
+    finalNote = `【客戶對象】${editingPromo.value.wnt_customer || '未填寫'}\n【詳情記錄】${editingPromo.value.wnt_details || '無'}`
+  }
+
   const { error } = await supabase.from('promotions').update({
     type: editingPromo.value.type,
     promo_date: editingPromo.value.promo_date,
@@ -206,7 +225,7 @@ async function saveEditPromo() {
     end_time: editingPromo.value.end_time,
     duration: editCalculatedDuration.value,
     flyers_count: parseInt(editingPromo.value.flyers_count || 0),
-    note: editingPromo.value.note
+    note: finalNote
   }).eq('id', editingPromo.value.id)
 
   if (error) return alert('修改失敗: ' + error.message)
@@ -224,32 +243,33 @@ async function deletePromo() {
   store.syncAll()
 }
 
-// 💡 5. 【進化版】匯出包含「統計、轉換率」的 Excel/CSV
 function exportToExcel() {
   let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
   const s = promoSummary.value
 
-  // 📝 頂部：【統計報表區塊】
   csvContent += "📊 【宣傳總結統計報表】\n"
   csvContent += "總耗時,總派發數量,總查詢數,總試堂數,總開卡數,總查詢率(%),試堂轉化率(%),最終成交率(%)\n"
   csvContent += `"${s.durStr}",${s.flyers},${s.inquiries},${s.trials},${s.conversions},${s.inquiryRate}%,${s.trialRate}%,${s.conversionRate}%\n\n`
 
-  // 📝 底部：【詳細明細區塊】
-  csvContent += "📝 【詳細紀錄明細】\n"
-  csvContent += "活動類型,活動日期,開始時間,結束時間,耗時,派發數量,查詢數,試堂數,開卡數,綜合轉換率(開卡/派發),備註\n"
+  csvContent += "📊 【各模式成效統計】\n"
+  csvContent += "活動模式,總耗時,總派發/接觸,總查詢數,總試堂數,總開卡數,綜合轉換率(%)\n"
+  Object.entries(promoStatsByType.value).forEach(([type, st]) => {
+     csvContent += `"${type}","${st.durStr}",${st.flyers},${st.inquiries},${st.trials},${st.conversions},${st.overallRate}%\n`
+  })
+
+  csvContent += "\n📝 【詳細紀錄明細】\n"
+  csvContent += "活動類型,活動日期,開始時間,結束時間,耗時,派發數量,查詢數,試堂數,開卡數,綜合轉換率(%),備註\n"
 
   promoList.value.forEach(p => {
-    const safeNote = String(p.note || '').replace(/"/g, '""').replace(/\n/g, ' ')
+    const safeNote = String(p.note || '').replace(/"/g, '""').replace(/\n/g, '  |  ')
     const singleRate = p.flyers_count > 0 ? ((p.conversions / p.flyers_count) * 100).toFixed(1) : 0
-    
     const row = `"${p.type}","${p.promo_date}","${p.start_time || ''}","${p.end_time || ''}","${p.duration || ''}",${p.flyers_count || 0},${p.inquiries || 0},${p.trials || 0},${p.conversions || 0},${singleRate}%,"${safeNote}"`
     csvContent += row + "\n"
   })
 
- const encodedUri = encodeURI(csvContent)
+  const encodedUri = encodeURI(csvContent)
   const link = document.createElement("a")
   link.setAttribute("href", encodedUri)
-  // 🚀 優化：檔名會自動顯示你匯出的是哪個月份，如果是全部就顯示今日日期
   const dateStr = filterMonth.value ? filterMonth.value : new Date().toISOString().slice(0, 10)
   link.setAttribute("download", `宣傳成效總表_${dateStr}.csv`)
   document.body.appendChild(link)
@@ -264,7 +284,6 @@ function exportToExcel() {
    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
       <h2 class="page-title" style="margin-bottom: 0;">宣傳成效追蹤</h2>
       <div style="display: flex; align-items: center; gap: 10px;">
-        <!-- 🚀 新增：月份篩選器 -->
         <input type="month" v-model="filterMonth" class="mod-inp" style="padding: 8px 12px; font-size: 14px; width: 140px; border-color: #10b981; color: #1e293b; font-weight: 800;">
         <button class="btn-export" @click="exportToExcel">📥 匯出報表</button>
       </div>
@@ -274,16 +293,12 @@ function exportToExcel() {
       <div class="s-title">📈 累積宣傳成效總結</div>
       <div class="s-grid">
         <div class="s-stat"><div class="s-val text-white">{{ promoSummary.durStr }}</div><div class="s-lbl">總耗時</div></div>
-        <div class="s-stat"><div class="s-val text-white">{{ promoSummary.flyers.toLocaleString() }}</div><div class="s-lbl">總派發/接觸</div></div>
+        <div class="s-stat"><div class="s-val text-white">{{ promoSummary.flyers.toLocaleString() }}</div><div class="s-lbl">總接觸量</div></div>
         <div class="s-stat"><div class="s-val text-green">{{ promoSummary.conversions }}</div><div class="s-lbl">總開卡數</div></div>
       </div>
-      <div class="s-rates">
-        <div class="rate-item">查詢率 <b class="text-white">{{ promoSummary.inquiryRate }}%</b></div>
-        <div class="rate-item">試堂率 <b class="text-white">{{ promoSummary.trialRate }}%</b></div>
-        <div class="rate-item text-green">成交率 <b class="text-white">{{ promoSummary.conversionRate }}%</b></div>
-      </div>
     </div>
-<div v-if="promoList.length > 0" class="stats-wrapper">
+
+    <div v-if="promoList.length > 0" class="stats-wrapper">
       <div v-for="(stat, type) in promoStatsByType" :key="type" class="type-stat-card">
         <div class="st-head">{{ stat.icon }} {{ type }}</div>
         <div class="st-grid">
@@ -294,6 +309,7 @@ function exportToExcel() {
         </div>
       </div>
     </div>
+
     <div class="card add-card">
       <div class="card-header">
         📋 新增推廣活動
@@ -302,7 +318,11 @@ function exportToExcel() {
       
       <div class="grid-2">
         <div class="form-item"><label>活動類型</label>
-          <select v-model="form.type" class="mod-inp"><option value="派傳單">📄 派傳單</option><option value="Road Show">🎪 Road Show</option><option value="Walk & Talk">🚶 Walk & Talk</option></select>
+          <select v-model="form.type" class="mod-inp">
+            <option value="派傳單">📄 派傳單</option>
+            <option value="Road Show">🎪 Road Show</option>
+            <option value="Walk & Talk">🚶 Walk & Talk</option>
+          </select>
         </div>
         <div class="form-item"><label>活動日期</label><input type="date" v-model="form.promo_date" class="mod-inp"></div>
       </div>
@@ -350,7 +370,6 @@ function exportToExcel() {
     
     <div v-for="p in promoList" :key="p.id" class="card result-card">
      <div class="r-head">
-        <!-- 🚀 新增：判斷 Walk & Talk 的專屬 Emoji -->
         <div class="r-title">{{ p.type === '派傳單' ? '📄' : (p.type === 'Road Show' ? '🎪' : '🚶') }} {{ p.type }} <span class="r-date">{{ p.promo_date }}</span></div>
         <button class="btn-edit" @click="openEditModal(p)">✏️ 編輯</button>
       </div>
@@ -358,7 +377,7 @@ function exportToExcel() {
       <div class="r-meta">
         <span>⏰ {{ p.start_time?.slice(0,5) }} - {{ p.end_time?.slice(0,5) }} ({{ p.duration }})</span>
         <div style="display:flex; gap:5px;">
-          <span class="stk-tag">派發: <b>{{ p.flyers_count }}</b></span>
+          <span class="stk-tag">接觸: <b>{{ p.flyers_count }}</b></span>
           <span class="stk-tag rate">綜合率: <b>{{ p.flyers_count > 0 ? ((p.conversions / p.flyers_count)*100).toFixed(1) : 0 }}%</b></span>
         </div>
       </div>
@@ -382,7 +401,11 @@ function exportToExcel() {
         
         <div class="grid-2">
           <div class="f-item"><label>活動類型</label>
-            <select v-model="editingPromo.type" class="mod-inp"><option value="派傳單">📄 派傳單</option><option value="Road Show">🎪 Road Show</option></select>
+            <select v-model="editingPromo.type" class="mod-inp">
+              <option value="派傳單">📄 派傳單</option>
+              <option value="Road Show">🎪 Road Show</option>
+              <option value="Walk & Talk">🚶 Walk & Talk</option>
+            </select>
           </div>
           <div class="f-item"><label>活動日期</label><input type="date" v-model="editingPromo.promo_date" class="mod-inp"></div>
         </div>
@@ -407,7 +430,17 @@ function exportToExcel() {
           <div class="f-item"><label>派發 / 接觸</label><input type="number" v-model="editingPromo.flyers_count" class="mod-inp"></div>
         </div>
 
-        <div class="f-item" style="margin-top:15px;">
+        <div v-if="editingPromo.type === 'Walk & Talk'" style="margin-top:15px; padding: 10px; background: #f0fdf4; border: 1px solid #10b981; border-radius: 12px;">
+          <div class="f-item">
+            <label style="color:#059669;">👤 客戶名稱 / 特徵</label>
+            <input v-model="editingPromo.wnt_customer" class="mod-inp" style="margin-bottom: 10px;">
+          </div>
+          <div class="f-item">
+            <label style="color:#059669;">📝 傾談詳情記錄</label>
+            <textarea v-model="editingPromo.wnt_details" class="mod-inp" rows="2"></textarea>
+          </div>
+        </div>
+        <div v-else class="f-item" style="margin-top:15px;">
           <label>📝 備註修改</label>
           <textarea v-model="editingPromo.note" class="mod-inp" rows="2"></textarea>
         </div>
@@ -425,7 +458,7 @@ function exportToExcel() {
 <style scoped>
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
-/* 🚀 全新分類統計卡片容器 */
+
 .stats-wrapper { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
 .type-stat-card { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 15px 20px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
 .st-head { color: white; font-weight: 900; font-size: 16px; margin-bottom: 12px; border-bottom: 1px dashed #334155; padding-bottom: 8px; }
@@ -433,10 +466,8 @@ function exportToExcel() {
 .st-item { display: flex; flex-direction: column; gap: 4px; }
 .st-item span { font-size: 11px; color: #94a3b8; font-weight: 700; }
 .st-item b { font-size: 16px; color: white; font-weight: 900; }
-.text-green { color: #10b981 !important; }
 
-/* 💡 強制保護總結卡片的背景和文字顏色，徹底解決隱形文字問題！ */
-.card.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a) !important; color: white !important; border: none; padding: 25px 20px; margin-bottom: 25px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
+.card.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a) !important; color: white !important; border: none; padding: 25px 20px; margin-bottom: 15px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
 .text-white { color: white !important; }
 .s-title { font-size: 14px; font-weight: 800; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;}
 .s-grid { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px dashed #334155; padding-bottom: 15px; }
@@ -455,7 +486,6 @@ function exportToExcel() {
 .card-header { font-weight: 900; font-size: 16px; color: #1e293b; margin-bottom: 15px; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-
 .form-item label, .f-item label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 6px; }
 
 .mod-inp { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 12px; font-weight: 700; outline: none; color: #1e293b; font-size: 16px; appearance: none; background: #f8fafc; }
@@ -483,7 +513,7 @@ function exportToExcel() {
 .stk-tag { background: #fff7ed; color: #d97706; padding: 2px 8px; border-radius: 6px; }
 .rate { background: #ecfdf5; color: #10b981; }
 
-.r-note { font-size: 13px; color: #64748b; font-weight: 600; margin-top: 12px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #cbd5e1; line-height: 1.4;}
+.r-note { font-size: 13px; color: #64748b; font-weight: 600; margin-top: 12px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #cbd5e1; line-height: 1.5; white-space: pre-wrap; }
 
 .funnel-divider { border-bottom: 1px dashed #e2e8f0; margin: 15px 0; }
 .funnel-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px; }
@@ -494,7 +524,6 @@ function exportToExcel() {
 .btn-save-stats { width: 100%; padding: 12px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 10px; font-weight: 800; cursor: pointer; transition: 0.2s; }
 .btn-save-stats:active { background: #e2e8f0; }
 
-/* 💡 編輯 Modal 樣式 */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; }
 .center-modal { background: white; width: 90%; max-width: 450px; border-radius: 24px; padding: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popIn 0.3s ease-out; max-height: 85vh; overflow-y: auto; }
 @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
