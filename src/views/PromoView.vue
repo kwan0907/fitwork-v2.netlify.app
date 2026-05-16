@@ -12,13 +12,16 @@ const form = ref({
   end_time: '',
   flyers_count: '',
   note: '',
-  wnt_customer: '', // 🚀 Walk & Talk 客戶名稱
-  wnt_details: ''   // 🚀 Walk & Talk 傾談詳情
+  wnt_customer: '', 
+  wnt_details: ''   
 })
 
 const showEditModal = ref(false)
 const editingPromo = ref({})
 const filterMonth = ref('') 
+
+// 🚀 新增：控制目前要在卡片顯示什麼統計資料
+const selectedStatView = ref('累積總結') 
 
 onMounted(() => {
   const savedDraft = localStorage.getItem('fitwork_promo_draft')
@@ -74,7 +77,6 @@ const editCalculatedDuration = computed(() => {
   return `${hrs} 小時 ${mins} 分鐘`
 })
 
-// --- 🌟 資料列表 (這段之前被你刪掉了，現在補回來並放在最前面) ---
 const promoList = computed(() => {
   let list = store.promotions || []
   if (filterMonth.value) {
@@ -83,7 +85,6 @@ const promoList = computed(() => {
   return [...list].sort((a, b) => new Date(b.promo_date) - new Date(a.promo_date))
 })
 
-// --- 🌟 分類統計 ---
 const promoStatsByType = computed(() => {
   const stats = {
     '派傳單': { icon: '📄', mins: 0, flyers: 0, inquiries: 0, trials: 0, conversions: 0 },
@@ -114,7 +115,6 @@ const promoStatsByType = computed(() => {
   return stats
 })
 
-// --- 🌟 總結統計 ---
 const promoSummary = computed(() => {
   let totalMins = 0, flyers = 0, inquiries = 0, trials = 0, conversions = 0
   
@@ -141,7 +141,6 @@ const promoSummary = computed(() => {
   return { durStr, flyers, inquiries, trials, conversions, inquiryRate, trialRate, conversionRate, overallRate }
 })
 
-// 提交新紀錄 (包含 Walk & Talk 智能排版)
 async function submitPromoRecord() {
   if (!form.value.start_time) return alert('請輸入或點擊設定「開始時間」！')
   if (!form.value.end_time) return alert('請輸入或點擊設定「結束時間」！')
@@ -151,7 +150,6 @@ async function submitPromoRecord() {
   const userEmail = session?.user?.email
   if (!userEmail) return alert('請先登入！')
 
-  // 🚀 智能合併備註
   let finalNote = form.value.note
   if (form.value.type === 'Walk & Talk') {
     finalNote = `【客戶對象】${form.value.wnt_customer || '未填寫'}\n【詳情記錄】${form.value.wnt_details || '無'}`
@@ -194,7 +192,6 @@ async function updatePerformance(p) {
   store.syncAll()
 }
 
-// 開啟編輯視窗 (智能拆解 Walk & Talk 備註)
 function openEditModal(p) {
   editingPromo.value = { ...p }
   
@@ -211,7 +208,6 @@ function openEditModal(p) {
   showEditModal.value = true
 }
 
-// 儲存編輯 (再次智能合併備註)
 async function saveEditPromo() {
   let finalNote = editingPromo.value.note
   if (editingPromo.value.type === 'Walk & Talk') {
@@ -290,22 +286,37 @@ function exportToExcel() {
     </div>
 
     <div class="card summary-card" v-if="promoList.length > 0">
-      <div class="s-title">📈 累積宣傳成效總結</div>
-      <div class="s-grid">
-        <div class="s-stat"><div class="s-val text-white">{{ promoSummary.durStr }}</div><div class="s-lbl">總耗時</div></div>
-        <div class="s-stat"><div class="s-val text-white">{{ promoSummary.flyers.toLocaleString() }}</div><div class="s-lbl">總接觸量</div></div>
-        <div class="s-stat"><div class="s-val text-green">{{ promoSummary.conversions }}</div><div class="s-lbl">總開卡數</div></div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px dashed #334155; padding-bottom: 15px;">
+        <div class="s-title">📈 宣傳數據分析</div>
+        <select v-model="selectedStatView" class="stats-select">
+          <option value="累積總結">📊 累積總結</option>
+          <option value="派傳單">📄 派傳單</option>
+          <option value="Road Show">🎪 Road Show</option>
+          <option value="Walk & Talk">🚶 Walk & Talk</option>
+        </select>
       </div>
-    </div>
 
-    <div v-if="promoList.length > 0" class="stats-wrapper">
-      <div v-for="(stat, type) in promoStatsByType" :key="type" class="type-stat-card">
-        <div class="st-head">{{ stat.icon }} {{ type }}</div>
-        <div class="st-grid">
-          <div class="st-item"><span>耗時</span><b>{{ stat.durStr }}</b></div>
-          <div class="st-item"><span>接觸</span><b>{{ stat.flyers.toLocaleString() }}</b></div>
-          <div class="st-item"><span>開卡</span><b class="text-green">{{ stat.conversions }}</b></div>
-          <div class="st-item"><span>轉換率</span><b class="text-green">{{ stat.overallRate }}%</b></div>
+      <div v-if="selectedStatView === '累積總結'">
+        <div class="s-grid">
+          <div class="s-stat"><div class="s-val text-white">{{ promoSummary.durStr }}</div><div class="s-lbl">總耗時</div></div>
+          <div class="s-stat"><div class="s-val text-white">{{ promoSummary.flyers.toLocaleString() }}</div><div class="s-lbl">總派發/接觸</div></div>
+          <div class="s-stat"><div class="s-val text-green">{{ promoSummary.conversions }}</div><div class="s-lbl">總開卡數</div></div>
+        </div>
+        <div class="s-rates">
+          <div class="rate-item">查詢率 <b class="text-white">{{ promoSummary.inquiryRate }}%</b></div>
+          <div class="rate-item">試堂率 <b class="text-white">{{ promoSummary.trialRate }}%</b></div>
+          <div class="rate-item text-green">成交率 <b class="text-white">{{ promoSummary.conversionRate }}%</b></div>
+        </div>
+      </div>
+
+      <div v-else>
+        <div class="s-grid" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+          <div class="s-stat"><div class="s-val text-white">{{ promoStatsByType[selectedStatView].durStr }}</div><div class="s-lbl">該模式耗時</div></div>
+          <div class="s-stat"><div class="s-val text-white">{{ promoStatsByType[selectedStatView].flyers.toLocaleString() }}</div><div class="s-lbl">接觸人數</div></div>
+          <div class="s-stat"><div class="s-val text-green">{{ promoStatsByType[selectedStatView].conversions }}</div><div class="s-lbl">開卡數</div></div>
+        </div>
+        <div class="s-rates" style="margin-top: 15px; justify-content: space-around; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2);">
+          <div class="rate-item text-green">綜合轉換率 (開卡率) <b class="text-green" style="font-size: 20px;">{{ promoStatsByType[selectedStatView].overallRate }}%</b></div>
         </div>
       </div>
     </div>
@@ -459,20 +470,14 @@ function exportToExcel() {
 .page { padding: 20px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; margin-bottom: 20px; }
 
-.stats-wrapper { display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; }
-.type-stat-card { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 15px 20px; border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
-.st-head { color: white; font-weight: 900; font-size: 16px; margin-bottom: 12px; border-bottom: 1px dashed #334155; padding-bottom: 8px; }
-.st-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; }
-.st-item { display: flex; flex-direction: column; gap: 4px; }
-.st-item span { font-size: 11px; color: #94a3b8; font-weight: 700; }
-.st-item b { font-size: 16px; color: white; font-weight: 900; }
-
-.card.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a) !important; color: white !important; border: none; padding: 25px 20px; margin-bottom: 15px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
-.text-white { color: white !important; }
-.s-title { font-size: 14px; font-weight: 800; color: #94a3b8; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;}
+/* 🚀 動態統計卡片專用 */
+.card.summary-card { background: linear-gradient(135deg, #1e293b, #0f172a) !important; color: white !important; border: none; padding: 25px 20px; margin-bottom: 25px; box-shadow: 0 15px 30px rgba(0,0,0,0.15); }
+.s-title { font-size: 15px; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin: 0;}
+.stats-select { background: #0f172a; color: #38bdf8; border: 1px solid #334155; padding: 6px 10px; border-radius: 8px; font-weight: 800; font-size: 13px; outline: none; cursor: pointer; }
 .s-grid { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px dashed #334155; padding-bottom: 15px; }
-.s-val { font-size: 20px; font-weight: 900; margin-bottom: 4px; }
+.s-val { font-size: 22px; font-weight: 900; margin-bottom: 4px; }
 .s-lbl { font-size: 11px; font-weight: 700; color: #94a3b8; }
+.text-white { color: white !important; }
 .text-green { color: #10b981 !important; }
 .s-rates { display: flex; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 12px; border-radius: 12px; }
 .rate-item { font-size: 12px; font-weight: 700; color: #cbd5e1; display: flex; flex-direction: column; align-items: center; gap: 4px;}
