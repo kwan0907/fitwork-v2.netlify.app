@@ -1446,15 +1446,9 @@ const chartOptions = {
 .wts-btn-pill:active { transform: scale(0.95); background: #1da851; }
 
 
+  /* 💡 完美還原！請替換成原本的舊代碼： */
   /* 2. 新增的 A4 報表排版 (防止超出螢幕) */
-  .a4-paper { 
-    width: 100% !important; 
-    max-width: 100% !important; 
-    box-sizing: border-box !important; 
-    overflow-x: auto !important; /* 💡 核心魔法：讓超出的表格在卡片內部自己滾動，絕不撐破外層 */
-    padding: 15px !important; 
-    display: block !important;
-  }
+  .a4-paper { padding: 15px; }
   .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; } /* 手機變成兩排，避免擠壓 */
   .r-boss-metrics { flex-direction: column; gap: 10px; }
   .r-title { font-size: 20px; } /* 縮小標題防止斷行 */
