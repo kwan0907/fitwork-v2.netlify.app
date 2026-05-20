@@ -1446,13 +1446,36 @@ const chartOptions = {
 .wts-btn-pill:active { transform: scale(0.95); background: #1da851; }
 
 
-  /* 💡 完美還原！請替換成原本的舊代碼： */
-  /* 2. 新增的 A4 報表排版 (防止超出螢幕) */
+/* 📱 手機瀏覽器縮放 (統一處理所有手機排版) */
+@media (max-width: 600px) {
+  /* ⚡️ 強制恢復漏斗的流暢左右滑動，絕不斷行擠壓 */
+  .funnel-metrics { 
+    display: flex !important;
+    flex-direction: row !important; 
+    flex-wrap: nowrap !important; 
+    overflow-x: auto !important; 
+    padding-bottom: 10px !important; 
+    gap: 12px !important; 
+    justify-content: flex-start !important; 
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .funnel-metrics::-webkit-scrollbar { height: 4px !important; display: block !important; }
+  .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1 !important; border-radius: 10px !important; }
+  .fm-item { flex: 0 0 auto !important; min-width: 105px !important; }
+  .fm-lbl { font-size: 11px !important; margin-bottom: 2px !important; }
+  .fm-val { font-size: 20px !important; }
+  .fm-sub { font-size: 10px !important; padding: 2px 4px !important; }
+  .fm-arrow { transform: none !important; font-size: 14px !important; flex-shrink: 0 !important; }
+  .fm-rate-box { width: auto !important; min-width: 95px !important; padding: 10px !important; margin-top: 0 !important; flex: 0 0 auto !important;}
+  .fm-rate-box .fm-val { font-size: 18px !important; }
+
+  /* ⚖️ 這裡完整保留你原本所有的 A4 報表美化排版，完全沒刪，保證不跑版 */
   .a4-paper { padding: 15px; }
-  .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; } /* 手機變成兩排，避免擠壓 */
+  .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; } 
   .r-boss-metrics { flex-direction: column; gap: 10px; }
-  .r-title { font-size: 20px; } /* 縮小標題防止斷行 */
+  .r-title { font-size: 20px; } 
   .r-logo { font-size: 18px; }
+}
 
 
 .p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
