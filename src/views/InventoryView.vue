@@ -297,7 +297,7 @@ async function confirmAction() {
 </script>
 
 <template>
-  <div class="page" style="padding-bottom: 180px;">
+  <div class="page" style="padding-bottom: 240px;">
     <h2 class="page-title">📦 庫存管理</h2>
 
     <div class="cost-card">
@@ -428,7 +428,7 @@ async function confirmAction() {
 </template>
 
 <style scoped>
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
+.page { padding: 20px; padding-bottom: calc(240px + env(safe-area-inset-bottom)) !important; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 20px; color: #1e293b; margin-bottom: 12px; }
 
 /* 成本卡片極限微調 */

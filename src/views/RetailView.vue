@@ -495,7 +495,7 @@ const [yyyy, mm, dd] = checkoutDate.value.split('-')
 </script>
 
 <template>
-  <div class="page" style="padding-bottom: 180px;">
+  <div class="page" style="padding-bottom: 240px;">
     <h2 class="page-title">零售商品收銀</h2>
 
     <div class="glass-card top-card">
@@ -698,7 +698,7 @@ const [yyyy, mm, dd] = checkoutDate.value.split('-')
 </template>
 
 <style scoped>
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
+.page { padding: 20px; padding-bottom: calc(240px + env(safe-area-inset-bottom)) !important; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
 .glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
 .top-card { box-shadow: 0 8px 25px rgba(0,0,0,0.03); }

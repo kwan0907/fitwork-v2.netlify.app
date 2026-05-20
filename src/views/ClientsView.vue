@@ -1028,7 +1028,7 @@ async function handleImport(e) {
 
 .tab-content-area { 
   /* 設定固定高度或最小高度，確保切換頁面時 Modal 大小不會突然劇烈跳動 */
-  min-height: 280px; 
+  min-height: 380px; 
   padding-bottom: 20px;
 }
 .tab-pane { animation: popIn 0.2s ease-out; }

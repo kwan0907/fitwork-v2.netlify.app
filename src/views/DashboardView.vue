@@ -1445,27 +1445,21 @@ const chartOptions = {
 .wts-btn-pill { background: #25D366; color: white; padding: 6px 14px; border-radius: 99px; font-size: clamp(11px, 3vw, 14px); font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.3); white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
 .wts-btn-pill:active { transform: scale(0.95); background: #1da851; }
 
-/* 📱 手機瀏覽器縮放 (統一處理所有手機排版) */
-@media (max-width: 600px) {
-  /* 1. 原本的漏斗排版 (保留不變) */
-  .funnel-metrics { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; gap: 8px; justify-content: flex-start; }
-  .funnel-metrics::-webkit-scrollbar { height: 4px; }
-  .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-  .fm-item { flex: 0 0 auto; min-width: 75px; }
-  .fm-lbl { font-size: 11px; margin-bottom: 2px; }
-  .fm-val { font-size: 20px; }
-  .fm-sub { font-size: 10px; padding: 2px 4px; }
-  .fm-arrow { transform: none; font-size: 14px; }
-  .fm-rate-box { width: auto; min-width: 85px; padding: 10px; margin-top: 0; flex: 0 0 auto;}
-  .fm-rate-box .fm-val { font-size: 18px !important; }
 
   /* 2. 新增的 A4 報表排版 (防止超出螢幕) */
-  .a4-paper { padding: 15px; }
+  .a4-paper { 
+    width: 100% !important; 
+    max-width: 100% !important; 
+    box-sizing: border-box !important; 
+    overflow-x: auto !important; /* 💡 核心魔法：讓超出的表格在卡片內部自己滾動，絕不撐破外層 */
+    padding: 15px !important; 
+    display: block !important;
+  }
   .r-grid-4, .r-grid-3 { grid-template-columns: 1fr 1fr; } /* 手機變成兩排，避免擠壓 */
   .r-boss-metrics { flex-direction: column; gap: 10px; }
   .r-title { font-size: 20px; } /* 縮小標題防止斷行 */
   .r-logo { font-size: 18px; }
-}
+
 
 .p-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
 .p-item:last-child { border-bottom: none; margin-bottom:0; padding-bottom:0; }

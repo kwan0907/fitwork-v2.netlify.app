@@ -28,7 +28,12 @@ watch([filterMonth, activeCategory, searchQuery, filterBranch], () => {
     const pageEl = document.querySelector('.page')
     if (pageEl) pageEl.scrollTo({ top: 0, behavior: 'smooth' })
   }, 50)
-
+// 💡 新手防打架盾牌：只要搜尋欄一打字，就把月份選單自動彈回「所有月份」
+watch(searchQuery, (newQuery) => {
+  if (newQuery.trim() !== '') {
+    filterMonth.value = 'all'
+  }
+})
 // ==========================================
 // 🟢 新增：月份過濾邏輯
 
@@ -690,7 +695,7 @@ async function handleTxnImport(e) {
         <h2 class="page-title" style="margin:0;">收支流水帳</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
           <select v-model="filterMonth" class="modern-select" style="padding: 6px 10px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0;">
-            <option value="all">所有月份</option>
+           <option value="all">🌍 搜尋全域（所有月份）</option>
             <option v-for="m in availableMonths" :key="m" :value="m">{{ formatMonthLabel(m) }}</option>
           </select>
           <button class="btn-primary" style="padding:8px 14px; border-radius:10px; font-weight:800; font-size: 13px;" @click="openExpForm">+ 新增收支</button>
