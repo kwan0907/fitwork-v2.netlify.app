@@ -689,10 +689,11 @@ async function handleTxnImport(e) {
 <template>
   <div class="page" style="padding-bottom: 150px;">
     
-    <!-- 💡 置頂區塊 Wrapper 開始 -->
+   <!-- 💡 置頂區塊 Wrapper 開始 -->
     <div class="sticky-top-bar">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h2 class="page-title" style="margin:0;">收支流水帳</h2>
+        <!-- 🟢 已經修改這行：強迫一橫排不准斷行、不被擠壓 -->
+        <h2 class="page-title" style="margin: 0; white-space: nowrap !important; flex-shrink: 0 !important; font-size: 20px !important;">收支流水帳</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
           <select v-model="filterMonth" class="modern-select" style="padding: 6px 10px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0;">
            <option value="all">🌍 搜尋全域（所有月份）</option>
@@ -701,7 +702,6 @@ async function handleTxnImport(e) {
           <button class="btn-primary" style="padding:8px 14px; border-radius:10px; font-weight:800; font-size: 13px;" @click="openExpForm">+ 新增收支</button>
         </div>
       </div>
-
       <div v-if="store.hasMoreTxn" style="text-align: center; margin: 5px 0 10px 0;">
         <button @click="store.loadMoreTransactions()" :disabled="store.isFetchingMore" style="background: #eef2ff; color: #4f46e2; border: 1.5px solid #c7d2fe; padding: 6px 16px; border-radius: 10px; font-weight: 800; cursor: pointer; transition: 0.2s; font-size: 12px;">
           {{ store.isFetchingMore ? '🔄 正在拿取中...' : '📜 載入舊紀錄' }}

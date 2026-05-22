@@ -428,8 +428,13 @@ async function confirmAction() {
 </template>
 
 <style scoped>
-.page { padding: 20px; padding-bottom: calc(240px + env(safe-area-inset-bottom)) !important; background: #f8fafc; min-height: 100vh; }
-.page-title { font-weight: 900; font-size: 20px; color: #1e293b; margin-bottom: 12px; }
+/* 🟢 完美替換成下面這段：壓縮所有頂部留白，強迫庫存數據往上提 */
+.page { padding: 12px 15px !important; padding-bottom: calc(240px + env(safe-area-inset-bottom)) !important; background: #f8fafc; min-height: 100vh; }
+.page-title { font-weight: 900; font-size: 22px; color: #1e293b; margin-top: 0 !important; margin-bottom: 8px !important; }
+
+/* 💡 加碼防護：把總存貨成本藍色卡片的上下留白和底邊距也一起縮小，精緻向上提 */
+.cost-box, .stat-card { padding: 12px 16px !important; margin-bottom: 10px !important; }
+.branch-row, .filter-row { margin-top: 5px !important; margin-bottom: 5px !important; }
 
 /* 成本卡片極限微調 */
 .cost-card { display: flex; align-items: center; gap: 12px; padding: 12px 15px; background: linear-gradient(135deg, #ffffff, #f8fafc); border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.02); }
