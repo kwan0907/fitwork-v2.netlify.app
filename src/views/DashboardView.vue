@@ -863,26 +863,24 @@ const chartOptions = {
     </div>
     
   <div class="section-title" style="margin-top: 15px;">🌟 區間客戶增長與來源</div>
-    <div class="card compact-card" style="margin-bottom: 15px; padding: 12px 15px;">
-      <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
+    <div class="card compact-card" style="margin-bottom: 15px; padding: 10px;">
+      <div style="display:flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
         
-        <div @click="showNewClientsModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-left: -10px; border: 1px solid transparent; transition: 0.2s;">
-          <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; gap: 6px;">
-            新增客戶數
-            <span style="background: #eef2ff; color: #4f46e2; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
+        <div @click="showNewClientsModal = true" class="hover-bg" style="cursor: pointer; padding: 6px; border-radius: 12px; border: 1px solid transparent; transition: 0.2s;">
+          <div style="font-size: 12px; color: #64748b; font-weight: 800; white-space: nowrap;">
+            新增客戶數 <span style="background: #eef2ff; color: #4f46e2; font-size: 10px; padding: 2px 4px; border-radius: 4px;">🖱️點擊名單</span>
           </div>
-          <div style="font-size: 36px; font-weight: 900; color: #4f46e2; line-height: 1.1; margin-top: 5px;">
-            {{ clientStats.total }} <span style="font-size: 14px; color: #64748b;">人</span>
+          <div style="font-size: 30px; font-weight: 900; color: #4f46e2; line-height: 1.1; margin-top: 4px;">
+            {{ clientStats.total }} <span style="font-size: 12px; color: #64748b;">人</span>
           </div>
         </div>
 
-        <div @click="showPackageSalesModal = true" class="hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; margin-right: -10px; border: 1px solid transparent; transition: 0.2s; text-align: right;">
-          <div style="font-size: 13px; color: #64748b; font-weight: 800; display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
-            <span style="background: #d1fae5; color: #10b981; font-size: 10px; padding: 3px 6px; border-radius: 6px;">🖱️ 點擊查看名單</span>
-            套票售出總數
+        <div @click="showPackageSalesModal = true" class="hover-bg" style="cursor: pointer; padding: 6px; border-radius: 12px; border: 1px solid transparent; transition: 0.2s; text-align: right;">
+          <div style="font-size: 12px; color: #64748b; font-weight: 800; white-space: nowrap;">
+            <span style="background: #d1fae5; color: #10b981; font-size: 10px; padding: 2px 4px; border-radius: 4px;">🖱️點擊名單</span> 套票總數
           </div>
-          <div style="font-size: 36px; font-weight: 900; color: #10b981; line-height: 1.1; margin-top: 5px;">
-            {{ packageStats.total }} <span style="font-size: 14px; color: #64748b;">張</span>
+          <div style="font-size: 30px; font-weight: 900; color: #10b981; line-height: 1.1; margin-top: 4px;">
+            {{ packageStats.total }} <span style="font-size: 12px; color: #64748b;">張</span>
           </div>
 
           <!-- 🚀 區間利潤拆解明細 Modal -->
