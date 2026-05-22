@@ -1519,9 +1519,10 @@ const chartOptions = {
 .s-label { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 5px; }
 .s-sub { font-size: 11px; color: #64748b; font-weight: 700; margin-top: 5px; }
 .finance-grid { display: grid; gap: 12px; margin-bottom: 15px; }
-.f-card { background: white; padding: 20px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
-.f-val { font-size: 20px; font-weight: 900; margin-bottom: 5px; }
-.f-label { font-size: 12px; color: #64748b; font-weight: 700; }
+/* 🟢 極限壓縮：將上下內距從 20px 砍半到 10px，並縮小文字間距，保留約 60% 高度 */
+.f-card { background: white; padding: 10px 5px !important; border-radius: 12px; text-align: center; border: 1px solid #e2e8f0; }
+.f-val { font-size: 18px !important; font-weight: 900; margin-bottom: 2px !important; }
+.f-label { font-size: 11px !important; color: #64748b; font-weight: 800; line-height: 1.2; }
 .profit-box { background: #eef2ff; border: 1.5px solid #6366f1; padding: 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .p-title { font-size: 15px; font-weight: 800; color: #4f46e2; display: flex; align-items: center; gap: 8px; }
 .p-val { font-size: 24px; font-weight: 900; color: #4f46e2; }

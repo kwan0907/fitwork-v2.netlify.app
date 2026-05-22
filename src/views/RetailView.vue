@@ -698,8 +698,20 @@ const [yyyy, mm, dd] = checkoutDate.value.split('-')
 </template>
 
 <style scoped>
-.page { padding: 20px; padding-bottom: calc(240px + env(safe-area-inset-bottom)) !important; background: #f8fafc; min-height: 100vh; }
-.page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
+/* 🟢 頂部空白消除術：砍掉四周贅肉，讓標題與搜尋框向上貼齊 */
+.page { 
+  padding: 10px 15px !important; 
+  padding-bottom: calc(120px + env(safe-area-inset-bottom)); 
+  background: #f8fafc; 
+  min-height: 100vh; 
+}
+.page-title { 
+  font-weight: 900; 
+  font-size: 22px; 
+  color: #1e293b; 
+  margin-top: 0 !important; 
+  margin-bottom: 10px !important; /* 原本是 20px，砍半 */
+}
 .glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
 .top-card { box-shadow: 0 8px 25px rgba(0,0,0,0.03); }
 .form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #1e293b; }
