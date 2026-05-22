@@ -689,17 +689,23 @@ async function handleTxnImport(e) {
 <template>
   <div class="page" style="padding-bottom: 150px;">
     
-   <!-- 💡 置頂區塊 Wrapper 開始 -->
+  <!-- 💡 置頂區塊 Wrapper 開始 -->
     <div class="sticky-top-bar">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <!-- 🟢 已經修改這行：強迫一橫排不准斷行、不被擠壓 -->
-        <h2 class="page-title" style="margin: 0; white-space: nowrap !important; flex-shrink: 0 !important; font-size: 20px !important;">收支流水帳</h2>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <select v-model="filterMonth" class="modern-select" style="padding: 6px 10px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0;">
-           <option value="all">🌍 搜尋全域（所有月份）</option>
+      <!-- 🟢 1. 加了 flex-wrap: nowrap !important 強迫絕對不准掉到下一行 -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap: nowrap !important; gap: 6px;">
+        
+        <!-- 🟢 2. 標題稍微縮小到 18px 讓出空間 -->
+        <h2 class="page-title" style="margin: 0; white-space: nowrap !important; flex-shrink: 0 !important; font-size: 18px !important;">收支流水帳</h2>
+        
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap !important; min-width: 0;">
+          <!-- 🟢 3. 縮短文字成「所有紀錄」，並縮小內距 -->
+          <select v-model="filterMonth" class="modern-select" style="padding: 6px 8px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0; flex-shrink: 1; text-overflow: ellipsis; white-space: nowrap;">
+           <option value="all">🌍 所有紀錄</option>
             <option v-for="m in availableMonths" :key="m" :value="m">{{ formatMonthLabel(m) }}</option>
           </select>
-          <button class="btn-primary" style="padding:8px 14px; border-radius:10px; font-weight:800; font-size: 13px;" @click="openExpForm">+ 新增收支</button>
+          
+          <!-- 🟢 4. 按鈕鎖死不准換行、不准被擠壓，稍微縮小內距 -->
+          <button class="btn-primary" style="padding: 6px 10px; border-radius: 10px; font-weight: 800; font-size: 13px; white-space: nowrap !important; flex-shrink: 0 !important;" @click="openExpForm">+ 新增收支</button>
         </div>
       </div>
       <div v-if="store.hasMoreTxn" style="text-align: center; margin: 5px 0 10px 0;">
@@ -730,16 +736,20 @@ async function handleTxnImport(e) {
         <input class="modern-inp" v-model="searchQuery" placeholder="搜尋客戶名稱、項目或備註..." style="padding: 10px 10px 10px 35px; border-radius: 12px; font-size: 14px; background: white; border: 1px solid #cbd5e1; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); width: 100%; outline: none; transition: 0.2s;">
       </div>
 
-      <div style="display: flex; gap: 8px; margin-bottom: 5px;">
-        <button @click="exportRetail" style="flex: 1; background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📊 匯出零售表格</button>
-        <button @click="exportMovement" style="flex: 1; background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📊 匯出套票表格</button>
-      </div>
-
-      <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-        <button @click="downloadTxnCSVTemplate" style="flex: 1; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📥 下載匯入格式</button>
-        <button @click="triggerTxnFileInput" style="flex: 1; background: #eef2ff; color: #4f46e2; border: 1px solid #c7d2fe; padding: 10px; border-radius: 10px; font-weight: 800; font-size: 12px; cursor: pointer; transition: 0.2s;">📤 批量匯入紀錄</button>
-        <input type="file" id="txnCsvFileInput" accept=".csv" style="display: none;" @change="handleTxnImport">
-      </div>
+     <!-- 🟢 空間魔法：下拉式摺疊選單 (收納四個匯出/匯入按鈕) -->
+      <details style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 10px;">
+        <summary style="padding: 8px 12px; font-size: 12px; font-weight: 800; color: #475569; cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: #f8fafc; list-style: none; outline: none;">
+          <span>⚙️ 展開工具 (匯出 / 匯入資料)</span>
+          <span style="font-size: 10px;">▼</span>
+        </summary>
+        <div style="padding: 10px; border-top: 1px solid #e2e8f0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: white;">
+          <button @click="exportRetail" style="background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📊 匯出零售</button>
+          <button @click="exportMovement" style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📊 匯出套票</button>
+          <button @click="downloadTxnCSVTemplate" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📥 下載格式</button>
+          <button @click="triggerTxnFileInput" style="background: #eef2ff; color: #4f46e2; border: 1px solid #c7d2fe; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📤 批量匯入</button>
+          <input type="file" id="txnCsvFileInput" accept=".csv" style="display: none;" @change="handleTxnImport">
+        </div>
+      </details>
 
     </div>
     <!-- 💡 置頂區塊 Wrapper 結束 -->
@@ -753,12 +763,17 @@ async function handleTxnImport(e) {
         <div v-for="t in group.items" :key="t.id" class="txn-item">
           <div style="flex:1; min-width:0;">
             
-            <div class="t-header-row">
-              <div class="t-cat">{{ t.category }}</div>
-              <div v-if="getDisplayData(t).client" class="t-client-highlight">
-                👤 客戶：{{ getDisplayData(t).client }}
+           <!-- 🟢 精簡版：強制單行、縮減多餘文字省空間 -->
+            <div class="t-header-row" style="display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; margin-bottom: 2px; overflow-x: auto; padding-bottom: 2px;">
+              <div class="t-cat" style="white-space: nowrap; padding: 2px 6px;">{{ t.category }}</div>
+              
+              <!-- 💡 拿掉「客戶：」兩個字，只留圖示與名字 -->
+              <div v-if="getDisplayData(t).client" class="t-client-highlight" style="white-space: nowrap; padding: 2px 6px; font-size: 11px;">
+                👤 {{ getDisplayData(t).client }}
               </div>
-              <button v-if="t.category === '零售收入'" class="repeat-btn" @click="handleRepeatOrder(t)">🔁 再來一套</button>
+              
+              <!-- 💡 縮短按鈕字眼，並防止被擠壓 -->
+              <button v-if="t.category === '零售收入'" class="repeat-btn" @click="handleRepeatOrder(t)" style="white-space: nowrap; padding: 2px 6px; font-size: 11px; flex-shrink: 0;">🔁 再來</button>
             </div>
             
             <div class="t-desc-box">
@@ -869,30 +884,31 @@ async function handleTxnImport(e) {
 
 <style scoped>
 
-/* 💡 超強置頂樣式 */
+/* 🟢 極限壓縮頂部留白樣式 */
 .sticky-top-bar {
-  position: -webkit-sticky; /* 這是專門給 iOS Safari / iPhone 的防彈衣 */
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
   z-index: 100;
   background-color: #f8fafc; 
-  margin-top: -20px;
-  margin-left: -20px;
-  margin-right: -20px;
-  padding-top: 20px;
-  padding-left: 20px;
-  padding-right: 20px;
-  padding-bottom: 10px;
-  box-shadow: 0 6px 15px -3px rgba(248, 250, 252, 0.95);
+  margin-top: -10px;  /* 減少外距 */
+  margin-left: -10px;
+  margin-right: -10px;
+  padding-top: 5px;   /* 💡 核心：大幅減少標題上方的空白 */
+  padding-left: 10px; /* 減少左右空白 */
+  padding-right: 10px;
+  padding-bottom: 5px; /* 💡 核心：減少標題下方的空白 */
+  box-shadow: 0 4px 10px -3px rgba(248, 250, 252, 0.95);
 }
 
-.page { padding: 20px; background: #f8fafc; min-height: 100vh; }
+/* 💡 核心：將整個頁面的四周留白從 20px 縮小到 10px */
+.page { padding: 10px; background: #f8fafc; min-height: 100vh; }
 .page-title { font-weight: 900; font-size: 24px; color: #1e293b; }
 
-/* 🟢 新增：過濾列與按鈕樣式 */
-.filter-row { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
+/* 🟢 修改這組：分類過濾列 (縮小 20%，減少底部距離) */
+.filter-row { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
 .filter-row::-webkit-scrollbar { display: none; }
-.f-btn { padding: 8px 16px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 800; font-size: 13px; color: #64748b; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
+.f-btn { padding: 6px 12px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 800; font-size: 11px; color: #64748b; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
 .f-btn.active { background: #4f46e2; color: white; border-color: #4f46e2; box-shadow: 0 4px 10px rgba(79, 70, 226, 0.2); }
 
 .card { background: white; border-radius: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
@@ -942,8 +958,8 @@ async function handleTxnImport(e) {
 .btn-primary { background: #4f46e2; color: white; border: none; transition: 0.2s; cursor: pointer;}
 .btn-primary:active { transform: scale(0.96); }
 
-/* 分店過濾標籤 */
-.branch-tabs { display: flex; gap: 8px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 5px; }
-.branch-tabs button { flex: 1; padding: 8px 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 13px;}
+/* 🟢 修改這組：分店過濾標籤 (縮小 20%，減少底部距離) */
+.branch-tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 2px; }
+.branch-tabs button { flex: 1; padding: 6px 8px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 11px;}
 .branch-tabs button.active { background: #eef2ff; color: #4f46e2; border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(79,70,229,0.15);}
 </style>
