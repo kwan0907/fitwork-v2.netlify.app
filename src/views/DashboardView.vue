@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
@@ -738,6 +738,90 @@ const chartOptions = {
   },
   interaction: { mode: 'nearest', axis: 'x', intersect: false }
 }
+
+// 🚀 1. 名字專用：無縫貪吃蛇跑馬燈指令 (🛡️ 終極防當機 + 短名字修復版)
+const vAutoMarquee = {
+  mounted(el) {
+    const check = () => {
+      if (!el || !el.isConnected) return;
+      const wrapper = el.querySelector('.marquee-scroll-wrapper');
+      if (!wrapper) return;
+      const content = wrapper.querySelector('.marquee-content');
+      if (!content) return;
+
+      // 1. 先重置所有狀態
+      wrapper.classList.remove('do-marquee');
+      el.classList.remove('is-overflowing'); // 新增：先移除漸層遮罩
+      wrapper.querySelectorAll('.mq-clone').forEach(c => c.remove());
+      content.style.paddingRight = '0px';
+
+      // 2. 精準計算寬度 (用 getBoundingClientRect 避免瀏覽器小數點誤差)
+      const contentWidth = content.getBoundingClientRect().width;
+      const containerWidth = el.getBoundingClientRect().width;
+
+      // 3. 判斷：文字實際寬度大於容器寬度 (容許 2px 誤差防呆) 才啟動跑馬燈
+      if (contentWidth > containerWidth + 2) {
+        el.classList.add('is-overflowing'); // 加上漸層遮罩
+        content.style.paddingRight = '30px'; // 頭尾間距
+        const clone = content.cloneNode(true);
+        clone.classList.add('mq-clone');
+        wrapper.appendChild(clone);
+
+        const scrollDist = content.scrollWidth;
+        wrapper.style.setProperty('--scroll-dist', `-${scrollDist}px`);
+        wrapper.classList.add('do-marquee');
+      }
+    };
+    el._checkMarquee = check;
+    // 將延遲時間拉長到 300 毫秒，確保手機版 Flexbox 與字體完全撐開後再計算
+    setTimeout(check, 300);
+  },
+  updated(el) { 
+    setTimeout(() => { 
+      if (el && el.isConnected && el._checkMarquee) el._checkMarquee(); 
+    }, 300); 
+  },
+  unmounted(el) {
+    el._checkMarquee = null;
+  }
+};
+
+// 🚀 2. 漏斗專用：可手動左右任意滑動的無限平移腳本
+const funnelContainer = ref(null);
+const isInteracting = ref(false);
+
+const animateFunnel = () => {
+  if (funnelContainer.value) {
+    const el = funnelContainer.value;
+    const halfWidth = el.scrollWidth / 2;
+
+    // 確認內容有超出才執行輪迴
+    if (el.scrollWidth > el.clientWidth) {
+      
+      // 只有在沒有手動觸碰時，才自動往前滑
+      if (!isInteracting.value) {
+        el.scrollLeft += 0.8; 
+      }
+
+      // 🌟 核心魔法：無論是自動還是手動，隨時檢查邊界進行「無縫接軌」
+      if (el.scrollLeft >= halfWidth) {
+        // 如果往右滑超過一半，瞬間把視角拉回前半段的同一位置
+        el.scrollLeft -= halfWidth;
+      } else if (el.scrollLeft <= 0) {
+        // 如果往左滑到底了，瞬間把視角拉到後半段的同一位置
+        // 這樣使用者就可以無限往回滑！
+        el.scrollLeft += halfWidth - 1; 
+      }
+    }
+  }
+  requestAnimationFrame(animateFunnel);
+};
+
+onMounted(() => {
+  requestAnimationFrame(animateFunnel);
+});
+
+
 </script>
 
 <template>
@@ -777,17 +861,24 @@ const chartOptions = {
           
           <div class="p-info">
             <div class="p-info-text">
-             <div class="name-wrapper" style="display: flex; align-items: center; flex-wrap: wrap;">
-                <span class="name-text">{{ p.name }}</span>
+             <div class="name-wrapper" style="display: flex; align-items: center; flex-wrap: nowrap; overflow: hidden; width: 100%;">
                 
-                <!-- 🚀 聽日提示標籤 -->
-                <span v-if="isTomorrow(p.trial_date)" style="background: #ef4444; color: white; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-left: 6px; margin-right: 6px; box-shadow: 0 2px 4px rgba(239,68,68,0.3); letter-spacing: 0.5px;">
+                <div class="marquee-container name-container" v-auto-marquee>
+                  <div class="marquee-scroll-wrapper">
+                    <span class="marquee-content name-text">{{ p.name }}</span>
+                  </div>
+                </div>
+                
+                <span v-if="isTomorrow(p.trial_date)" style="flex-shrink: 0; background: #ef4444; color: white; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-left: 6px; margin-right: 6px; box-shadow: 0 2px 4px rgba(239,68,68,0.3); letter-spacing: 0.5px;">
                   ⏰ 聽日!
                 </span>
 
                 <span class="time">{{ getTimeStr(p.trial_date) }}</span>
               </div>
-              <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}</div>
+              
+              <div class="meta">📍 {{ p.branch }} · 📞 {{ p.phone || '無電話' }}
+          
+              </div>
             </div>
             
             <a v-if="p.phone" :href="'https://wa.me/852' + p.phone" target="_blank" class="wts-btn-pill" @click.stop>
@@ -836,29 +927,60 @@ const chartOptions = {
 
     <div class="section-title" style="margin-top: 25px; color: #4f46e2;">🎯 區間試堂轉化漏斗 (Funnel)</div>
     <div class="card" style="margin-bottom: 20px; padding: 20px; border: 2px solid #eef2ff;">
-      <div class="funnel-metrics">
-        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('booked')">
-          <div class="fm-lbl">📅 總預約數 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
-          <div class="fm-val">{{ trialFunnelStats.totalBooked }}</div>
-        </div>
-        <div class="fm-arrow">👉</div>
+      <div class="funnel-metrics" ref="funnelContainer"
+           @touchstart="isInteracting = true" @touchend="isInteracting = false"
+           @mousedown="isInteracting = true" @mouseup="isInteracting = false" @mouseleave="isInteracting = false">
         
-        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('completed')">
-          <div class="fm-lbl">🏃 已出席試堂 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
-          <div class="fm-val text-blue">{{ trialFunnelStats.completedTrials }}</div>
-          <div class="fm-sub" @click.stop="openFunnelModal('notConverted')" style="cursor: pointer;">僅試堂(未買): {{ trialFunnelStats.notConverted }} 🖱️</div>
+        <div class="funnel-group">
+          <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('booked')">
+            <div class="fm-lbl">📅 總預約數 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
+            <div class="fm-val">{{ trialFunnelStats.totalBooked }}</div>
+          </div>
+          <div class="fm-arrow">👉</div>
+          
+          <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('completed')">
+            <div class="fm-lbl">🏃 已出席試堂 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
+            <div class="fm-val text-blue">{{ trialFunnelStats.completedTrials }}</div>
+            <div class="fm-sub" @click.stop="openFunnelModal('notConverted')" style="cursor: pointer;">僅試堂(未買): {{ trialFunnelStats.notConverted }} 🖱️</div>
+          </div>
+          <div class="fm-arrow">👉</div>
+          
+          <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('converted')">
+            <div class="fm-lbl">👑 成功開卡 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
+            <div class="fm-val text-green">{{ trialFunnelStats.converted }}</div>
+          </div>
+          
+          <div class="fm-rate-box">
+            <div class="fm-lbl text-white" style="margin-bottom: 2px;">開卡轉換率</div>
+            <div class="fm-val text-white" style="font-size: 22px;">{{ trialFunnelStats.conversionRate }}%</div>
+          </div>
         </div>
-        <div class="fm-arrow">👉</div>
-        
-        <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('converted')">
-          <div class="fm-lbl">👑 成功開卡 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
-          <div class="fm-val text-green">{{ trialFunnelStats.converted }}</div>
+
+        <div class="funnel-group" aria-hidden="true">
+          <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('booked')">
+            <div class="fm-lbl">📅 總預約數 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
+            <div class="fm-val">{{ trialFunnelStats.totalBooked }}</div>
+          </div>
+          <div class="fm-arrow">👉</div>
+          
+          <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('completed')">
+            <div class="fm-lbl">🏃 已出席試堂 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
+            <div class="fm-val text-blue">{{ trialFunnelStats.completedTrials }}</div>
+            <div class="fm-sub" @click.stop="openFunnelModal('notConverted')" style="cursor: pointer;">僅試堂(未買): {{ trialFunnelStats.notConverted }} 🖱️</div>
+          </div>
+          <div class="fm-arrow">👉</div>
+          
+          <div class="fm-item hover-bg" style="cursor: pointer; padding: 10px; border-radius: 12px; transition: 0.2s;" @click="openFunnelModal('converted')">
+            <div class="fm-lbl">👑 成功開卡 <span style="font-size:10px; background:#eef2ff; color:#4f46e2; padding:2px 4px; border-radius:4px;">🖱️名單</span></div>
+            <div class="fm-val text-green">{{ trialFunnelStats.converted }}</div>
+          </div>
+          
+          <div class="fm-rate-box">
+            <div class="fm-lbl text-white" style="margin-bottom: 2px;">開卡轉換率</div>
+            <div class="fm-val text-white" style="font-size: 22px;">{{ trialFunnelStats.conversionRate }}%</div>
+          </div>
         </div>
-        
-        <div class="fm-rate-box">
-          <div class="fm-lbl text-white" style="margin-bottom: 2px;">開卡轉換率</div>
-          <div class="fm-val text-white" style="font-size: 22px;">{{ trialFunnelStats.conversionRate }}%</div>
-        </div>
+
       </div>
     </div>
     
@@ -1091,21 +1213,33 @@ const chartOptions = {
           </div>
 
          <div v-for="(t, idx) in packageStats.list" :key="t.id" style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #e2e8f0; padding: 12px 15px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
-            <div>
-              <div style="font-weight: 900; font-size: 16px; color: #1e293b; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                {{ idx + 1 }}. {{ t.display_client_name }}
-                <!-- 🟢 新增：新開/續卡標籤 -->
-                <span v-if="t.sale_type" :class="t.sale_type === '🆕 新開' ? 'tag-new' : (t.sale_type === '🔄 續卡' ? 'tag-renew' : '')">{{ t.sale_type }}</span>
-                <span style="font-size: 11px; color: #10b981; background: #d1fae5; padding: 3px 6px; border-radius: 6px;">{{ t.pkg_type }}</span>
+            
+            <div style="flex: 1; min-width: 0; margin-right: 10px;">
+              
+              <div style="font-weight: 900; font-size: 16px; color: #1e293b; display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; overflow: hidden; width: 100%;">
+                
+                <span style="flex-shrink: 0;">{{ idx + 1 }}.</span>
+                
+                <div class="marquee-container" v-auto-marquee>
+                  <div class="marquee-scroll-wrapper">
+                    <span class="marquee-content">{{ t.display_client_name }}</span>
+                  </div>
+                </div>
+                
+                <span v-if="t.sale_type" style="flex-shrink: 0;" :class="t.sale_type === '🆕 新開' ? 'tag-new' : (t.sale_type === '🔄 續卡' ? 'tag-renew' : '')">{{ t.sale_type }}</span>
+                <span style="flex-shrink: 0; font-size: 11px; color: #10b981; background: #d1fae5; padding: 3px 6px; border-radius: 6px;">{{ t.pkg_type }}</span>
               </div>
-              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600;">
+              
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                 📍 分店: {{ t.branch || '無' }} · 收款: {{ t.staff || '無' }}
               </div>
             </div>
-            <div style="text-align: right;">
+            
+            <div style="text-align: right; flex-shrink: 0;">
               <div style="font-size: 11px; font-weight: 800; color: #94a3b8;">購買日期</div>
               <div style="font-size: 13px; font-weight: 900; color: #10b981;">{{ t.display_date }}</div>
             </div>
+            
           </div>
         </div>
 
@@ -1412,7 +1546,28 @@ const chartOptions = {
 .canvas-container { position: relative; height: 220px; width: 100%; }
 .section-title { font-size: 14px; font-weight: 900; color: #475569; margin: 25px 0 10px; }
 .card { background: white; border-radius: 20px; padding: 15px; border: 1px solid #e2e8f0; }
-.funnel-metrics { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+/* 🚀 漏斗外層：設定為單行水平滾動，隱藏滾動條 */
+.funnel-metrics { 
+  display: flex; 
+  flex-wrap: nowrap; /* 絕對不允許換行 */
+  overflow-x: auto; 
+  scrollbar-width: none; 
+  -webkit-overflow-scrolling: touch; 
+  cursor: grab; 
+  padding-bottom: 10px;
+  gap: 0; /* 間距交給裡面的 group 處理 */
+}
+.funnel-metrics:active { cursor: grabbing; }
+.funnel-metrics::-webkit-scrollbar { display: none; }
+
+/* 🚀 漏斗群組 (車廂)：設定為不壓縮、橫向排列 */
+.funnel-group {
+  display: flex; 
+  flex-shrink: 0; /* 防止被擠壓 */
+  align-items: center; 
+  gap: 10px; 
+  padding-right: 10px; /* 頭尾銜接的間距 */
+}
 .fm-item { text-align: center; flex: 1; }
 .fm-lbl { font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; }
 .fm-val { font-size: 26px; font-weight: 900; color: #1e293b; line-height: 1; }
@@ -1433,11 +1588,82 @@ const chartOptions = {
 .p-info { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .p-info-text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 
-/* 名字與時間的彈性排版，名字太長自動變 ... */
+/* 🚀 新增：跑馬燈通用外層容器 */
+.marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  /* 右側加上漸層透明遮罩，讓文字快消失時有淡出效果，更有 App 質感 */
+  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+
+/* 🚀 新增：跑馬燈動畫本體 */
+.marquee-content {
+  display: inline-block;
+  /* 來回平滑滾動：左移後再退回，看起來更自然 */
+  animation: app-marquee-scroll 6s linear infinite alternate;
+}
+
+/* 手機點擊或滑鼠懸停時暫停動畫方便閱讀 */
+.marquee-container:active .marquee-content,
+.marquee-container:hover .marquee-content {
+  animation-play-state: paused;
+}
+
+/* 定義滑動幅度 (往左平移再平移回來) */
+@keyframes app-marquee-scroll {
+  0%, 20% { transform: translateX(0); } /* 開頭先停頓一下再滑 */
+  80%, 100% { transform: translateX(-35px); } /* 根據手機版面，往左滑動 35px 通常足夠看完尾巴 */
+}
+/* 🚀 名字的貪吃蛇跑馬燈核心樣式 */
+.marquee-container {
+  overflow: hidden; 
+  white-space: nowrap; 
+  flex: 1; 
+  min-width: 0;
+  /* 預設不要有遮罩，才不會把短名字吃掉 */
+}
+
+/* 只有當 JS 判定文字過長時，才加上這個漸層淡出遮罩 */
+.marquee-container.is-overflowing {
+  -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%);
+  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+
+/* 確保本體和尾巴永遠在同一行 */
+.marquee-scroll-wrapper { 
+  display: flex; 
+  align-items: center; 
+  white-space: nowrap; 
+  width: max-content; 
+}
+
+.marquee-content, .mq-clone {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* 觸發貪吃蛇滾動的動畫 */
+.do-marquee { 
+  animation: snake-scroll 5s linear infinite; 
+}
+
+@keyframes snake-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(var(--scroll-dist)); }
+}
+@keyframes scroll-one-way {
+  0%, 15% { transform: translateX(0); } /* 開頭停頓一下 */
+  85%, 100% { transform: translateX(var(--scroll-dist)); } /* 滑到底 */
+}
+
+/* 名字與時間的彈性排版 (已移除 ... 截斷設定) */
 .name-wrapper { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.name-text { font-weight: 800; font-size: clamp(14px, 4vw, 18px); color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.name-text { font-weight: 800; font-size: clamp(14px, 4vw, 18px); color: #1e293b; }
 .time { font-size: clamp(10px, 3vw, 13px); color: #d97706; background: #fff7ed; padding: 2px 6px; border-radius: 6px; font-weight: 800; flex-shrink: 0; }
-.meta { font-size: clamp(11px, 3vw, 14px); color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta { font-size: clamp(11px, 3vw, 14px); color: #64748b; font-weight: 600; }
 
 /* 永遠置右的 WhatsApp 藥丸按鈕 */
 .wts-btn-pill { background: #25D366; color: white; padding: 6px 14px; border-radius: 99px; font-size: clamp(11px, 3vw, 14px); font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(37,211,102,0.3); white-space: nowrap; flex-shrink: 0; transition: 0.2s; }
@@ -1446,16 +1672,20 @@ const chartOptions = {
 
 /* 📱 手機瀏覽器縮放 (統一處理所有手機排版) */
 @media (max-width: 600px) {
-  /* ⚡️ 強制恢復漏斗的流暢左右滑動，絕不斷行擠壓 */
+/* ⚡️ 手機版：強制恢復漏斗的流暢左右滑動，絕不斷行擠壓 */
   .funnel-metrics { 
     display: flex !important;
     flex-direction: row !important; 
     flex-wrap: nowrap !important; 
     overflow-x: auto !important; 
     padding-bottom: 10px !important; 
-    gap: 12px !important; 
+    gap: 0 !important; /* 這裡要改成 0，不然兩組漏斗中間會斷掉 */
     justify-content: flex-start !important; 
     -webkit-overflow-scrolling: touch !important;
+  }
+  .funnel-group {
+    gap: 12px !important;
+    padding-right: 12px !important;
   }
   .funnel-metrics::-webkit-scrollbar { height: 4px !important; display: block !important; }
   .funnel-metrics::-webkit-scrollbar-thumb { background: #cbd5e1 !important; border-radius: 10px !important; }
