@@ -52,8 +52,11 @@ const selectedYear = ref(new Date().getFullYear().toString())
 const displayedMonths = computed(() => {
   return availableMonths.value.filter(m => m.startsWith(selectedYear.value))
 })
-
-const monthlyStats = ref({})
+const monthlyStats = ref(
+  Object.fromEntries(
+    availableMonths.value.map(m => [m, { vp: '', vip: '', pc: '', gold: '', sup: '' }])
+  )
+)
 const isSyncing = ref(false)
 const qualifiedMemory = ref(new Set()) // 🟢 新增：建立「達標記憶庫」
 
@@ -146,10 +149,6 @@ const loadCloudStats = async () => {
     currentUserEmail.value = session.user.email
   }
 
- // 💡 修正：強制將所有預設值設定為絕對乾淨的空字串 (加入 PC)
-  availableMonths.value.forEach(m => {
-    if (!monthlyStats.value[m]) monthlyStats.value[m] = { vp: '', vip: '', pc: '', gold: '', sup: '' }
-  })
 
   if (currentUserEmail.value) {
     const { data: statsData } = await supabase

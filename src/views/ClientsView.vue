@@ -33,6 +33,53 @@ const defaultNewClient = {
 }
 
 const newClient = ref({ ...defaultNewClient })
+// 🚀 新增：智能配對快捷輸入
+const smartInput = ref('')
+
+function handleSmartPaste() {
+  const text = smartInput.value.trim()
+  if (!text) return
+
+  // 1️⃣ 找電話號碼 (🚀 放寬：只要是 4 到 15 個數字的組合，都當作電話)
+  const phoneMatch = text.match(/(?:\d\s*){4,15}/)
+  if (phoneMatch) {
+    // 把抓到的數字去掉空格，塞進電話欄位
+    newClient.value.phone = phoneMatch[0].replace(/\s+/g, '') 
+  }
+
+  // 2️⃣ 找日期
+  const dateMatch = text.match(/20\d{2}[-/]\d{1,2}[-/]\d{1,2}/)
+  if (dateMatch) {
+    const d = new Date(dateMatch[0].replace(/\//g, '-'))
+    if (!isNaN(d)) {
+      newClient.value.join_date = d.toISOString().split('T')[0]
+      newClient.value.trial_date = d.toISOString().split('T')[0] + 'T10:00' 
+    }
+  }
+
+  // 3️⃣ 找姓名
+  if (!newClient.value.name) { 
+    let remainingText = text
+    if (phoneMatch) remainingText = remainingText.replace(phoneMatch[0], '')
+    if (dateMatch) remainingText = remainingText.replace(dateMatch[0], '')
+    
+    // 🗑️ 垃圾字眼過濾器
+    const ignoreWords = ['約', '號', '試堂', '預約', '去', '想', '的', '了', '星期', '分店', '觀塘', '中環', '佐敦']
+    
+    const words = remainingText.split(/[\s,，、\n]+/).filter(w => {
+      const cleanW = w.trim()
+      if (cleanW.length === 0) return false
+      return !ignoreWords.some(ignore => cleanW.includes(ignore))
+    })
+
+    if (words.length > 0) {
+      // 🚀 終極防護：把殘留的數字從名字裡踢掉
+      newClient.value.name = words[0].replace(/[0-9]/g, '').trim()
+    }
+  }
+
+  smartInput.value = ''
+}
 const editingClient = ref({})
 
 const allClientsOptions = computed(() => {
@@ -41,12 +88,14 @@ const allClientsOptions = computed(() => {
 // 🟢 朋友介紹搜尋框專用變數
 const referrerSearch = ref('')
 const filteredReferrerOptions = computed(() => {
-  const q = referrerSearch.value.toLowerCase()
-  if (!q) return allClientsOptions.value
-  return allClientsOptions.value.filter(c => 
-    (c.name && c.name.toLowerCase().includes(q)) || 
-    (c.phone && c.phone.includes(q))
-  )
+  const rawQ = referrerSearch.value.toLowerCase()
+  if (!rawQ) return allClientsOptions.value
+  const q = rawQ.replace(/\s+/g, '') // 🚀 搜尋字串去除所有空格
+  return allClientsOptions.value.filter(c => {
+    const nameMatch = c.name && c.name.toLowerCase().includes(q);
+    const phoneStr = c.phone ? String(c.phone).replace(/\s+/g, '') : ''; // 🚀 資料庫號碼去除空格
+    return nameMatch || phoneStr.includes(q);
+  })
 })
 
 const getClientPackageStats = (clientName) => {
@@ -193,10 +242,16 @@ const filteredClients = computed(() => {
     return fixedClient
   })
   
+
   // 2️⃣ 接下來走原本的搜尋與過濾邏輯
-  const q = clientSearch.value.toLowerCase()
+  const rawQ = clientSearch.value.toLowerCase()
+  const q = rawQ.replace(/\s+/g, '') // 🚀 搜尋字串去除空格
   if (q) {
-    list = list.filter(c => (c?.name && c?.name.toLowerCase().includes(q)) || (c?.phone && c?.phone.includes(q)))
+    list = list.filter(c => {
+      const nameMatch = c?.name && c?.name.toLowerCase().includes(q);
+      const phoneStr = c?.phone ? String(c?.phone).replace(/\s+/g, '') : ''; // 🚀 資料庫號碼去除空格
+      return nameMatch || phoneStr.includes(q);
+    })
   }
   
   if (filterBranch.value) {
@@ -759,6 +814,13 @@ async function handleImport(e) {
 
         <div class="tab-content-area">
           <div v-show="activeTab === 'basic'" class="tab-pane">
+            <div class="f-item" style="background: #eef2ff; padding: 15px; border-radius: 12px; border: 1px dashed #6366f1; margin-bottom: 15px;">
+              <label style="color: #4f46e2; font-size: 13px;">🪄 智能快捷貼上 (自動辨識姓名、電話、日期)</label>
+              <div style="display: flex; gap: 8px;">
+                <input v-model="smartInput" class="modern-inp" placeholder="例如: 陳大文 9876 5432 2026-06-25" @keyup.enter.prevent="handleSmartPaste">
+                <button class="btn-now" style="background: #4f46e2; color: white;" @click="handleSmartPaste">配對</button>
+              </div>
+            </div>
             <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
             <div class="f-item"><label>電話</label><input v-model="newClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話"></div>
             <div class="f-item">

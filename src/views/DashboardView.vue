@@ -760,7 +760,7 @@ const vAutoMarquee = {
       const containerWidth = el.getBoundingClientRect().width;
 
       // 3. 判斷：文字實際寬度大於容器寬度 (容許 2px 誤差防呆) 才啟動跑馬燈
-      if (contentWidth > containerWidth + 2) {
+      if (textLength > 8){
         el.classList.add('is-overflowing'); // 加上漸層遮罩
         content.style.paddingRight = '30px'; // 頭尾間距
         const clone = content.cloneNode(true);
