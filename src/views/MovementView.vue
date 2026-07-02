@@ -25,14 +25,19 @@ const checkoutDate = ref(getLocalHKDate())
 
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
+// 🟢 價格與成本大更新
 const packages = {
   'trial': { name: '🧪 試堂 ($98)', price: 98, baseCost: 52 }, 
-  'pkg_10': { name: '🎟️ 10點套票 ($850)', price: 850, baseCost: 385 },
-  'pkg_35': { name: '👑 35點套票 ($2550)', price: 2550, baseCost: 1272.5 },
-  'pkg_vip30': { name: '🌟 VIP點數30點 ($0)', price: 0, baseCost: 1155 }, // 👈 成本 405+750
-  'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 52 },
-  'exp_30': { name: '🎟️ 體驗卡30人次', price: 0, baseCost: 750 } 
+  'pkg_10': { name: '🎟️ 10點套票 ($880)', price: 880, baseCost: 399 }, // 成本 264(30%) + 135(產品) = 399
+  'pkg_35': { name: '👑 35點套票 ($2640)', price: 2640, baseCost: 1316.5 }, // 成本 844(30%) + 472.5(產品) = 1316.5
+  'pkg_vip30': { name: '🌟 VIP點數30點 ($0)', price: 0, baseCost: 1155 }, // 成本 405+750
+  'referral_free': { name: '🤝 介紹朋友贈堂 ($0)', price: 0, baseCost: 53 }, // 成本更新為 53
+  'exp_30': { name: '🎟️ 體驗卡30人次', price: 0, baseCost: 750 },
+  'pkg_1_free': { name: '🆓 新增1格 ($0)', price: 0, baseCost: 25.5 }, // 利潤 -25.5 -> 成本 25.5
+  'redeem_50': { name: '🎁 50積分兌換 ($0)', price: 0, baseCost: 399 }, // 利潤 -399 -> 成本 399
+  'redeem_100': { name: '🎁 100積分兌換 ($0)', price: 0, baseCost: 1197 } // 利潤 -1197 -> 成本 1197
 }
+
 const clientOptions = computed(() => {
   const q = searchClient.value.toLowerCase()
   if (!q) return []
@@ -103,7 +108,7 @@ const exCalc = computed(() => {
   let c = packages[selectedPkg.value].baseCost
   
   if (isReferral.value && selectedPkg.value !== 'referral_free') {
-    c += 52
+    c += 53 // 🟢 更新：轉介紹成本更新為 53
     if (selectedPkg.value === 'trial') p = 0
   }
   
@@ -133,7 +138,8 @@ async function handleCheckout(staff) {
 
   let categoryStr = '運動套票'
   if (selectedPkg.value === 'trial') categoryStr = '試堂'
-  if (selectedPkg.value === 'referral_free') categoryStr = '贈堂'
+  if (selectedPkg.value === 'referral_free' || selectedPkg.value === 'pkg_1_free') categoryStr = '贈堂'
+  if (selectedPkg.value === 'redeem_50' || selectedPkg.value === 'redeem_100') categoryStr = '積分兌換'
 
   const [yyyy, mm, dd] = checkoutDate.value.split('-')
   const now = new Date()
@@ -172,7 +178,9 @@ async function handleCheckout(staff) {
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
 
-  if (selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free') {
+  // 🟢 確保免費贈格與積分兌換不會錯誤地給客戶續命 365 天
+  const noExpiryUpdate = ['trial', 'referral_free', 'pkg_1_free', 'redeem_50', 'redeem_100']
+  if (!noExpiryUpdate.includes(selectedPkg.value)) {
     
     // 🟢 自動化引擎 1：計算一年後嘅到期日 (手動排版避開時差蟲)
     const expiryDate = new Date(checkoutDate.value)
@@ -206,7 +214,7 @@ async function handleCheckout(staff) {
   if (finalType === 'income') {
      alertMsg += `\n💰 營業額: $${calc.price}\n(淨利潤: $${calc.profit})`
   } else {
-     alertMsg += `\n🎁 客戶免費贈堂 ($0)\n⚠️ 紀錄為成本支出: -$${calc.cost}`
+     alertMsg += `\n🎁 客戶兌換/贈堂 ($0)\n⚠️ 紀錄為成本支出: -$${calc.cost}`
   }
 
   alert(alertMsg)
@@ -275,7 +283,7 @@ async function handleCheckout(staff) {
       </div>
       <div class="divider-dash"></div>
       <div class="toggle-row">
-        <div><div class="t-title">🤝 轉介紹優惠 / 免費試堂</div><div class="t-sub" style="color:#ef4444;">成本增加 $52 (若是試堂則免費)</div></div>
+        <div><div class="t-title">🤝 轉介紹優惠 / 免費試堂</div><div class="t-sub" style="color:#ef4444;">成本增加 $53 (若是試堂則免費)</div></div>
         <div class="toggle" :class="{on: isReferral}" @click="isReferral = !isReferral"></div>
       </div>
     </div>
