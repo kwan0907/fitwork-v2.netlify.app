@@ -52,9 +52,11 @@ const selectedYear = ref(new Date().getFullYear().toString())
 const displayedMonths = computed(() => {
   return availableMonths.value.filter(m => m.startsWith(selectedYear.value))
 })
+
+// 🟢 新增：ro (RO提升), firstLine250 (頭線首次250分), newSup3Gen (頭三代新升領班)
 const monthlyStats = ref(
   Object.fromEntries(
-    availableMonths.value.map(m => [m, { vp: '', vip: '', pc: '', gold: '', sup: '' }])
+    availableMonths.value.map(m => [m, { vp: '', vip: '', pc: '', gold: '', sup: '', ro: '', firstLine250: '', newSup3Gen: '' }])
   )
 )
 const isSyncing = ref(false)
@@ -69,6 +71,23 @@ const toggleTopTeam = () => {
 
 // 💯 10000% 保留所有活動條件、金額與圖片
 const promos = ref([
+  // 🟢 新增：12個月團隊旅行 Promotion
+  { 
+    id: 6, name: '✈️ 12個月推廣資格旅行 Promotion', date: '自訂 12 個月集中衝刺', 
+    startMonth: '2026-01', endMonth: '2026-12', // 預設 2026 全年，可根據實際情況調整
+    doubleVpMonth: null, doubleVpMaxExtra: 0, 
+    defaultImage: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+    customImages: [null, null], 
+    targetTravelCash: 6000, targetVp: 0, targetVip: 0, targetGold: 0, targetSup: 0,
+    details: [
+      '【入場資格】累積滿 $6,000 旅行現金',
+      '【1. 個人分】每完成 500 個人分 = $50 旅行現金',
+      '【2. RO 提升】以基準起算，每提升 50 RO = $150 旅行現金',
+      '【3. 頭線會員】首次完成 250 分 = 每位 $50 旅行現金',
+      '【4. 領班獎賞】頭三代非卓越組新升領班 = 每位 $100 旅行現金',
+      '📌 旅行現金不設上限，只限團隊旅行使用，不可兌換現金'
+    ]
+  },
   { 
     id: 1, name: '🌴 BZ 閒情浪漫遊 - 沖繩', date: '2025/12/1 ~ 2026/9/30', 
     startMonth: '2025-12', endMonth: '2026-09',
@@ -149,7 +168,6 @@ const loadCloudStats = async () => {
     currentUserEmail.value = session.user.email
   }
 
-
   if (currentUserEmail.value) {
     const { data: statsData } = await supabase
       .from('herbalife_stats')
@@ -165,6 +183,11 @@ const loadCloudStats = async () => {
           monthlyStats.value[row.month].pc = row.recruits_pc === 0 || row.recruits_pc === null ? '' : row.recruits_pc // 🟢 新增讀取 PC
           monthlyStats.value[row.month].gold = row.recruits_gold === 0 || row.recruits_gold === null ? '' : row.recruits_gold
           monthlyStats.value[row.month].sup = row.recruits_sup === 0 || row.recruits_sup === null ? '' : row.recruits_sup
+          
+          // 🟢 新增讀取旅行現金專用欄位
+          monthlyStats.value[row.month].ro = row.ro_increase === 0 || row.ro_increase === null ? '' : row.ro_increase
+          monthlyStats.value[row.month].firstLine250 = row.first_line_250 === 0 || row.first_line_250 === null ? '' : row.first_line_250
+          monthlyStats.value[row.month].newSup3Gen = row.new_sup_3gen === 0 || row.new_sup_3gen === null ? '' : row.new_sup_3gen
         }
       })
     }
@@ -245,14 +268,17 @@ const saveMonthToCloud = async (month) => {
   }
   
   const stats = monthlyStats.value[month]
- const payload = {
+  const payload = {
     user_email: currentUserEmail.value, 
     month: month,
     vp: Number(stats.vp) || 0,
     recruits_vip: Number(stats.vip) || 0,
     recruits_pc: Number(stats.pc) || 0, // 🟢 新增寫入 PC
     recruits_gold: Number(stats.gold) || 0,
-    recruits_sup: Number(stats.sup) || 0
+    recruits_sup: Number(stats.sup) || 0,
+    ro_increase: Number(stats.ro) || 0,                 // 🟢 新增寫入 RO
+    first_line_250: Number(stats.firstLine250) || 0,    // 🟢 新增寫入 頭線首次250分
+    new_sup_3gen: Number(stats.newSup3Gen) || 0         // 🟢 新增寫入 頭三代新升領班
   }
 
   const { error } = await supabase.from('herbalife_stats').upsert(payload, { onConflict: 'user_email,month' }) 
@@ -334,6 +360,7 @@ const isMonthInRange = (monthStr, startStr, endStr) => {
 const promoStatus = computed(() => {
   return promos.value.map(promo => {
     let calculatedVp = 0, calculatedVip = 0, calculatedPc = 0, calculatedGold = 0, calculatedSup = 0
+    let calculatedRo = 0, calculatedFirstLine250 = 0, calculatedNewSup3Gen = 0
     let totalDoubleBonus = 0 
     let specialStatusText = null 
 
@@ -347,11 +374,16 @@ const promoStatus = computed(() => {
           totalDoubleBonus += extraBonus
         }
         
-       calculatedVp += monthVp
+        calculatedVp += monthVp
         calculatedVip += Number(stats.vip) || 0
         calculatedPc += Number(stats.pc) || 0 // 🟢 加總 PC
         calculatedGold += Number(stats.gold) || 0
         calculatedSup += Number(stats.sup) || 0
+        
+        // 🟢 加總旅行現金專屬資料
+        calculatedRo += Number(stats.ro) || 0
+        calculatedFirstLine250 += Number(stats.firstLine250) || 0
+        calculatedNewSup3Gen += Number(stats.newSup3Gen) || 0
       }
     }
 
@@ -369,7 +401,28 @@ const promoStatus = computed(() => {
     
     let progressPercent = 0
 
-    if (promo.id === 5) {
+    // 🟢 處理旅行現金 Promotion 結算邏輯
+    if (promo.id === 6) {
+      let totalVpCash = Math.floor(calculatedVp / 500) * 50
+      let totalRoCash = Math.floor(calculatedRo / 50) * 150
+      let totalFirstLineCash = calculatedFirstLine250 * 50
+      let totalNewSupCash = calculatedNewSup3Gen * 100
+
+      let totalTravelCash = totalVpCash + totalRoCash + totalFirstLineCash + totalNewSupCash
+      
+      isQualified = totalTravelCash >= promo.targetTravelCash
+      progressPercent = Math.min(100, (totalTravelCash / promo.targetTravelCash) * 100)
+
+      if (isQualified) {
+        specialStatusText = `🎉 恭喜！已累積 $${totalTravelCash.toLocaleString()} 旅行現金，成功獲得團隊旅行入場資格！`
+      } else {
+        specialStatusText = `⚠️ 目前累積: $${totalTravelCash.toLocaleString()} / $${promo.targetTravelCash.toLocaleString()} 旅行現金 (尚差 $${(promo.targetTravelCash - totalTravelCash).toLocaleString()})`
+      }
+      
+      // 將計算好的現金存入物件以便畫面顯示
+      promo.totalTravelCash = totalTravelCash
+    }
+    else if (promo.id === 5) {
       let aprVp = Number(monthlyStats.value['2026-04']?.vp) || 0
       let mayVp = Number(monthlyStats.value['2026-05']?.vp) || 0
       
@@ -579,8 +632,8 @@ const promoStatus = computed(() => {
     // 🟢 新增：智能計算剩餘月份與平均每月需求 VP
     let avgVpNeeded = 0
     let monthsLeft = 0
-    // 只針對有 VP 目標的活動計算 (排除 10個VIP 或 新加坡定額)
-    if (promo.id !== 4 && promo.id !== 5) {
+    // 只針對有 VP 目標的活動計算 (排除 10個VIP, 新加坡定額, 旅行現金)
+    if (promo.id !== 4 && promo.id !== 5 && promo.id !== 6) {
         const today = new Date()
         const currY = today.getFullYear()
         const currM = today.getMonth() + 1
@@ -609,7 +662,7 @@ const promoStatus = computed(() => {
         }
     }
 
-   return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText, avgVpNeeded, monthsLeft }
+   return { ...promo, calculatedVp, calculatedVip, calculatedPc, calculatedGold, calculatedSup, calculatedRo, calculatedFirstLine250, calculatedNewSup3Gen, vpShort, vipShort, pcShort, goldShort, supShort, isQualified, progressPercent, totalDoubleBonus, specialStatusText, avgVpNeeded, monthsLeft }
   })
 })
 
@@ -714,6 +767,21 @@ function exportToExcel() {
             <label>領班</label>
             <input type="number" v-model="monthlyStats[month].sup" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
           </div>
+          
+          <div style="border-top: 1px dashed #475569; margin: 8px 0;"></div>
+          
+          <div class="m-inp-group mt-2" title="輸入該月累積的 RO 提升數值">
+            <label style="color: #fcd34d;">RO提升</label>
+            <input type="number" v-model="monthlyStats[month].ro" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+          </div>
+          <div class="m-inp-group mt-2" title="輸入該月有多少位頭線首次完成 250分">
+            <label style="color: #fcd34d; font-size: 9px;">頭線250</label>
+            <input type="number" v-model="monthlyStats[month].firstLine250" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+          </div>
+          <div class="m-inp-group mt-2" title="輸入該月頭三代內新增的非卓越組新升領班人數">
+            <label style="color: #fcd34d; font-size: 9px;">三代新領</label>
+            <input type="number" v-model="monthlyStats[month].newSup3Gen" @change="saveMonthToCloud(month)" class="m-inp" placeholder="0">
+          </div>
         </div>
       </div>
     </div>
@@ -730,7 +798,7 @@ function exportToExcel() {
               
               <div class="img-actions">
                <button class="btn-view-img" @click="openLightbox(p, 0)">🔍 圖1</button>
-<button v-if="p.customImages[1]" class="btn-view-img" @click="openLightbox(p, 1)">🔍 圖2</button>
+                <button v-if="p.customImages[1]" class="btn-view-img" @click="openLightbox(p, 1)">🔍 圖2</button>
                 
                 <template v-if="isAdmin">
                   <input type="file" :id="'img-up-0-'+p.id" accept="image/*" style="display: none;" @change="e => handleImageUpload(e, p, 0)">
@@ -763,16 +831,25 @@ function exportToExcel() {
           <div class="p-calculated-result">
             <div class="cr-title">💡 該考核區間，系統為您結算：</div>
             <div class="cr-value-wrap">
-              <div v-if="p.targetVp > 0 || p.calculatedVp > 0" class="cr-stat">
-                <span class="cr-num">{{ p.calculatedVp.toLocaleString() }}</span>
-                <span class="cr-lbl">VP</span>
-                <div v-if="p.totalDoubleBonus > 0" class="double-tag">⚡️ 已含雙倍加乘 <br>(+{{ p.totalDoubleBonus.toLocaleString() }} VP)</div>
-              </div>
-              
-              <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP</span></div>
-              <div v-if="p.targetPc > 0 || p.calculatedPc > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedPc }}</span><span class="cr-lbl">PC</span></div>
-              <div v-if="p.targetGold > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedGold }}</span><span class="cr-lbl">金級</span></div>
-              <div v-if="p.targetSup > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedSup }}</span><span class="cr-lbl">領班</span></div>
+              <!-- 🟢 針對旅行現金推廣顯示特定的數值 -->
+              <template v-if="p.id === 6">
+                <div class="cr-stat">
+                  <span class="cr-num" style="color: #f59e0b;">${{ p.totalTravelCash ? p.totalTravelCash.toLocaleString() : 0 }}</span>
+                  <span class="cr-lbl">累積旅行現金</span>
+                </div>
+              </template>
+              <template v-else>
+                <div v-if="p.targetVp > 0 || p.calculatedVp > 0" class="cr-stat">
+                  <span class="cr-num">{{ p.calculatedVp.toLocaleString() }}</span>
+                  <span class="cr-lbl">VP</span>
+                  <div v-if="p.totalDoubleBonus > 0" class="double-tag">⚡️ 已含雙倍加乘 <br>(+{{ p.totalDoubleBonus.toLocaleString() }} VP)</div>
+                </div>
+                
+                <div v-if="p.targetVip > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedVip }}</span><span class="cr-lbl">VIP</span></div>
+                <div v-if="p.targetPc > 0 || p.calculatedPc > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedPc }}</span><span class="cr-lbl">PC</span></div>
+                <div v-if="p.targetGold > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedGold }}</span><span class="cr-lbl">金級</span></div>
+                <div v-if="p.targetSup > 0" class="cr-stat"><span class="cr-num">{{ p.calculatedSup }}</span><span class="cr-lbl">領班</span></div>
+              </template>
             </div>
           </div>
 
