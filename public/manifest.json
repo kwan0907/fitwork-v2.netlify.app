@@ -1,6 +1,6 @@
 {
-  "name": "FITWORK PRO",
-  "short_name": "FITWORK PRO",
+  "name": "BZ記錄器",
+  "short_name": "BZ記錄器",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
