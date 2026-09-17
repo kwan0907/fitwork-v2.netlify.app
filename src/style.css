@@ -48,3 +48,146 @@ body {
 
 .page { padding: 20px 16px; max-width: 800px; margin: 0 auto; }
 .page-title { font-size: 28px; font-weight: 900; margin-bottom: 20px; letter-spacing: -0.5px; }
+
+/* 4. Mobile/PWA shell hardening
+   防止 iPhone 上整個介面被子元素撐闊，同時使用 dynamic viewport height。 */
+html,
+body,
+#app {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+#app {
+  position: relative;
+}
+
+#app-main {
+  width: 100%;
+  max-width: 100vw;
+  min-width: 0;
+  height: 100dvh !important;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+#app-main > .header {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  padding-left: max(12px, env(safe-area-inset-left)) !important;
+  padding-right: max(12px, env(safe-area-inset-right)) !important;
+}
+
+#app-main > .header > div {
+  min-width: 0;
+}
+
+#app-main > .header > div:last-child {
+  flex-shrink: 1;
+  justify-content: flex-end;
+}
+
+#app-main > .content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+#app-main > .content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#app-main .page {
+  width: 100%;
+  max-width: 800px;
+  min-width: 0;
+}
+
+#app-main > .nav {
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 100vw;
+  padding-left: max(2px, env(safe-area-inset-left));
+  padding-right: max(2px, env(safe-area-inset-right));
+}
+
+.login-screen {
+  width: 100%;
+  min-height: 100dvh;
+  height: 100dvh !important;
+  overflow-x: hidden;
+}
+
+/* 防止媒體/圖表元素本身意外撐開整個頁面；有需要橫向捲動的元件仍可在自己的容器內捲動。 */
+img,
+svg,
+canvas {
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  #app-main > .header {
+    gap: 8px;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  #app-main > .header > div:first-child {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  #app-main > .header > div:first-child span:last-child {
+    font-size: 16px !important;
+    white-space: nowrap;
+  }
+
+  #app-main > .header > div:last-child {
+    gap: 4px !important;
+    flex: 0 1 auto;
+  }
+
+  #app-main .icon-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+  }
+
+  #app-main .user-switch-btn {
+    max-width: 94px;
+    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #app-main > .content {
+    padding-bottom: calc(104px + env(safe-area-inset-bottom)) !important;
+  }
+
+  #app-main > .nav {
+    padding-top: 7px;
+  }
+
+  #app-main .nav-item {
+    min-width: 0;
+    font-size: 9px;
+  }
+
+  #app-main .nav-item span:last-child {
+    white-space: nowrap;
+  }
+
+  .page {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
