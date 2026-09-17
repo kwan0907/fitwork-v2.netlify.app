@@ -16,6 +16,7 @@ import { useMainStore } from './stores/mainStore'
 import { installQuickActions } from './quickActions'
 import { installInitialLoading } from './initialLoading'
 import { installPurchaseImportV2 } from './purchaseImportV2'
+import { installPurchaseImportCompat } from './purchaseImportCompat'
 import { installSubmitGuard } from './submitGuard'
 
 const app = createApp(App)
@@ -27,5 +28,6 @@ app.mount('#app')
 const store = useMainStore(pinia)
 installQuickActions(store)
 installInitialLoading(store)
+installPurchaseImportCompat()
 installPurchaseImportV2(store)
 installSubmitGuard()
