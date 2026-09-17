@@ -16,11 +16,9 @@ import './styles/client-modal-mobile-fix.css'
 import { useMainStore } from './stores/mainStore'
 import { installQuickActions } from './quickActions'
 import { installInitialLoading } from './initialLoading'
-import { installPurchaseImportV2 } from './purchaseImportV2'
-import { installPurchaseImportCompat } from './purchaseImportCompat'
+import { installPurchaseImportV3 } from './purchaseImportV3'
 import { installSubmitGuard } from './submitGuard'
 import { installClientModalMobileFix } from './clientModalMobileFix'
-import { installPurchaseImportReferralCompat } from './purchaseImportReferralCompat'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -31,8 +29,6 @@ app.mount('#app')
 const store = useMainStore(pinia)
 installQuickActions(store)
 installInitialLoading(store)
-installPurchaseImportCompat()
-installPurchaseImportV2(store)
+installPurchaseImportV3(store)
 installSubmitGuard()
 installClientModalMobileFix()
-installPurchaseImportReferralCompat()
