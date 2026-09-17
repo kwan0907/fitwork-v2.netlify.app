@@ -1,0 +1,215 @@
+/* Clients page mobile workflow polish — visual only. */
+#app-main .search-box {
+  position: relative;
+  overflow: hidden;
+  padding: 14px !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  background: rgba(255,255,255,.94) !important;
+  box-shadow: 0 12px 30px rgba(15,23,42,.07) !important;
+}
+
+#app-main .search-box .inp-clean {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 15px !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 15px !important;
+  background: #f8fafc !important;
+  outline: none;
+  transition: .18s ease;
+}
+#app-main .search-box .inp-clean:focus {
+  background: #fff !important;
+  border-color: #818cf8 !important;
+  box-shadow: 0 0 0 4px rgba(99,102,241,.10);
+}
+
+#app-main .filter-row,
+#app-main .branch-row,
+#app-main .bottom-scroll-row {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+#app-main .filter-row::-webkit-scrollbar,
+#app-main .branch-row::-webkit-scrollbar,
+#app-main .bottom-scroll-row::-webkit-scrollbar { display:none; }
+
+#app-main .search-box .f-btn,
+#app-main .search-box .btn-outline {
+  min-height: 38px;
+  border-radius: 12px !important;
+  white-space: nowrap;
+  transition: transform .12s ease, box-shadow .18s ease, background .18s ease;
+}
+#app-main .search-box .f-btn:active,
+#app-main .search-box .btn-outline:active { transform: scale(.97); }
+#app-main .search-box .f-btn.active {
+  border-color: #c7d2fe !important;
+  background: linear-gradient(180deg,#eef2ff,#f5f3ff) !important;
+  color: #4338ca !important;
+  box-shadow: inset 0 0 0 1px rgba(99,102,241,.06);
+}
+#app-main .search-box .sort-select {
+  min-height: 38px;
+  border-radius: 12px !important;
+  background-color: #f8fafc !important;
+}
+
+#app-main .list-container {
+  display: grid;
+  gap: 10px !important;
+  margin-top: 14px;
+}
+#app-main .client-card {
+  position: relative;
+  margin: 0 !important;
+  padding: 14px !important;
+  border: 1px solid rgba(226,232,240,.9) !important;
+  border-radius: 20px !important;
+  background: rgba(255,255,255,.97) !important;
+  box-shadow: 0 8px 22px rgba(15,23,42,.055) !important;
+  transition: transform .13s ease, box-shadow .18s ease, border-color .18s ease;
+  overflow: hidden;
+}
+#app-main .client-card::before {
+  content:"";
+  position:absolute;
+  left:0; top:14px; bottom:14px;
+  width:3px;
+  border-radius:0 3px 3px 0;
+  background:linear-gradient(180deg,#6366f1,#8b5cf6);
+  opacity:.45;
+}
+#app-main .client-card:active {
+  transform: scale(.985);
+  border-color:#c7d2fe !important;
+  box-shadow:0 5px 14px rgba(15,23,42,.07) !important;
+}
+#app-main .client-card .c-avatar {
+  flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1px rgba(99,102,241,.08);
+}
+#app-main .client-card .c-main { min-width:0; }
+#app-main .client-card .c-name { letter-spacing:-.2px; }
+#app-main .client-card .c-meta { line-height:1.55; }
+#app-main .client-card .c-side { flex:0 0 auto; }
+#app-main .client-card .wts-btn {
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:3px 8px !important;
+  border-radius:9px !important;
+  text-decoration:none;
+}
+#app-main .client-card .pkg-tag,
+#app-main .client-card .trial-time-tag,
+#app-main .client-card .badge-vip,
+#app-main .client-card .badge-run { border-radius:9px !important; }
+
+#app-main .main-fab {
+  right: max(18px, env(safe-area-inset-right)) !important;
+  bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+  width: 56px !important;
+  height: 56px !important;
+  border: 0 !important;
+  border-radius: 18px !important;
+  background: linear-gradient(145deg,#4f46e5,#7c3aed) !important;
+  box-shadow: 0 14px 28px rgba(79,70,229,.30) !important;
+  font-size: 28px !important;
+  transition: transform .12s ease;
+}
+#app-main .main-fab:active { transform:scale(.93); }
+
+#app-main .tab-nav {
+  gap:6px !important;
+  padding:5px !important;
+  border-radius:15px !important;
+  background:#f1f5f9 !important;
+}
+#app-main .tab-nav .tab-btn {
+  min-height:40px;
+  border-radius:11px !important;
+}
+#app-main .tab-nav .tab-btn.active {
+  background:#fff !important;
+  color:#4338ca !important;
+  box-shadow:0 3px 10px rgba(15,23,42,.07);
+}
+#app-main .toggle-group {
+  gap:6px !important;
+  padding:5px !important;
+  border-radius:14px !important;
+  background:#f8fafc !important;
+}
+#app-main .toggle-group .t-btn { border-radius:10px !important; min-height:38px; }
+
+@media (max-width:600px) {
+  #app-main .header-section { margin-bottom:12px !important; }
+  #app-main .header-section .page-title {
+    margin-bottom:2px !important;
+    font-size:23px !important;
+    line-height:1.15;
+  }
+  #app-main .header-section .subtitle { font-size:12px !important; }
+  #app-main .search-box { padding:12px !important; border-radius:20px !important; }
+  #app-main .filter-row,
+  #app-main .branch-row,
+  #app-main .bottom-scroll-row {
+    width:100%;
+    max-width:100%;
+    overflow-x:auto !important;
+    overflow-y:hidden;
+    flex-wrap:nowrap !important;
+    gap:6px !important;
+    padding-bottom:2px;
+  }
+  #app-main .search-box .v-line { flex:0 0 1px; }
+  #app-main .search-box .f-btn,
+  #app-main .search-box .btn-outline { flex:0 0 auto; }
+  #app-main .search-box .sort-select { max-width:180px; }
+  #app-main .client-card {
+    padding:12px 10px 12px 13px !important;
+    border-radius:18px !important;
+    gap:9px !important;
+  }
+  #app-main .client-card .c-avatar {
+    width:40px !important;
+    height:40px !important;
+    min-width:40px !important;
+    font-size:16px !important;
+  }
+  #app-main .client-card .c-name-row {
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:4px;
+  }
+  #app-main .client-card .c-name { font-size:16px !important; }
+  #app-main .client-card .c-meta { font-size:12px !important; }
+  #app-main .client-card .c-packages {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:4px;
+    margin-top:7px !important;
+  }
+  #app-main .client-card .c-side {
+    max-width:72px;
+    text-align:right;
+  }
+  #app-main .client-card .c-expiry,
+  #app-main .client-card .c-gen { white-space:nowrap; }
+  #app-main .scrollable-modal {
+    width:calc(100% - 18px) !important;
+    max-height:calc(100dvh - 26px) !important;
+    border-radius:22px !important;
+  }
+  #app-main .tab-content-area { padding-bottom:max(18px,env(safe-area-inset-bottom)); }
+}
+
+@media (max-width:390px) {
+  #app-main .client-card .c-avatar { display:none; }
+  #app-main .client-card .c-side { max-width:66px; }
+  #app-main .client-card { gap:6px !important; }
+}
