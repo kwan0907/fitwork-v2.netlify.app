@@ -1,0 +1,65 @@
+/* Mobile client modal safety: keep page behind the modal still and keep actions visible. */
+@media (max-width: 600px) {
+  #app-main .modal-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    box-sizing: border-box !important;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    z-index: 2147483000 !important;
+  }
+
+  #app-main .modal-overlay .scrollable-modal {
+    width: 100% !important;
+    max-width: 480px !important;
+    height: calc(100dvh - 16px - env(safe-area-inset-bottom)) !important;
+    max-height: calc(100dvh - 16px - env(safe-area-inset-bottom)) !important;
+    margin: 0 !important;
+    padding: 16px 14px 0 !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    overscroll-behavior: contain !important;
+    touch-action: pan-y !important;
+  }
+
+  #app-main .modal-overlay .scrollable-modal > .m-header,
+  #app-main .modal-overlay .scrollable-modal > .tab-nav {
+    flex: 0 0 auto !important;
+  }
+
+  #app-main .modal-overlay .scrollable-modal > .tab-content-area {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 22px !important;
+  }
+
+  #app-main .modal-overlay .scrollable-modal > .sticky-action-row {
+    position: relative !important;
+    bottom: auto !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom)) !important;
+    background: #fff !important;
+    border-top: 1px solid #e2e8f0 !important;
+    z-index: 30 !important;
+    box-shadow: 0 -10px 22px rgba(15, 23, 42, .06);
+  }
+
+  #app-main .modal-overlay .scrollable-modal > .sticky-action-row .btn-confirm,
+  #app-main .modal-overlay .scrollable-modal > .sticky-action-row .btn-del {
+    min-height: 50px !important;
+    margin: 0 !important;
+  }
+}
