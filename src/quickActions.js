@@ -28,7 +28,10 @@ export function installQuickActions(store) {
       if (!small) return
       const baseLabel = small.dataset.baseLabel || small.textContent.replace(' · 上次使用', '')
       small.dataset.baseLabel = baseLabel
-      small.textContent = button.dataset.view === view ? `${baseLabel} · 上次使用` : baseLabel
+      const isLast = button.dataset.view === view
+      small.textContent = isLast ? `${baseLabel} · 上次使用` : baseLabel
+      button.classList.toggle('qa-last-used', isLast)
+      button.setAttribute('aria-label', isLast ? `${button.querySelector('b')?.textContent || ''}，上次使用` : (button.querySelector('b')?.textContent || ''))
     })
   }
 
