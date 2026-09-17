@@ -193,7 +193,9 @@ export function installPurchaseImportCompat() {
 
   document.addEventListener('click', onClickCapture, true)
   const observer = new MutationObserver(ensureBulkBranchControl)
-  observer.observe(document.getElementById('app') || document.body, { childList: true, subtree: true })
+  // Purchase import modal is appended to document.body, outside #app.
+  // Observe body so the review toolbar can be enhanced when the modal appears or re-renders.
+  observer.observe(document.body, { childList: true, subtree: true })
   ensureBulkBranchControl()
 
   return () => {
