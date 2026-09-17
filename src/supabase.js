@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 
-// 這是從你原本 index.html 提取的連線資訊
+// Supabase project connection
 const SUPABASE_URL = 'https://ajnunehxtiofcphdyhqn.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzIiwicmVmIjoiYWpudW5laHh0aW9mY3BoZHlocW4iLCJyb2xlIjoiYW5vbiIsImlhdCI6MTc3NjEzOTgzNywiZXhwIjoyMDkxNzE1ODM3fQ.vn74xMzEm-fj7Gzhosxvn5UQWozAf_8LrDHXG3kycT4'
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_97JBmvmO_GHjxnxy7eZqUA_klkZJvSB'
 
 const nativeFetch = globalThis.fetch.bind(globalThis)
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -100,6 +100,6 @@ async function resilientSupabaseFetch(input, init = {}) {
   throw lastError
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: { fetch: resilientSupabaseFetch }
 })
