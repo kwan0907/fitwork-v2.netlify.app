@@ -1,0 +1,50 @@
+/* Retail checkout visibility / touch fix. Presentation only. */
+#app-main .float-bar{
+  background:#0f172a !important;
+  color:#fff !important;
+  min-height:58px !important;
+  z-index:900 !important;
+  pointer-events:auto !important;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+#app-main .float-bar .badge-num{
+  background:#4f46e2 !important;
+  color:#fff !important;
+  border:2px solid rgba(255,255,255,.75);
+}
+#app-main .float-bar .float-total{
+  color:#fff !important;
+  opacity:1 !important;
+}
+#app-main .float-bar .float-btn{
+  display:inline-flex !important;
+  align-items:center;
+  justify-content:center;
+  min-height:38px;
+  padding:0 12px;
+  border-radius:11px;
+  background:#fff !important;
+  color:#0f172a !important;
+  opacity:1 !important;
+  font-weight:900 !important;
+}
+#app-main .float-bar:active{transform:scale(.985)}
+
+/* Keep checkout controls readable even when global button styles change. */
+#app-main .payee-btn,
+#app-main .payee-btn.style-0,
+#app-main .payee-btn.style-1{
+  color:#fff !important;
+  opacity:1 !important;
+  -webkit-text-fill-color:#fff !important;
+}
+#app-main .payee-btn.style-0{background:linear-gradient(135deg,#2563eb,#1d4ed8) !important}
+#app-main .payee-btn.style-1{background:linear-gradient(135deg,#db2777,#be185d) !important}
+#app-main .btn-back{background:#fff !important;color:#475569 !important;opacity:1 !important}
+
+@media(max-width:600px){
+  #app-main .float-bar{left:10px !important;right:10px !important;padding:9px 10px !important;gap:7px}
+  #app-main .float-bar .float-btn{font-size:12px !important;padding:0 10px}
+  #app-main .payee-btn{font-size:15px !important;min-height:50px !important;padding:12px 8px !important}
+}
