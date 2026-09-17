@@ -20,6 +20,7 @@ import { installPurchaseImportV2 } from './purchaseImportV2'
 import { installPurchaseImportCompat } from './purchaseImportCompat'
 import { installSubmitGuard } from './submitGuard'
 import { installClientModalMobileFix } from './clientModalMobileFix'
+import { installPurchaseImportReferralCompat } from './purchaseImportReferralCompat'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -34,3 +35,4 @@ installPurchaseImportCompat()
 installPurchaseImportV2(store)
 installSubmitGuard()
 installClientModalMobileFix()
+installPurchaseImportReferralCompat()
