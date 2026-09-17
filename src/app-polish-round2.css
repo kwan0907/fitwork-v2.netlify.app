@@ -1,0 +1,178 @@
+/* Round 2 visual refinement — presentation only. */
+
+/* Consistent page rhythm across secondary screens */
+#app-main .content .page {
+  padding-top: 16px;
+}
+
+#app-main .page-title,
+#app-main .content .title:not(.dashboard-top-section .title) {
+  color: #1e293b;
+  letter-spacing: -0.7px;
+}
+
+/* Make common cards feel like one design system */
+#app-main .content .card {
+  border-color: rgba(226,232,240,.86);
+  box-shadow: 0 8px 24px rgba(15,23,42,.055);
+}
+
+/* Inputs / selects / textareas: larger touch targets and cleaner focus */
+#app-main .content input,
+#app-main .content select,
+#app-main .content textarea {
+  min-height: 44px;
+  border-radius: 13px;
+}
+
+#app-main .content input:focus,
+#app-main .content select:focus,
+#app-main .content textarea:focus {
+  outline: none;
+  border-color: #818cf8 !important;
+  box-shadow: 0 0 0 4px rgba(99,102,241,.10) !important;
+}
+
+/* Buttons: more tactile, app-like feedback */
+#app-main button,
+#app-main .btn,
+#app-main .btn-primary {
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+
+#app-main button:active,
+#app-main .btn:active,
+#app-main .btn-primary:active {
+  transform: scale(.975);
+}
+
+/* Header actions remain readable on narrow iPhones */
+@media (max-width: 430px) {
+  #app-main > .header {
+    min-height: 56px;
+  }
+  #app-main > .header > div:first-child > span:last-child {
+    font-size: 15px !important;
+  }
+  #app-main .icon-btn {
+    width: 32px !important;
+    height: 32px !important;
+    flex-basis: 32px !important;
+  }
+  #app-main .user-switch-btn {
+    max-width: 78px !important;
+    height: 32px;
+  }
+}
+
+/* Floating nav: improve thumb targets without increasing total width */
+#app-main .nav-item {
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app-main .nav-item::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 12px;
+  opacity: 0;
+  background: rgba(79,70,229,.06);
+  transition: opacity .15s ease;
+  pointer-events: none;
+}
+
+#app-main .nav-item:active::after { opacity: 1; }
+
+/* Modal surfaces: mobile bottom-sheet feeling while keeping existing markup */
+#app-main .modal-overlay {
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+#app-main .edit-modal,
+#app-main .modal-content {
+  border: 1px solid rgba(226,232,240,.8);
+  box-shadow: 0 24px 60px rgba(15,23,42,.18);
+}
+
+/* Lists: clearer row separation and touch feedback */
+#app-main .clickable {
+  transition: background-color .15s ease, transform .15s ease;
+}
+#app-main .clickable:active {
+  background-color: #f8fafc !important;
+}
+
+/* Dashboard polish: section headings become subtle anchors */
+#app-main .section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#app-main .section-title::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, #e2e8f0, transparent);
+  margin-left: 4px;
+}
+
+/* Dashboard cards get more breathing room on small phones */
+@media (max-width: 430px) {
+  #app-main .dashboard-top-section {
+    padding: 16px !important;
+    border-radius: 22px !important;
+  }
+  #app-main .dashboard-top-section .title {
+    font-size: 23px !important;
+  }
+  #app-main .dashboard-top-section .btn-boss-export {
+    font-size: 11px !important;
+    padding: 8px 9px !important;
+  }
+  #app-main .finance-grid .f-card {
+    padding: 12px 5px !important;
+  }
+  #app-main .finance-grid .f-label {
+    font-size: 10px !important;
+  }
+}
+
+/* Loading/disabled states look intentional */
+#app-main button:disabled,
+.login-screen button:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Login screen now matches the polished app shell */
+.login-screen {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(99,102,241,.20), transparent 34%),
+    linear-gradient(180deg, #f8f9ff 0%, #f2f2f7 100%) !important;
+}
+.login-screen .login-card {
+  border: 1px solid rgba(226,232,240,.9);
+  box-shadow: 0 24px 60px rgba(15,23,42,.11) !important;
+  border-radius: 26px !important;
+}
+.login-screen .login-logo {
+  filter: drop-shadow(0 8px 12px rgba(79,70,229,.18));
+}
+.login-screen .login-title {
+  letter-spacing: -1px;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #app-main *, .login-screen * {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
