@@ -1,4 +1,5 @@
 /* Initial authenticated data loading state. Presentation only. */
+.content.app-data-loading>:not(.app-initial-loading){display:none!important}
 .app-initial-loading{min-height:calc(100dvh - 150px);padding:18px 16px 120px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
 .app-loading-head{display:flex;align-items:center;gap:12px;margin:2px 0 6px}
 .app-loading-dot{width:34px;height:34px;border-radius:12px;background:#e2e8f0;flex:0 0 auto}
