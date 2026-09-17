@@ -9,8 +9,10 @@ import './styles/remaining-pages-mobile.css'
 import './styles/quick-actions.css'
 import './styles/retail-checkout-fix.css'
 import './styles/mobile-touch-safety.css'
+import './styles/initial-loading.css'
 import { useMainStore } from './stores/mainStore'
 import { installQuickActions } from './quickActions'
+import { installInitialLoading } from './initialLoading'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -18,4 +20,6 @@ const pinia = createPinia()
 app.use(pinia)
 app.mount('#app')
 
-installQuickActions(useMainStore(pinia))
+const store = useMainStore(pinia)
+installQuickActions(store)
+installInitialLoading(store)
