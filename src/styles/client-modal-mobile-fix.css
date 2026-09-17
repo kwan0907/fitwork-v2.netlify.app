@@ -1,65 +1,104 @@
-/* Mobile client modal safety: keep page behind the modal still and keep actions visible. */
+/* Client add/edit modal v2 — bounded card, internal scroll only. */
 @media (max-width: 600px) {
+  /* Keep the modal inside the phone viewport: 20% top/bottom, 6% left/right. */
   #app-main .modal-overlay {
     position: fixed !important;
     inset: 0 !important;
-    width: 100% !important;
+    width: 100vw !important;
     height: 100dvh !important;
     box-sizing: border-box !important;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) !important;
-    align-items: flex-start !important;
+    padding: 20dvh 6vw !important;
+    display: flex !important;
+    align-items: center !important;
     justify-content: center !important;
     overflow: hidden !important;
     overscroll-behavior: none !important;
     z-index: 2147483000 !important;
   }
 
+  /* Vue modal already has header / tabs / content / actions as separate sections.
+     Treat it as a real card shell instead of a near-full-screen sheet. */
   #app-main .modal-overlay .scrollable-modal {
-    width: 100% !important;
-    max-width: 480px !important;
-    height: calc(100dvh - 16px - env(safe-area-inset-bottom)) !important;
-    max-height: calc(100dvh - 16px - env(safe-area-inset-bottom)) !important;
+    width: 88vw !important;
+    max-width: 88vw !important;
+    height: 60dvh !important;
+    max-height: 60dvh !important;
+    min-height: 0 !important;
     margin: 0 !important;
-    padding: 16px 14px 0 !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
     overflow: hidden !important;
+    border-radius: 24px !important;
+    background: #fff !important;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .28) !important;
     overscroll-behavior: contain !important;
-    touch-action: pan-y !important;
   }
 
-  #app-main .modal-overlay .scrollable-modal > .m-header,
+  /* Fixed card header. */
+  #app-main .modal-overlay .scrollable-modal > .m-header {
+    flex: 0 0 auto !important;
+    margin: 0 !important;
+    padding: 16px 16px 10px !important;
+    background: #fff !important;
+    border-bottom: 1px solid #eef2f7 !important;
+  }
+
+  /* Tabs stay visible; only the form body scrolls. */
   #app-main .modal-overlay .scrollable-modal > .tab-nav {
     flex: 0 0 auto !important;
+    margin: 0 !important;
+    padding: 10px 12px 8px !important;
+    background: #fff !important;
+    border-bottom: 0 !important;
   }
 
+  #app-main .modal-overlay .scrollable-modal > .sticky-toggle {
+    flex: 0 0 auto !important;
+    margin: 0 12px 10px !important;
+  }
+
+  /* This is the only scrolling area inside add/edit client. */
   #app-main .modal-overlay .scrollable-modal > .tab-content-area {
     flex: 1 1 auto !important;
     min-height: 0 !important;
+    margin: 0 !important;
+    padding: 4px 14px 18px !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
     overscroll-behavior: contain !important;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: 22px !important;
+    touch-action: pan-y !important;
   }
 
+  /* Always keep confirm/delete inside the card and above the app navigation. */
   #app-main .modal-overlay .scrollable-modal > .sticky-action-row {
-    position: relative !important;
-    bottom: auto !important;
+    position: static !important;
+    inset: auto !important;
     flex: 0 0 auto !important;
     width: 100% !important;
+    box-sizing: border-box !important;
     margin: 0 !important;
-    padding: 12px 0 calc(12px + env(safe-area-inset-bottom)) !important;
+    padding: 11px 14px calc(11px + env(safe-area-inset-bottom)) !important;
     background: #fff !important;
     border-top: 1px solid #e2e8f0 !important;
     z-index: 30 !important;
-    box-shadow: 0 -10px 22px rgba(15, 23, 42, .06);
+    box-shadow: 0 -8px 20px rgba(15, 23, 42, .05) !important;
   }
 
   #app-main .modal-overlay .scrollable-modal > .sticky-action-row .btn-confirm,
   #app-main .modal-overlay .scrollable-modal > .sticky-action-row .btn-del {
-    min-height: 50px !important;
+    min-height: 48px !important;
     margin: 0 !important;
+  }
+
+  /* Prevent long smart-paste controls from forcing the card wider than 88vw. */
+  #app-main .modal-overlay .scrollable-modal .f-item,
+  #app-main .modal-overlay .scrollable-modal .modern-inp,
+  #app-main .modal-overlay .scrollable-modal .modern-select,
+  #app-main .modal-overlay .scrollable-modal .modern-date {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
 }
