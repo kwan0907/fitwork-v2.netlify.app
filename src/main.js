@@ -6,9 +6,14 @@ import './app-polish-round2.css'
 import './styles/clients-mobile.css'
 import './styles/operations-mobile.css'
 import './styles/remaining-pages-mobile.css'
+import './styles/quick-actions.css'
+import { useMainStore } from './stores/mainStore'
+import { installQuickActions } from './quickActions'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 app.mount('#app')
+
+installQuickActions(useMainStore(pinia))
