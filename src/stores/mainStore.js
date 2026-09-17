@@ -14,6 +14,9 @@ export const useMainStore = defineStore('main', () => {
   const stock = ref({}) 
   const stockExpiry = ref({}) 
   const promotions = ref([]) 
+  const isInitialLoading = ref(true)
+  const isSyncing = ref(false)
+  let syncPromise = null
   
   const settings = ref(JSON.parse(localStorage.getItem('fitwork_settings')) || { payees: [] }) 
   const deviceUsers = ref(JSON.parse(localStorage.getItem('fitwork_deviceUsers')) || [])
@@ -29,77 +32,93 @@ export const useMainStore = defineStore('main', () => {
 
   // --- 同步資料邏輯 (Actions) ---
   async function syncAll() {
-    console.log('🚀 開始從 Supabase 同步資料...')
-    
-    try {
-      // 💡 1. 取得當前登入者的 Email
-      const { data: { session } } = await supabase.auth.getSession()
-      const userEmail = session?.user?.email
+    // App 啟動時 getSession 與 onAuthStateChange 可能幾乎同時觸發。
+    // 共用同一個 Promise，避免重複向 Supabase 抓完全相同的一批資料。
+    if (syncPromise) return syncPromise
 
-      if (!userEmail) {
-        console.error('❌ 尚未登入，停止同步')
-        return
-      }
+    syncPromise = (async () => {
+      console.log('🚀 開始從 Supabase 同步資料...')
+      isSyncing.value = true
+      
+      try {
+        // 💡 1. 取得當前登入者的 Email
+        const { data: { session } } = await supabase.auth.getSession()
+        const userEmail = session?.user?.email
 
-      // 💡 2. 【核心修復：前端隱私雙重鎖】
-      const [c, p, t, s, pr] = await Promise.all([
-        supabase.from('clients').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }),
-        supabase.from('products').select('*').order('name'),
-        // 👇 這裡把 limit(3000) 改成 limit(500)
-        supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(500),
-        supabase.from('stock').select('*').eq('owner_email', userEmail),
-        supabase.from('promotions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }) 
-      ])
+        if (!userEmail) {
+          console.error('❌ 尚未登入，停止同步')
+          return
+        }
 
-      // 1. 處理客戶資料
-      if (c.error) console.error('❌ 客戶抓取失敗:', c.error)
-      else clients.value = c.data || []
+        // 💡 2. 【核心修復：前端隱私雙重鎖】
+        const [c, p, t, s, pr] = await Promise.all([
+          supabase.from('clients').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }),
+          supabase.from('products').select('*').order('name'),
+          // 👇 這裡把 limit(3000) 改成 limit(500)
+          supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(500),
+          supabase.from('stock').select('*').eq('owner_email', userEmail),
+          supabase.from('promotions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }) 
+        ])
 
-      // 2. 處理產品資料
-      if (p.error) console.error('❌ 產品抓取失敗:', p.error)
-      else {
-        products.value = p.data || []
-        console.log('📦 產品同步成功，共:', p.data?.length, '筆')
-      }
+        // 1. 處理客戶資料
+        if (c.error) console.error('❌ 客戶抓取失敗:', c.error)
+        else clients.value = c.data || []
 
-      // 3. 處理交易資料
-      if (t.error) console.error('❌ 交易抓取失敗:', t.error)
-      else {
-        transactions.value = t.data || []
-        // 🚀 如果剛好抓到 500 筆，代表可能還有舊帳未顯示
-        hasMoreTxn.value = (t.data?.length === 500)
-      }
+        // 2. 處理產品資料
+        if (p.error) console.error('❌ 產品抓取失敗:', p.error)
+        else {
+          products.value = p.data || []
+          console.log('📦 產品同步成功，共:', p.data?.length, '筆')
+        }
 
-      // 4. 處理庫存資料
-      if (s.error) console.error('❌ 庫存抓取失敗:', s.error)
-      else {
-        const m = {}
-        const e = {}
-        const stockData = s.data || []
-        stockData.forEach(i => {
-          const key = `${i.prod_name}_${i.branch || '觀塘'}` 
-          m[key] = i.quantity
-          if (i.updated_at) e[key] = i.updated_at
+        // 3. 處理交易資料
+        if (t.error) console.error('❌ 交易抓取失敗:', t.error)
+        else {
+          transactions.value = t.data || []
+          // 🚀 如果剛好抓到 500 筆，代表可能還有舊帳未顯示
+          hasMoreTxn.value = (t.data?.length === 500)
+        }
+
+        // 4. 處理庫存資料
+        if (s.error) console.error('❌ 庫存抓取失敗:', s.error)
+        else {
+          const m = {}
+          const e = {}
+          const stockData = s.data || []
+          stockData.forEach(i => {
+            const key = `${i.prod_name}_${i.branch || '觀塘'}` 
+            m[key] = i.quantity
+            if (i.updated_at) e[key] = i.updated_at
+          })
+          stock.value = m
+          stockExpiry.value = e
+          console.log('📦 庫存映射(Mapping)成功，共:', Object.keys(m).length, '個庫存項目')
+        }
+
+        // 5. 處理宣傳活動資料
+        if (pr.error) console.error('❌ 宣傳活動抓取失敗:', pr.error)
+        else promotions.value = pr.data || []
+
+        console.log('✅ 資料庫全部同步完成', { 
+          當前帳號: userEmail,
+          客戶: clients.value.length, 
+          產品: products.value.length, 
+          交易: transactions.value.length,
+          庫存項目: Object.keys(stock.value).length
         })
-        stock.value = m
-        stockExpiry.value = e
-        console.log('📦 庫存映射(Mapping)成功，共:', Object.keys(m).length, '個庫存項目')
+
+      } catch (err) {
+        console.error('💥 同步過程中發生未知錯誤:', err)
+      } finally {
+        isSyncing.value = false
+        isInitialLoading.value = false
       }
+    })()
 
-      // 5. 處理宣傳活動資料
-      if (pr.error) console.error('❌ 宣傳活動抓取失敗:', pr.error)
-      else promotions.value = pr.data || []
-
-      console.log('✅ 資料庫全部同步完成', { 
-        當前帳號: userEmail,
-        客戶: clients.value.length, 
-        產品: products.value.length, 
-        交易: transactions.value.length,
-        庫存項目: Object.keys(stock.value).length
-      })
-
-    } catch (err) {
-      console.error('💥 同步過程中發生未知錯誤:', err)
+    try {
+      return await syncPromise
+    } finally {
+      syncPromise = null
     }
   }
 
@@ -176,6 +195,7 @@ export const useMainStore = defineStore('main', () => {
     promotions, settings, displayTxnCount, syncAll,
     deviceUsers, currentUser, setDeviceUsers, switchUser,
     pendingRepeatOrder, quickActionClient,
+    isInitialLoading, isSyncing,
     isFetchingMore, hasMoreTxn, loadMoreTransactions, fetchTransactionsByDateRange
   }
 })
