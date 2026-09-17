@@ -1,0 +1,11 @@
+/* Initial authenticated data loading state. Presentation only. */
+.app-initial-loading{min-height:calc(100dvh - 150px);padding:18px 16px 120px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.app-loading-head{display:flex;align-items:center;gap:12px;margin:2px 0 6px}
+.app-loading-dot{width:34px;height:34px;border-radius:12px;background:#e2e8f0;flex:0 0 auto}
+.app-loading-title{display:flex;flex-direction:column;gap:7px;flex:1}
+.app-skeleton{position:relative;overflow:hidden;background:#e9eef5;border-radius:10px}
+.app-skeleton::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.72),transparent);animation:fitwork-skeleton 1.15s ease-in-out infinite}
+.app-sk-title{width:42%;height:17px}.app-sk-sub{width:68%;height:10px}.app-sk-card{height:88px;border-radius:18px}.app-sk-row{height:58px;border-radius:16px}.app-loading-note{font-size:12px;font-weight:700;color:#94a3b8;text-align:center;margin-top:2px}
+@keyframes fitwork-skeleton{100%{transform:translateX(100%)}}
+@media(max-width:430px){.app-initial-loading{padding:14px 12px 110px;gap:11px}.app-sk-card{height:78px}.app-sk-row{height:54px}}
+@media(prefers-reduced-motion:reduce){.app-skeleton::after{animation:none;display:none}}
