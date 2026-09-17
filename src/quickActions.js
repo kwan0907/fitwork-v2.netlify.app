@@ -57,6 +57,18 @@ export function installQuickActions(store) {
     if (!visible) setOpen(false)
   }
 
+  const updatePageSafePosition = () => {
+    // Pages can already own a floating control (for example the purple back-to-top button).
+    // Keep the global quick action in its normal position unless such a control is actually visible.
+    const pageFloatingControl = [...document.querySelectorAll('.scroll-top-btn')].find((button) => {
+      if (button.closest('.qa-wrap')) return false
+      const style = getComputedStyle(button)
+      const rect = button.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    })
+    root.classList.toggle('qa-avoid-page-fab', Boolean(pageFloatingControl))
+  }
+
   main.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -80,6 +92,7 @@ export function installQuickActions(store) {
     setOpen(false)
     updateVisibility()
     requestAnimationFrame(() => {
+      updatePageSafePosition()
       document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' })
     })
   })
@@ -88,10 +101,15 @@ export function installQuickActions(store) {
   store.$subscribe(() => {
     setOpen(false)
     updateVisibility()
+    requestAnimationFrame(updatePageSafePosition)
   })
 
   // Only show inside the authenticated app shell.
   updateVisibility()
-  const observer = new MutationObserver(updateVisibility)
-  observer.observe(document.getElementById('app'), { childList: true, subtree: false })
+  updatePageSafePosition()
+  const observer = new MutationObserver(() => {
+    updateVisibility()
+    updatePageSafePosition()
+  })
+  observer.observe(document.getElementById('app'), { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] })
 }
