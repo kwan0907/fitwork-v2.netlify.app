@@ -5,6 +5,7 @@ import './style.css'
 import './app-polish-round2.css'
 import './styles/clients-mobile.css'
 import './styles/operations-mobile.css'
+import './styles/remaining-pages-mobile.css'
 
 const app = createApp(App)
 const pinia = createPinia()
