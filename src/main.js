@@ -12,12 +12,14 @@ import './styles/mobile-touch-safety.css'
 import './styles/initial-loading.css'
 import './styles/purchase-import.css'
 import './styles/purchase-import-v2.css'
+import './styles/client-modal-mobile-fix.css'
 import { useMainStore } from './stores/mainStore'
 import { installQuickActions } from './quickActions'
 import { installInitialLoading } from './initialLoading'
 import { installPurchaseImportV2 } from './purchaseImportV2'
 import { installPurchaseImportCompat } from './purchaseImportCompat'
 import { installSubmitGuard } from './submitGuard'
+import { installClientModalMobileFix } from './clientModalMobileFix'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -31,3 +33,4 @@ installInitialLoading(store)
 installPurchaseImportCompat()
 installPurchaseImportV2(store)
 installSubmitGuard()
+installClientModalMobileFix()
