@@ -48,6 +48,15 @@ export function installQuickActions(store) {
     symbol.textContent = isOpen ? '×' : '＋'
   }
 
+  const updateVisibility = () => {
+    const authenticated = Boolean(document.querySelector('#app-main'))
+    // Clients already has its own purple + button for adding a customer.
+    // Hide the global + there so two different floating controls never overlap.
+    const visible = authenticated && store.view !== 'clients'
+    root.style.display = visible ? 'flex' : 'none'
+    if (!visible) setOpen(false)
+  }
+
   main.addEventListener('click', (event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -69,20 +78,19 @@ export function installQuickActions(store) {
     markLastAction(view)
     store.view = view
     setOpen(false)
+    updateVisibility()
     requestAnimationFrame(() => {
       document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' })
     })
   })
 
-  // Close automatically if another navigation control changes the active view.
-  store.$subscribe(() => setOpen(false))
+  // Close and recalculate visibility whenever navigation changes.
+  store.$subscribe(() => {
+    setOpen(false)
+    updateVisibility()
+  })
 
   // Only show inside the authenticated app shell.
-  const updateVisibility = () => {
-    const visible = Boolean(document.querySelector('#app-main'))
-    root.style.display = visible ? 'flex' : 'none'
-    if (!visible) setOpen(false)
-  }
   updateVisibility()
   const observer = new MutationObserver(updateVisibility)
   observer.observe(document.getElementById('app'), { childList: true, subtree: false })
