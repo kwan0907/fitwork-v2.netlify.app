@@ -1,9 +1,5 @@
 /* Remaining-page visual polish only: Movement, Promotion, Herbalife promotion, Settings. */
-
-/* Shared page rhythm */
 #app-main .page > .page-title:first-child { letter-spacing:-.45px; line-height:1.15; }
-
-/* Movement checkout */
 #app-main .glass-card { border:1px solid rgba(226,232,240,.9) !important; border-radius:22px !important; background:rgba(255,255,255,.96) !important; box-shadow:0 12px 30px rgba(15,23,42,.065) !important; }
 #app-main .glass-card .form-item label { color:#475569; letter-spacing:.1px; }
 #app-main .branch-tabs { scrollbar-width:none; -webkit-overflow-scrolling:touch; }
@@ -16,23 +12,17 @@
 #app-main .selected-badge { border-radius:11px !important; }
 #app-main .calc-box,#app-main .summary-box { border-radius:17px !important; box-shadow:0 5px 14px rgba(15,23,42,.035); }
 #app-main .payee-btn { min-height:46px; border-radius:13px !important; }
-
-/* Promotion tracker */
 #app-main .promo-card,#app-main .stat-card,#app-main .summary-card,#app-main .promo-summary-card { border-radius:20px !important; border:1px solid rgba(226,232,240,.9) !important; box-shadow:0 9px 24px rgba(15,23,42,.055) !important; }
 #app-main .btn-export { min-height:40px; border-radius:12px !important; }
 #app-main .mod-inp { min-height:42px; border-radius:12px !important; }
 #app-main .stats-grid { gap:9px !important; }
 #app-main .stat-box { border-radius:16px !important; border:1px solid rgba(226,232,240,.8); box-shadow:0 4px 12px rgba(15,23,42,.035); }
-
-/* Herbalife progress / campaign screen */
 #app-main .promo-container,#app-main .campaign-card,#app-main .promo-item { border-radius:21px !important; }
 #app-main .month-tabs,#app-main .year-tabs { scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 #app-main .month-tabs::-webkit-scrollbar,#app-main .year-tabs::-webkit-scrollbar { display:none; }
 #app-main .month-btn,#app-main .year-btn { min-height:40px; white-space:nowrap; }
 #app-main .progress-bar { overflow:hidden; border-radius:999px !important; }
 #app-main .progress-fill { border-radius:999px !important; }
-
-/* Settings */
 #app-main .info-card { position:relative; overflow:hidden; border-left:0 !important; background:linear-gradient(145deg,#eef2ff 0%,#fff 58%,#f5f3ff 100%) !important; }
 #app-main .info-card::before { content:""; position:absolute; width:110px; height:110px; border-radius:50%; right:-38px; top:-45px; background:rgba(99,102,241,.09); }
 #app-main .email-display { position:relative; word-break:break-word; font-size:16px !important; }
@@ -45,7 +35,6 @@
   #app-main .glass-card { padding:14px !important; border-radius:19px !important; }
   #app-main .grid-2 { gap:9px !important; }
   #app-main .payee-buttons { gap:8px !important; }
-
   #app-main .page > div:first-child:has(.page-title) { gap:8px !important; margin-bottom:14px !important; }
   #app-main .page > div:first-child:has(.page-title) .page-title { font-size:22px !important; }
   #app-main .btn-export { padding:8px 10px !important; white-space:nowrap; }
@@ -53,29 +42,30 @@
   #app-main .stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
   #app-main .stat-box { min-width:0; padding:11px !important; }
 
-  /* Awards: make the long monthly control materially shorter on iPhone */
-  #app-main .master-control-card { padding:14px !important; border-radius:19px !important; }
-  #app-main .mc-header { gap:7px !important; margin-bottom:10px !important; padding-bottom:10px !important; flex-wrap:wrap; }
-  #app-main .mc-title { font-size:14px !important; }
-  #app-main .mc-desc { font-size:10px !important; }
-  #app-main .team-toggle-btn,#app-main .btn-sync { font-size:10px !important; padding:5px 8px !important; }
-  #app-main .year-tabs { display:flex; max-width:100%; overflow-x:auto !important; flex-wrap:nowrap !important; gap:6px !important; margin-bottom:10px !important; }
-  #app-main .year-btn { flex:0 0 auto; min-height:34px !important; padding:5px 12px !important; font-size:11px !important; }
-  #app-main .months-scroll-container { gap:8px !important; padding-bottom:5px !important; }
-  #app-main .month-card { width:112px !important; padding:9px !important; border-radius:13px !important; }
-  #app-main .m-title { font-size:12px !important; margin-bottom:7px !important; }
-  #app-main .now-tag { font-size:8px !important; padding:2px 4px !important; }
-  #app-main .m-inp-group { padding:3px 6px !important; border-radius:7px !important; }
-  #app-main .m-inp-group label { width:29px !important; font-size:9px !important; }
-  #app-main .m-inp { font-size:12px !important; }
-  #app-main .mt-2 { margin-top:4px !important; }
-  #app-main .m-calc-row { padding:1px 5px !important; }
-  #app-main .calc-label { font-size:8px !important; }
-  #app-main .calc-val { font-size:10px !important; }
+  /* Awards ultra-compact: target the actual HerbalifePromo scoped class names. */
+  #app-main .master-control-card { padding:10px !important; border-radius:16px !important; }
+  #app-main .mc-header { gap:5px !important; margin-bottom:7px !important; padding-bottom:7px !important; flex-wrap:wrap; }
+  #app-main .mc-header > span:first-child { font-size:17px !important; }
+  #app-main .mc-title { font-size:12px !important; }
+  #app-main .mc-desc { font-size:8px !important; margin-top:1px !important; line-height:1.25 !important; }
+  #app-main .team-toggle-btn,#app-main .btn-sync { font-size:8px !important; padding:4px 6px !important; border-radius:7px !important; }
+  #app-main .year-tabs { display:flex; max-width:100%; overflow-x:auto !important; flex-wrap:nowrap !important; gap:5px !important; margin-bottom:7px !important; padding-bottom:1px !important; }
+  #app-main .year-btn { flex:0 0 auto; min-height:28px !important; padding:3px 9px !important; font-size:9px !important; }
+  #app-main .months-scroll-container { gap:6px !important; padding-bottom:3px !important; }
+  #app-main .month-card { width:98px !important; padding:6px !important; border-radius:11px !important; }
+  #app-main .m-title { font-size:10px !important; margin-bottom:4px !important; line-height:1.1 !important; }
+  #app-main .now-tag { font-size:7px !important; padding:1px 3px !important; margin-left:2px !important; }
+  #app-main .m-inp-group { min-height:25px !important; padding:1px 5px !important; border-radius:6px !important; }
+  #app-main .m-inp-group label,#app-main .m-inp-group label[style] { width:27px !important; font-size:8px !important; line-height:1 !important; }
+  #app-main .m-inp { height:23px !important; min-height:0 !important; padding:0 !important; font-size:10px !important; line-height:23px !important; }
+  #app-main .mt-2 { margin-top:2px !important; }
+  #app-main .month-card > div[style*="border-top"] { margin:4px 0 !important; }
+  #app-main .m-calc-row { min-height:20px !important; padding:0 4px !important; }
+  #app-main .calc-label { font-size:7px !important; line-height:1 !important; }
+  #app-main .calc-val { font-size:9px !important; line-height:1 !important; }
 
   #app-main .month-tabs { display:flex; max-width:100%; overflow-x:auto !important; flex-wrap:nowrap !important; gap:6px !important; }
   #app-main .month-btn { flex:0 0 auto; }
-
   #app-main .page:has(.logout-card) { padding:12px !important; padding-bottom:110px !important; }
   #app-main .page:has(.logout-card) > .page-title { margin:4px 2px 14px !important; font-size:23px !important; }
   #app-main .page:has(.logout-card) > .card { padding:16px !important; margin-bottom:12px !important; border-radius:19px !important; }
@@ -86,5 +76,5 @@
 @media (max-width:390px) {
   #app-main .stats-grid { grid-template-columns:1fr 1fr !important; gap:7px !important; }
   #app-main .payee-buttons { grid-template-columns:1fr !important; }
-  #app-main .month-card { width:106px !important; padding:8px !important; }
+  #app-main .month-card { width:94px !important; padding:5px !important; }
 }
