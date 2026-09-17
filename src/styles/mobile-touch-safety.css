@@ -1,0 +1,33 @@
+/* Mobile interaction safety: presentation only, no business logic. */
+@media (max-width: 600px) {
+  #app-main button,
+  #app-main [role="button"],
+  #app-main select,
+  #app-main input[type="date"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent iOS from zooming the page when focusing form controls. */
+  #app-main input,
+  #app-main select,
+  #app-main textarea {
+    font-size: max(16px, 1em);
+  }
+
+  /* Keep common compact controls finger-friendly without changing large cards/FABs. */
+  #app-main .filter-btn,
+  #app-main .category-btn,
+  #app-main .tab-btn,
+  #app-main .chip,
+  #app-main .btn-back {
+    min-height: 42px;
+  }
+
+  /* Avoid accidental horizontal page drift on iPhone. */
+  #app-main,
+  #app-main .content {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+}
