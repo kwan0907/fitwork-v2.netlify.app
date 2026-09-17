@@ -109,6 +109,21 @@ export function installPurchaseImportCompat() {
     normalizeLegacyBranchLabels()
   }
 
+  const updateBranchSummary = () => {
+    const summary = document.getElementById(BRANCH_SUMMARY_ID)
+    if (!summary) return
+    const counts = getVisibleBranchCounts()
+    const detected = BRANCHES.filter(branch => counts[branch] > 0)
+      .map(branch => `${branch} ${counts[branch]}`)
+      .join('｜') || '未識別'
+    const nextText = forcedBranch
+      ? `✓ 已確認整批：${forcedBranch}｜目前識別：${detected}`
+      : `系統識別：${detected}｜如分地區匯入，可先一鍵確認地區。`
+
+    // MutationObserver 監聽 body；只有內容真的改變時才寫 DOM，避免 summary 自己觸發無限 observer 迴圈。
+    if (summary.textContent !== nextText) summary.textContent = nextText
+  }
+
   const ensureBulkBranchControl = () => {
     const modal = document.getElementById('purchase-import-modal')
     if (!modal) {
@@ -179,22 +194,8 @@ export function installPurchaseImportCompat() {
     updateBranchSummary()
   }
 
-  const updateBranchSummary = () => {
-    const summary = document.getElementById(BRANCH_SUMMARY_ID)
-    if (!summary) return
-    const counts = getVisibleBranchCounts()
-    const detected = BRANCHES.filter(branch => counts[branch] > 0)
-      .map(branch => `${branch} ${counts[branch]}`)
-      .join('｜') || '未識別'
-    summary.textContent = forcedBranch
-      ? `✓ 已確認整批：${forcedBranch}｜目前識別：${detected}`
-      : `系統識別：${detected}｜如分地區匯入，可先一鍵確認地區。`
-  }
-
   document.addEventListener('click', onClickCapture, true)
   const observer = new MutationObserver(ensureBulkBranchControl)
-  // Purchase import modal is appended to document.body, outside #app.
-  // Observe body so the review toolbar can be enhanced when the modal appears or re-renders.
   observer.observe(document.body, { childList: true, subtree: true })
   ensureBulkBranchControl()
 
