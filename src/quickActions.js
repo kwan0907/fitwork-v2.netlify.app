@@ -18,7 +18,24 @@ export function installQuickActions(store) {
   const main = root.querySelector('.qa-main')
   const symbol = main.querySelector('span')
   const closeButton = root.querySelector('.qa-close')
+  const allowedViews = ['clients', 'movement', 'retail', 'accounting']
+  const preferenceKey = 'fitwork:last-quick-action'
   let isOpen = false
+
+  const markLastAction = (view) => {
+    root.querySelectorAll('.qa-action').forEach((button) => {
+      const small = button.querySelector('small')
+      if (!small) return
+      const baseLabel = small.dataset.baseLabel || small.textContent.replace(' · 上次使用', '')
+      small.dataset.baseLabel = baseLabel
+      small.textContent = button.dataset.view === view ? `${baseLabel} · 上次使用` : baseLabel
+    })
+  }
+
+  try {
+    const savedView = localStorage.getItem(preferenceKey)
+    if (allowedViews.includes(savedView)) markLastAction(savedView)
+  } catch {}
 
   const setOpen = (next) => {
     isOpen = Boolean(next)
@@ -46,7 +63,11 @@ export function installQuickActions(store) {
   root.addEventListener('click', (event) => {
     const button = event.target.closest('[data-view]')
     if (!button) return
-    store.view = button.dataset.view
+    const view = button.dataset.view
+    if (!allowedViews.includes(view)) return
+    try { localStorage.setItem(preferenceKey, view) } catch {}
+    markLastAction(view)
+    store.view = view
     setOpen(false)
     requestAnimationFrame(() => {
       document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' })
