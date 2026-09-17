@@ -9,6 +9,7 @@ import './styles/remaining-pages-mobile.css'
 import './styles/quick-actions.css'
 import './styles/retail-checkout-fix.css'
 import './styles/mobile-touch-safety.css'
+import './styles/initial-loading.css'
 import { useMainStore } from './stores/mainStore'
 import { installQuickActions } from './quickActions'
 
