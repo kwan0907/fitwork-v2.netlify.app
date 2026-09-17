@@ -50,33 +50,40 @@ export const useMainStore = defineStore('main', () => {
           return
         }
 
-        // 💡 2. 【核心修復：前端隱私雙重鎖】
-        const [c, p, t, s, pr] = await Promise.all([
+        // 💡 2. 先抓啟動畫面最重要的資料：客戶 + 最近交易。
+        // 這兩組完成後即可解除首次 Skeleton，產品 / 庫存 / 宣傳繼續在後段同步。
+        const [c, t] = await Promise.all([
           supabase.from('clients').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }),
-          supabase.from('products').select('*').order('name'),
-          // 👇 這裡把 limit(3000) 改成 limit(500)
-          supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(500),
-          supabase.from('stock').select('*').eq('owner_email', userEmail),
-          supabase.from('promotions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }) 
+          supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(500)
         ])
 
         // 1. 處理客戶資料
         if (c.error) console.error('❌ 客戶抓取失敗:', c.error)
         else clients.value = c.data || []
 
-        // 2. 處理產品資料
-        if (p.error) console.error('❌ 產品抓取失敗:', p.error)
-        else {
-          products.value = p.data || []
-          console.log('📦 產品同步成功，共:', p.data?.length, '筆')
-        }
-
-        // 3. 處理交易資料
+        // 2. 處理交易資料
         if (t.error) console.error('❌ 交易抓取失敗:', t.error)
         else {
           transactions.value = t.data || []
           // 🚀 如果剛好抓到 500 筆，代表可能還有舊帳未顯示
           hasMoreTxn.value = (t.data?.length === 500)
+        }
+
+        // 核心資料已可用，首次進入 App 不需要再等較次要的資料集。
+        isInitialLoading.value = false
+
+        // 💡 3. 次要資料仍然並行同步，不改任何查詢條件或業務邏輯。
+        const [p, s, pr] = await Promise.all([
+          supabase.from('products').select('*').order('name'),
+          supabase.from('stock').select('*').eq('owner_email', userEmail),
+          supabase.from('promotions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }) 
+        ])
+
+        // 3. 處理產品資料
+        if (p.error) console.error('❌ 產品抓取失敗:', p.error)
+        else {
+          products.value = p.data || []
+          console.log('📦 產品同步成功，共:', p.data?.length, '筆')
         }
 
         // 4. 處理庫存資料
