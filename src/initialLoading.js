@@ -1,8 +1,8 @@
 // Initial authenticated-data loading presentation.
 // Does not cache or persist any customer / transaction data.
 export function installInitialLoading(store) {
-  const content = document.querySelector('#app-main .content')
-  if (!content) return () => {}
+  let content = null
+  let unsubscribe = null
 
   const overlay = document.createElement('div')
   overlay.className = 'app-initial-loading'
@@ -26,8 +26,8 @@ export function installInitialLoading(store) {
   `
 
   const render = () => {
-    const shouldShow = Boolean(store.isInitialLoading)
-    if (shouldShow) {
+    if (!content) return
+    if (store.isInitialLoading) {
       if (!overlay.isConnected) content.prepend(overlay)
       content.classList.add('app-data-loading')
     } else {
@@ -36,11 +36,25 @@ export function installInitialLoading(store) {
     }
   }
 
-  render()
-  const unsubscribe = store.$subscribe(render)
+  const attach = () => {
+    if (content) return true
+    content = document.querySelector('#app-main .content')
+    if (!content) return false
+    render()
+    unsubscribe = store.$subscribe(render)
+    return true
+  }
+
+  const observer = new MutationObserver(() => {
+    if (attach()) observer.disconnect()
+  })
+
+  if (!attach()) observer.observe(document.getElementById('app'), { childList: true, subtree: true })
+
   return () => {
-    unsubscribe()
+    observer.disconnect()
+    if (unsubscribe) unsubscribe()
     overlay.remove()
-    content.classList.remove('app-data-loading')
+    if (content) content.classList.remove('app-data-loading')
   }
 }
