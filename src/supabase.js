@@ -100,6 +100,96 @@ async function resilientSupabaseFetch(input, init = {}) {
   throw lastError
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  },
   global: { fetch: resilientSupabaseFetch }
 })
+
+// Login race guard:
+// App.vue asks getSession() on mount while signInWithPassword() and auth events can complete at nearly the same time.
+// On a slow browser/network, an older getSession(null) response can arrive after SIGNED_IN and incorrectly push the UI back to login,
+// even though Supabase still has a valid unrevoked session. Keep a very short-lived copy of the last verified session to reject that stale null.
+let recentVerifiedSession = null
+let recentVerifiedAt = 0
+const AUTH_GRACE_MS = 15000
+
+const rememberVerifiedSession = (session) => {
+  if (!session?.access_token || !session?.user?.id) return
+  recentVerifiedSession = session
+  recentVerifiedAt = Date.now()
+}
+
+const isRecentVerifiedSession = () => Boolean(
+  recentVerifiedSession && (Date.now() - recentVerifiedAt) <= AUTH_GRACE_MS
+)
+
+const rawGetSession = supabaseClient.auth.getSession.bind(supabaseClient.auth)
+const rawSignInWithPassword = supabaseClient.auth.signInWithPassword.bind(supabaseClient.auth)
+const rawOnAuthStateChange = supabaseClient.auth.onAuthStateChange.bind(supabaseClient.auth)
+
+supabaseClient.auth.signInWithPassword = async (...args) => {
+  const result = await rawSignInWithPassword(...args)
+  if (result?.data?.session) rememberVerifiedSession(result.data.session)
+  return result
+}
+
+supabaseClient.auth.getSession = async (...args) => {
+  const result = await rawGetSession(...args)
+  const session = result?.data?.session
+  if (session) {
+    rememberVerifiedSession(session)
+    return result
+  }
+
+  // Only cover the short login-transition window. This never creates a new session/token;
+  // it simply prevents an older null result from overwriting a newer verified SIGNED_IN state.
+  if (isRecentVerifiedSession()) {
+    return {
+      ...result,
+      data: { ...(result?.data || {}), session: recentVerifiedSession }
+    }
+  }
+  return result
+}
+
+supabaseClient.auth.onAuthStateChange = (callback) => rawOnAuthStateChange((event, session) => {
+  if (session) {
+    rememberVerifiedSession(session)
+    callback(event, session)
+    return
+  }
+
+  if (event === 'SIGNED_OUT' && isRecentVerifiedSession()) {
+    // Validate after the auth event stack finishes. If the session is genuinely gone, forward SIGNED_OUT normally.
+    setTimeout(async () => {
+      try {
+        const verified = await rawGetSession()
+        if (verified?.data?.session) {
+          rememberVerifiedSession(verified.data.session)
+          callback('SIGNED_IN', verified.data.session)
+        } else {
+          recentVerifiedSession = null
+          recentVerifiedAt = 0
+          callback(event, session)
+        }
+      } catch {
+        recentVerifiedSession = null
+        recentVerifiedAt = 0
+        callback(event, session)
+      }
+    }, 150)
+    return
+  }
+
+  if (event === 'SIGNED_OUT') {
+    recentVerifiedSession = null
+    recentVerifiedAt = 0
+  }
+  callback(event, session)
+})
+
+export const supabase = supabaseClient
