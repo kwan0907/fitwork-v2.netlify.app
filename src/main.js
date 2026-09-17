@@ -15,6 +15,7 @@ import { useMainStore } from './stores/mainStore'
 import { installQuickActions } from './quickActions'
 import { installInitialLoading } from './initialLoading'
 import { installPurchaseImport } from './purchaseImport'
+import { installSubmitGuard } from './submitGuard'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -26,3 +27,4 @@ const store = useMainStore(pinia)
 installQuickActions(store)
 installInitialLoading(store)
 installPurchaseImport(store)
+installSubmitGuard()
