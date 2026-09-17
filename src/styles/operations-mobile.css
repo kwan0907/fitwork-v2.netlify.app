@@ -1,0 +1,183 @@
+/* Accounting + Inventory + Retail mobile polish. Presentation only. */
+
+/* Shared dense operational controls */
+#app-main .filter-bar,
+#app-main .top-card {
+  border:0 !important;
+  border-radius:22px !important;
+  background:rgba(255,255,255,.96) !important;
+  box-shadow:0 10px 28px rgba(15,23,42,.065) !important;
+}
+#app-main .tags-row,
+#app-main .filter-row,
+#app-main .branch-tabs { scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+#app-main .tags-row::-webkit-scrollbar,
+#app-main .filter-row::-webkit-scrollbar,
+#app-main .branch-tabs::-webkit-scrollbar { display:none; }
+#app-main .cat-btn,
+#app-main .f-btn,
+#app-main .branch-tabs button { min-height:38px; transition:transform .12s ease,box-shadow .18s ease; }
+#app-main .cat-btn:active,
+#app-main .f-btn:active,
+#app-main .branch-tabs button:active { transform:scale(.97); }
+
+/* Accounting */
+#app-main .sticky-top-bar {
+  border-radius:0 0 20px 20px !important;
+  background:rgba(248,250,252,.94) !important;
+  box-shadow:0 10px 24px rgba(15,23,42,.055) !important;
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+#app-main .sticky-top-bar .page-title { color:#312e81 !important; letter-spacing:-.35px; }
+#app-main .sticky-top-bar .modern-select { border:1px solid #e2e8f0 !important; box-shadow:0 2px 8px rgba(15,23,42,.04); }
+#app-main .date-header {
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:5px 10px;
+  border-radius:9px;
+  background:#eef2ff;
+  color:#4338ca !important;
+  margin:14px 0 7px !important;
+}
+#app-main .txn-item { gap:8px; }
+#app-main .txn-item .t-cat { border-radius:8px !important; }
+#app-main .txn-item .t-client-highlight { border-radius:8px !important; }
+#app-main .txn-item .t-desc-box {
+  border-left-color:#c7d2fe !important;
+  border-radius:0 10px 10px 0;
+  padding-top:3px;
+  padding-bottom:3px;
+}
+#app-main .txn-item .t-amt { letter-spacing:-.4px; }
+#app-main .txn-item > div:last-child .icon-btn {
+  width:34px;
+  height:34px;
+  border-radius:10px !important;
+  display:grid;
+  place-items:center;
+}
+
+/* Inventory */
+#app-main .cost-card {
+  border:0 !important;
+  border-radius:22px !important;
+  background:linear-gradient(135deg,#4338ca 0%,#6366f1 55%,#7c3aed 100%) !important;
+  box-shadow:0 14px 30px rgba(79,70,229,.20) !important;
+  overflow:hidden;
+}
+#app-main .cost-card .cost-icon { background:rgba(255,255,255,.16) !important; }
+#app-main .cost-card .cost-label { color:#e0e7ff !important; }
+#app-main .cost-card .cost-val { color:#fff !important; }
+#app-main .inventory-list { display:grid; gap:9px; }
+#app-main .inv-item {
+  margin:0 !important;
+  border:1px solid #e9edf5 !important;
+  border-radius:19px !important;
+  box-shadow:0 7px 20px rgba(15,23,42,.05) !important;
+}
+#app-main .inv-qty-area {
+  min-width:62px !important;
+  padding:7px 9px;
+  border-radius:13px;
+  background:#f0fdf4;
+}
+#app-main .inv-qty-area:has(.warn) { background:#fef2f2; }
+#app-main .inv-actions { gap:7px !important; }
+#app-main .inv-actions .act-btn { min-height:34px; border-radius:10px !important; }
+
+/* Retail */
+#app-main .top-card { padding:15px !important; }
+#app-main .top-card .selected-badge {
+  border-radius:10px !important;
+  padding:7px 10px !important;
+  background:#ecfdf5 !important;
+  color:#047857 !important;
+}
+#app-main .drop-menu {
+  border:1px solid #e2e8f0 !important;
+  border-radius:15px !important;
+  box-shadow:0 16px 36px rgba(15,23,42,.14) !important;
+  overflow:hidden;
+}
+#app-main .drop-item { min-height:44px; display:flex; align-items:center; justify-content:space-between; }
+#app-main .combo-grid { gap:10px !important; }
+#app-main .combo-card {
+  border:1px solid #e0e7ff !important;
+  border-radius:18px !important;
+  box-shadow:0 7px 20px rgba(79,70,229,.07) !important;
+  transition:transform .12s ease;
+}
+#app-main .combo-card:active { transform:scale(.98); }
+#app-main .p-card {
+  border:1px solid #e9edf5 !important;
+  border-radius:18px !important;
+  box-shadow:0 7px 20px rgba(15,23,42,.05) !important;
+  transition:transform .12s ease,border-color .18s ease;
+}
+#app-main .p-card:active { transform:scale(.985); border-color:#c7d2fe !important; }
+#app-main .p-card .btn-gorgeous {
+  border-radius:12px !important;
+  box-shadow:0 6px 14px rgba(79,70,229,.16);
+}
+
+/* Shared cart / checkout bar */
+#app-main .float-bar {
+  left:12px !important;
+  right:12px !important;
+  bottom:calc(86px + env(safe-area-inset-bottom)) !important;
+  width:auto !important;
+  max-width:760px;
+  margin:0 auto;
+  border-radius:19px !important;
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 16px 34px rgba(15,23,42,.24) !important;
+  overflow:hidden;
+}
+#app-main .float-bar .badge-num { flex:0 0 auto; }
+#app-main .float-bar .float-btn { white-space:nowrap; }
+#app-main .checkout-modal,
+#app-main .action-modal,
+#app-main .confirm-modal { border-radius:22px !important; box-shadow:0 24px 60px rgba(15,23,42,.20) !important; }
+#app-main .cart-items .c-item { border-radius:14px; }
+#app-main .qty-control button { min-width:34px; min-height:34px; border-radius:10px !important; }
+#app-main .payee-btn { min-height:48px; border-radius:14px !important; }
+
+@media (max-width:600px) {
+  #app-main .sticky-top-bar { margin-left:-12px !important; margin-right:-12px !important; padding-left:12px !important; padding-right:12px !important; }
+  #app-main .sticky-top-bar > div:first-child { gap:5px !important; }
+  #app-main .sticky-top-bar .page-title { font-size:17px !important; }
+  #app-main .sticky-top-bar .modern-select { max-width:128px; }
+  #app-main .txn-item { align-items:flex-start !important; padding:11px 0 !important; }
+  #app-main .txn-item > div:last-child { margin-left:4px !important; gap:6px !important; }
+  #app-main .txn-item .t-amt { font-size:16px !important; }
+  #app-main .txn-item .t-header-row { scrollbar-width:none; }
+  #app-main .txn-item .t-header-row::-webkit-scrollbar { display:none; }
+
+  #app-main .branch-tabs { overflow-x:auto !important; }
+  #app-main .branch-tabs button { flex:0 0 auto !important; min-width:105px; }
+  #app-main .tags-row { overflow-x:auto !important; flex-wrap:nowrap !important; }
+  #app-main .cat-btn { flex:0 0 auto; }
+  #app-main .inv-item { padding:12px !important; }
+  #app-main .inv-name { font-size:14px !important; }
+  #app-main .inv-actions { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+  #app-main .inv-actions .act-btn { font-size:10px !important; padding:5px 1px !important; }
+
+  #app-main .top-card .grid-2 { grid-template-columns:1fr 1fr !important; gap:8px !important; }
+  #app-main .top-card .modern-inp,
+  #app-main .top-card .modern-select { min-height:44px; }
+  #app-main .p-card { padding:12px !important; gap:8px; }
+  #app-main .p-card .p-title { font-size:14px !important; line-height:1.25; }
+  #app-main .p-card .new-p { font-size:17px !important; white-space:nowrap; }
+  #app-main .float-bar { padding-left:12px !important; padding-right:10px !important; }
+  #app-main .float-bar > div[style*="margin-left"] { margin-left:8px !important; font-size:12px; }
+  #app-main .float-bar .float-total { font-size:14px !important; }
+  #app-main .float-bar .float-btn { font-size:12px !important; }
+}
+
+@media (max-width:380px) {
+  #app-main .inv-actions { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  #app-main .top-card .grid-2 { grid-template-columns:1fr !important; }
+  #app-main .float-bar > div[style*="margin-left"] { display:none; }
+}
