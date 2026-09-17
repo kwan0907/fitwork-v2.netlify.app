@@ -1,17 +1,32 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue' 
+import { ref, computed, onMounted, watch } from 'vue' 
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
 const store = useMainStore()
 
+const MOVEMENT_BRANCHES = ['全部', '觀塘', '中環', '佐敦']
+const getSavedMovementBranch = () => {
+  try {
+    const saved = localStorage.getItem('fitwork:movement-filter-branch')
+    return MOVEMENT_BRANCHES.includes(saved) ? saved : '全部'
+  } catch {
+    return '全部'
+  }
+}
+
 const searchClient = ref('')
-const filterBranch = ref('全部') // 🟢 新增：預設全部分店
+const filterBranch = ref(getSavedMovementBranch())
 const selectedClient = ref(null)
 const selectedPkg = ref('pkg_10')
 const isNewCustomer = ref(false)
 const isReferral = ref(false)
 const showDropdown = ref(false)
+
+watch(filterBranch, (branch) => {
+  if (!MOVEMENT_BRANCHES.includes(branch)) return
+  try { localStorage.setItem('fitwork:movement-filter-branch', branch) } catch {}
+})
 
 // 🟢 終極防護：鎖死香港時區
 const getLocalHKDate = () => {
@@ -157,222 +172,151 @@ async function handleCheckout(staff) {
   // 🟢 新增：VIP 30點是零售附贈品，即使 $0 也要維持 income 狀態，總覽才會計算舖頭 750！
   if (calc.price === 0 && calc.cost > 0 && selectedPkg.value !== 'pkg_vip30') {
     finalType = 'expense'
-    finalAmount = calc.cost   
+    finalAmount = calc.cost
+    finalProfit = -calc.cost
   }
 
-  const { error: txnError } = await supabase.from('transactions').insert([{
-    type: finalType, 
-    category: categoryStr, 
-    amount: finalAmount, 
-    cost: calc.cost, 
+  const { error } = await supabase.from('transactions').insert([{
+    type: finalType,
+    category: categoryStr,
+    amount: finalAmount,
+    cost: calc.cost,
     profit: finalProfit,
-    branch: branch, 
-    client_id: selectedClient.value.id, 
-    client_name: selectedClient.value.name, 
-    staff: staff, 
-    handled_by: staff,
+    client_name: selectedClient.value.name,
+    staff: staff,
+    branch: branch,
     created_at: fullIsoCreatedAt,
-    own_email: userEmail, 
-    note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`.trim()
+    own_email: userEmail,
+    note: packages[selectedPkg.value].name
   }])
 
-  if (txnError) return alert('結帳失敗: ' + txnError.message)
+  if (error) return alert('結帳失敗: ' + error.message)
 
-  // 🟢 確保免費贈格與積分兌換不會錯誤地給客戶續命 365 天
-  const noExpiryUpdate = ['trial', 'referral_free', 'pkg_1_free', 'redeem_50', 'redeem_100']
-  if (!noExpiryUpdate.includes(selectedPkg.value)) {
-    
-    // 🟢 自動化引擎 1：計算一年後嘅到期日 (手動排版避開時差蟲)
-    const expiryDate = new Date(checkoutDate.value)
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1)
-    const y = expiryDate.getFullYear()
-    const m = String(expiryDate.getMonth() + 1).padStart(2, '0')
-    const d = String(expiryDate.getDate()).padStart(2, '0')
-    const newExpiryDateStr = `${y}-${m}-${d}`
+  if (!['trial', 'referral_free', 'pkg_1_free', 'redeem_50', 'redeem_100'].includes(selectedPkg.value)) {
+    const currentCount = selectedClient.value.pkg_count || 0
+    const purchaseDate = checkoutDate.value
+    let newJoinDate = selectedClient.value.join_date
+    if (!newJoinDate || purchaseDate < newJoinDate) newJoinDate = purchaseDate
 
-    // 🟢 自動化引擎 2：檢查加入日期是否需要「時光倒流」
-    let finalJoinDate = selectedClient.value.join_date
-    const purchaseDateObj = new Date(checkoutDate.value)
-    const currentJoinDateObj = new Date(finalJoinDate || '2100-01-01') // 防呆：如果無日期就當成未來
-    
-    // 如果客底無加入日期，或者今次買卡日期早過原本個加入日期，就直接覆蓋！
-    if (!finalJoinDate || purchaseDateObj < currentJoinDateObj) {
-        finalJoinDate = checkoutDate.value
-    }
+    const expiry = new Date(purchaseDate)
+    expiry.setFullYear(expiry.getFullYear() + 1)
+    const expiryDate = expiry.toISOString().split('T')[0]
 
-    // 🚀 執行客底資料全面自動更新！
-    await supabase.from('clients').update({ 
-      status: 'active', 
-      pkg_count: (selectedClient.value.pkg_count || 0) + 1,
-      join_date: finalJoinDate,        // ✨ 自動對齊第一日
-      expiry_date: newExpiryDateStr    // ✨ 自動續命 365 日
+    await supabase.from('clients').update({
+      status: 'active',
+      pkg_count: currentCount + 1,
+      join_date: newJoinDate,
+      expiry_date: expiryDate
     }).eq('id', selectedClient.value.id)
   }
 
-  // 💡 動態提示：讓結帳成功視窗更明確告訴你這是收入還是支出
-  let alertMsg = `✅ 結帳成功！\n日期: ${checkoutDate.value}\n處理人: ${staff}\n`
-  if (finalType === 'income') {
-     alertMsg += `\n💰 營業額: $${calc.price}\n(淨利潤: $${calc.profit})`
-  } else {
-     alertMsg += `\n🎁 客戶兌換/贈堂 ($0)\n⚠️ 紀錄為成本支出: -$${calc.cost}`
-  }
+  alert(`✅ 結帳成功！\n客戶：${selectedClient.value.name}\n項目：${packages[selectedPkg.value].name}\n實收：$${finalAmount}\n成本：$${calc.cost}\n利潤：$${finalProfit}`)
 
-  alert(alertMsg)
-  
-  selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
-  store.syncAll() 
+  selectedClient.value = null
+  searchClient.value = ''
+  isNewCustomer.value = false
+  isReferral.value = false
+  store.syncAll()
 }
 </script>
 
 <template>
-  <div class="page" style="padding-bottom: 180px;">
-    <h2 class="page-title">運動套票收銀</h2>
+  <div class="page">
+    <h2 class="page-title">🏋️ 運動套票收銀</h2>
 
-    <div class="glass-card">
-      <div class="form-item"><label>1. 選擇套票類型</label>
-        <select v-model="selectedPkg" class="modern-select highlight-sel"><option v-for="(pkg, key) in packages" :key="key" :value="key">{{ pkg.name }}</option></select>
+    <div class="glass-card top-card">
+      <div class="form-item">
+        <label>🎟️ 選擇套票</label>
+        <select v-model="selectedPkg" class="modern-select">
+          <option v-for="(pkg, key) in packages" :key="key" :value="key">{{ pkg.name }}</option>
+        </select>
       </div>
 
-     <div class="form-item" style="margin-top:15px;"><label>2. 搜尋客戶 (必填) <span style="color:#ef4444">*</span></label>
-        
+      <div class="form-item" style="margin-top:15px;">
+        <label>🏢 客戶分店篩選</label>
         <div class="branch-tabs">
-          <button :class="{active: filterBranch === '全部'}" @click="filterBranch = '全部'">🌍 全部</button>
-          <button :class="{active: filterBranch === '觀塘'}" @click="filterBranch = '觀塘'">📍 觀塘</button>
-          <button :class="{active: filterBranch === '中環'}" @click="filterBranch = '中環'">📍 中環</button>
-          <button :class="{active: filterBranch === '佐敦'}" @click="filterBranch = '佐敦'">📍 佐敦</button>
+          <button v-for="b in MOVEMENT_BRANCHES" :key="b" type="button" :class="{ active: filterBranch === b }" @click="filterBranch = b">{{ b }}</button>
         </div>
+      </div>
 
+      <div class="form-item" style="margin-top:15px;">
+        <label>👤 搜尋客戶</label>
         <div class="search-rel">
-          <input class="modern-inp" v-model="searchClient" placeholder="🔍 搜尋客戶姓名或電話..." @focus="showDropdown = true" @input="showDropdown = true">
-          <!-- 🚀 改為只要有打字就顯示 Menu -->
+          <input v-model="searchClient" @focus="showDropdown = true" class="modern-inp" placeholder="輸入姓名或電話...">
           <div v-if="showDropdown && searchClient" class="drop-menu">
-            <div style="padding:8px; text-align:center; font-size:12px; color:#ef4444; background:#f8fafc; border-bottom:1px solid #eee; cursor:pointer;" @click="showDropdown = false">✕ 關閉搜尋</div>
-            
-            <!-- 有結果時顯示客戶列表 -->
-            <div v-if="clientOptions.length > 0">
-              <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
-                <span>{{ c.name }} <span class="sub-text">({{ c.phone }})</span></span>
-                <span style="font-size: 10px; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 800; white-space: nowrap;">
-                  📍 {{ c.branch || '未知分店' }}
-                </span>
-              </div>
+            <div v-for="c in clientOptions" :key="c.id" class="drop-item" @click="selectClient(c)">
+              <span>{{ c.name }} <small>({{ c.phone }})</small></span>
+              <span>{{ c.branch }}</span>
             </div>
-
-            <!-- 🚀 無結果時顯示極速新增按鈕 -->
-            <div v-else style="padding: 15px; text-align: center;">
-              <div style="color: #64748b; font-size: 13px; font-weight: 800; margin-bottom: 10px;">找不到此客戶</div>
-              <button @click="showQuickAddModal = true; showDropdown = false; quickNewClient.name = isNaN(searchClient) ? searchClient : ''; quickNewClient.phone = !isNaN(searchClient) ? searchClient : ''" style="background: #4f46e2; color: white; border: none; padding: 10px 15px; border-radius: 10px; font-weight: 900; width: 100%; cursor: pointer; transition: 0.2s;">
-                ➕ 查無此人，立即新增
-              </button>
-            </div>
+            <div v-if="clientOptions.length === 0" class="drop-item" @click="showQuickAddModal = true">➕ 找不到？極速新增客戶</div>
           </div>
         </div>
-        <div v-if="selectedClient" class="selected-badge">✔ 已選擇: {{ selectedClient.name }}</div>
+        <div v-if="selectedClient" class="selected-badge">✅ 已選：{{ selectedClient.name }}｜{{ selectedClient.branch }}</div>
       </div>
-      
-      <div class="form-item" style="margin-top:15px;">
-        <label>3. 📅 購買日期 (補紀錄請修改)</label>
-        <input type="date" v-model="checkoutDate" class="modern-inp">
-      </div>
-    </div>
 
-    <div class="glass-card" style="background:#f8fafc; padding: 15px 20px;">
-      <div class="toggle-row">
-        <div><div class="t-title">🆕 新客首次買卡優惠</div><div class="t-sub">購買套票自動扣減 $98</div></div>
-        <div class="toggle" :class="{on: isNewCustomer}" @click="isNewCustomer = !isNewCustomer"></div>
-      </div>
-      <div class="divider-dash"></div>
-      <div class="toggle-row">
-        <div><div class="t-title">🤝 轉介紹優惠 / 免費試堂</div><div class="t-sub" style="color:#ef4444;">成本增加 $53 (若是試堂則免費)</div></div>
-        <div class="toggle" :class="{on: isReferral}" @click="isReferral = !isReferral"></div>
-      </div>
-    </div>
-
-    <!-- 🚀 極速新增客戶 Modal -->
-    <div v-if="showQuickAddModal" class="modal-overlay" @click.self="showQuickAddModal = false">
-      <div class="center-modal action-modal" style="max-width: 350px;">
-        <div class="m-header">
-          ⚡ 極速新增客戶
-          <button class="close-x" @click="showQuickAddModal = false">✕</button>
-        </div>
-        
-        <div style="margin-bottom: 15px; font-size: 12px; color: #475569; font-weight: 700; background: #f8fafc; padding: 10px; border-radius: 8px; border-left: 3px solid #4f46e2;">
-          💡 極速通道：加完會自動為你選取這個新客！
-        </div>
-
+      <div class="grid-2" style="margin-top:15px;">
         <div class="form-item">
-          <label>姓名 <span style="color:#ef4444">*</span></label>
-          <input v-model="quickNewClient.name" class="modern-inp" placeholder="請輸入姓名">
+          <label>📅 購買日期</label>
+          <input type="date" v-model="checkoutDate" class="modern-inp">
         </div>
-        
-        <div class="form-item" style="margin-top: 12px;">
-          <label>電話 <span style="color:#ef4444">*</span></label>
-          <input v-model="quickNewClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話">
+        <div class="form-item">
+          <label>💰 計算結果</label>
+          <div class="calc-box">
+            <b>$ {{ exCalc.price }}</b>
+            <small>成本 ${{ exCalc.cost }}｜利潤 ${{ exCalc.profit }}</small>
+          </div>
         </div>
-        
-        <div class="form-item" style="margin-top: 12px;">
-          <label>所屬分店</label>
-          <select v-model="quickNewClient.branch" class="modern-select">
-            <option value="觀塘">觀塘</option>
-            <option value="中環">中環</option>
-            <option value="佐敦">佐敦</option>
-          </select>
-        </div>
+      </div>
 
-        <button class="payee-btn style-0" style="width: 100%; margin-top: 20px;" @click="handleQuickAdd">
-          ✅ 確認新增並選取
-        </button>
+      <div class="grid-2" style="margin-top:15px;">
+        <label class="toggle-card"><input type="checkbox" v-model="isNewCustomer"><span>🆕 新客優惠</span></label>
+        <label class="toggle-card"><input type="checkbox" v-model="isReferral"><span>🤝 轉介紹</span></label>
+      </div>
+
+      <div class="form-item" style="margin-top:15px;">
+        <label>💳 選擇收款人</label>
+        <div class="payee-buttons">
+          <button v-for="(staff, index) in staffList" :key="staff" type="button" class="payee-btn" :class="'style-' + (index % 2)" @click="handleCheckout(staff)">✅ {{ staff }} 收款</button>
+        </div>
       </div>
     </div>
-    <div class="compact-total-display">
-      <div class="t-label">應收總額 (營業額)</div>
-      <div class="t-val">$ {{ exCalc.price }}</div>
-      <div class="p-label">扣除成本後淨利潤: <span style="color:#10b981; font-weight:900;" :class="{'text-red': exCalc.profit < 0}">$ {{ exCalc.profit }}</span></div>
-    </div>
 
-    <div class="payee-buttons" style="margin-top:15px;" v-if="staffList.length > 0">
-      <button v-for="(staff, index) in staffList" :key="staff" class="payee-btn" :class="'style-' + (index % 2)" @click="handleCheckout(staff)">
-        💰 {{ staff }} 結帳
-      </button>
+    <div v-if="showQuickAddModal" class="modal-overlay" @click.self="showQuickAddModal = false">
+      <div class="center-modal action-modal" style="max-width:350px;">
+        <div class="m-header">⚡ 極速新增客戶<button class="close-x" @click="showQuickAddModal = false">✕</button></div>
+        <div class="form-item"><label>姓名 *</label><input v-model="quickNewClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
+        <div class="form-item" style="margin-top:12px;"><label>電話 *</label><input v-model="quickNewClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話"></div>
+        <div class="form-item" style="margin-top:12px;"><label>所屬分店</label><select v-model="quickNewClient.branch" class="modern-select"><option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option></select></div>
+        <button class="payee-btn style-0" style="width:100%;margin-top:18px;" @click="handleQuickAdd">✅ 確認新增並選取</button>
+      </div>
     </div>
-    <div v-else style="text-align:center; color:#ef4444; font-weight:700; margin-top:20px;">請先至設定新增收款人</div>
   </div>
 </template>
 
 <style scoped>
-.page { padding: 20px; background: #f4f7f6; min-height: 100vh; }
-.page-title { font-weight: 900; font-size: 24px; margin-bottom: 20px; color: #1e293b; }
-.glass-card { background: white; padding: 20px; border-radius: 20px; margin-bottom: 15px; border: 1px solid #e2e8f0; }
-.form-item label { display: block; margin-bottom: 6px; font-weight: 800; font-size: 13px; color: #1e293b; }
-.modern-inp, .modern-select { width: 100%; border: 1px solid #cbd5e1; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; font-size: 16px; appearance: none; }
-.modern-inp:focus { border-color: #4f46e2; }
-.highlight-sel { border: 2px solid #4f46e2; color: #4f46e2; font-weight: 900; background: #eef2ff; }
-.search-rel { position: relative; }
-.drop-menu { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 12px; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
-.drop-item { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-weight: 700; color: #333; }
-.drop-item:hover { background: #f8fafc; }
-.sub-text { font-size: 12px; color: #64748b; font-weight: normal; margin-left: 5px; }
-.selected-badge { background: #eef2ff; color: #4f46e2; padding: 8px 12px; border-radius: 10px; margin-top: 10px; font-weight: 800; font-size: 13px; }
-.toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
-.t-title { font-weight: 800; font-size: 14px; color: #1e293b; }
-.t-sub { font-size: 11px; color: #f59e0b; font-weight: 700; margin-top: 2px; }
-.toggle { width: 44px; height: 24px; background: #cbd5e1; border-radius: 99px; position: relative; cursor: pointer; transition: 0.3s; }
-.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-.toggle.on { background: #4f46e2; }
-.toggle.on::after { transform: translateX(20px); }
-.divider-dash { border-bottom: 1px dashed #cbd5e1; margin: 10px 0; }
-.compact-total-display { background: #eef2ff; border: 2px solid #4f46e2; border-radius: 16px; padding: 15px 20px; text-align: center; display: flex; flex-direction: column; gap: 5px; }
-.t-label { color: #64748b; font-weight: 800; font-size: 12px; }
-.t-val { font-size: 32px; font-weight: 900; color: #4f46e2; margin: 0; line-height: 1; }
-.p-label { font-size: 12px; font-weight: 800; color: #475569; }
-.text-red { color: #ef4444 !important; }
-.payee-buttons { display: flex; gap: 10px; }
-.payee-btn { flex: 1; padding: 15px; border-radius: 14px; border: none; font-weight: 900; color: white; font-size: 15px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-.payee-btn:active { transform: scale(0.95); }
-.style-0 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.style-1 { background: linear-gradient(135deg, #ec4899, #db2777); }
-/* 🟢 新增：分店標籤樣式 */
-.branch-tabs { display: flex; gap: 8px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 5px; }
-.branch-tabs button { flex: 1; padding: 8px 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 13px;}
-.branch-tabs button.active { background: #eef2ff; color: #4f46e2; border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(79,70,229,0.15);}
+.page { padding: 10px 15px !important; padding-bottom: calc(120px + env(safe-area-inset-bottom)); background:#f8fafc; min-height:100vh; }
+.page-title { font-weight:900; font-size:22px; color:#1e293b; margin:0 0 10px !important; }
+.glass-card { background:white; padding:20px; border-radius:20px; margin-bottom:20px; border:1px solid #e2e8f0; }
+.form-item label { display:block; margin-bottom:8px; font-weight:800; font-size:13px; color:#1e293b; }
+.modern-inp,.modern-select { width:100%; border:1px solid #cbd5e1; padding:12px; border-radius:10px; font-weight:700; color:#1e293b; outline:none; background:#f8fafc; }
+.branch-tabs { display:flex; gap:8px; overflow-x:auto; }
+.branch-tabs button { border:0; border-radius:999px; padding:9px 14px; background:#e2e8f0; color:#64748b; font-weight:900; white-space:nowrap; }
+.branch-tabs button.active { background:#4f46e2; color:#fff; }
+.search-rel { position:relative; }
+.drop-menu { position:absolute; top:100%; left:0; width:100%; background:#fff; border:1px solid #e2e8f0; border-radius:12px; z-index:100; box-shadow:0 10px 25px rgba(0,0,0,.1); overflow:hidden; }
+.drop-item { padding:14px 15px; border-bottom:1px solid #f1f5f9; cursor:pointer; font-weight:700; display:flex; justify-content:space-between; gap:8px; }
+.selected-badge { background:#eef2ff; color:#4f46e2; padding:10px 14px; border-radius:10px; margin-top:12px; font-weight:800; font-size:14px; }
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.calc-box { min-height:44px; padding:8px 10px; border-radius:10px; background:#eef2ff; color:#312e81; display:flex; flex-direction:column; justify-content:center; }
+.calc-box small { margin-top:2px; color:#64748b; font-weight:700; }
+.toggle-card { display:flex !important; align-items:center; gap:8px; min-height:44px; padding:10px 12px; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
+.payee-buttons { display:flex; gap:10px; }
+.payee-btn { flex:1; min-height:48px; border:0; border-radius:14px; color:#fff; font-weight:900; font-size:16px; }
+.style-0 { background:linear-gradient(135deg,#3b82f6,#2563eb); }
+.style-1 { background:linear-gradient(135deg,#ec4899,#db2777); }
+.modal-overlay { position:fixed; inset:0; z-index:999; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px; }
+.center-modal { width:100%; background:#fff; padding:20px; border-radius:20px; }
+.m-header { display:flex; justify-content:space-between; align-items:center; font-weight:900; font-size:18px; margin-bottom:16px; }
+.close-x { width:32px; height:32px; border:0; border-radius:50%; background:#f1f5f9; color:#475569; font-weight:900; }
+@media(max-width:600px){.glass-card{padding:14px}.grid-2{grid-template-columns:1fr}.payee-buttons{flex-direction:column}}
 </style>
