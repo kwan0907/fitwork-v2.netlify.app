@@ -31,3 +31,63 @@
     overflow-x: clip;
   }
 }
+
+
+/* Movement checkout: keep cards and controls inside the iPhone viewport. */
+@media (max-width: 600px) {
+  #app-main .content {
+    overscroll-behavior-x: none;
+  }
+
+  #app-main .content > .page,
+  #app-main .page > .glass-card,
+  #app-main .page > .compact-total-display,
+  #app-main .page .form-item,
+  #app-main .page .search-rel,
+  #app-main .page .toggle-row {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #app-main .page .modern-inp,
+  #app-main .page .modern-select {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #app-main .page .toggle-row > :first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+    padding-right: 12px;
+  }
+
+  #app-main .page .toggle {
+    flex: 0 0 44px;
+  }
+
+  #app-main .page .branch-tabs {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+
+/* iOS date controls have an intrinsic width that can overflow a flex/card container. */
+@media (max-width: 600px) {
+  #app-main .page input.modern-inp[type="date"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  #app-main .page input.modern-inp[type="date"]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: center;
+  }
+}
