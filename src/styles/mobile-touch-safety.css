@@ -73,3 +73,21 @@
     -webkit-overflow-scrolling: touch;
   }
 }
+
+
+/* iOS date controls have an intrinsic width that can overflow a flex/card container. */
+@media (max-width: 600px) {
+  #app-main .page input.modern-inp[type="date"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  #app-main .page input.modern-inp[type="date"]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: center;
+  }
+}
