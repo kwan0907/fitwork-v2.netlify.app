@@ -59,7 +59,7 @@ export function installQuickActions(store) {
 
   const updatePageSafePosition = () => {
     // Retail / inventory can show a bottom cart bar. Move the global + above it
-    // instead of covering the cart total or checkout action on mobile.
+    // with a clear mobile tap gap instead of covering the cart total or checkout action.
     const pageFloatingControl = [...document.querySelectorAll('.scroll-top-btn, .float-bar')].find((button) => {
       if (button.closest('.qa-wrap')) return false
       const style = getComputedStyle(button)
