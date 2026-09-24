@@ -19,6 +19,7 @@ import { installInitialLoading } from './initialLoading'
 import { installPurchaseImportV3 } from './purchaseImportV3'
 import { installSubmitGuard } from './submitGuard'
 import { installClientModalMobileFix } from './clientModalMobileFix'
+import { installInventoryOrderImport } from './inventoryOrderImport'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -32,3 +33,4 @@ installInitialLoading(store)
 installPurchaseImportV3(store)
 installSubmitGuard()
 installClientModalMobileFix()
+installInventoryOrderImport(store)
