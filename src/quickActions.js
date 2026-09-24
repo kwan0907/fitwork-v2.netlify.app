@@ -58,9 +58,9 @@ export function installQuickActions(store) {
   }
 
   const updatePageSafePosition = () => {
-    // Pages can already own a floating control (for example the purple back-to-top button).
-    // Keep the global quick action in its normal position unless such a control is actually visible.
-    const pageFloatingControl = [...document.querySelectorAll('.scroll-top-btn')].find((button) => {
+    // Retail / inventory can show a bottom cart bar. Move the global + above it
+    // instead of covering the cart total or checkout action on mobile.
+    const pageFloatingControl = [...document.querySelectorAll('.scroll-top-btn, .float-bar')].find((button) => {
       if (button.closest('.qa-wrap')) return false
       const style = getComputedStyle(button)
       const rect = button.getBoundingClientRect()
