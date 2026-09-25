@@ -15,6 +15,56 @@ const sortBy = ref('default')
 const consumeMyGift = ref(false)
 const autoChargeTrial = ref(false) // 🚀 新增：控制是否自動收取試堂費
 const activeTab = ref('basic') // 🚀 新增：用來控制目前顯示哪一個分頁 ('basic', 'source', 'advanced')
+const editingTrialResult = ref('')
+const editingOriginalTrialResult = ref('')
+const TRIAL_RESULT_MARK = '[TRIAL_RESULT]'
+const NORMAL_TRIAL_PROFIT = 44.6
+const MYGIFT_TRIAL_PROFIT = -53.4
+
+function getTrialResultValue(client) {
+  const matches = [...String(client?.remark || '').matchAll(/\[TRIAL_RESULT\]\|([^|\n]+)\|([^|\n]+)/g)]
+  return matches.length ? matches[matches.length - 1][2] : ''
+}
+
+function replaceTrialResultMarker(remark, outcome) {
+  const clean = String(remark || '').replace(/\n?\[TRIAL_RESULT\]\|[^\n]*/g, '').trim()
+  if (!outcome) return clean
+  const line = TRIAL_RESULT_MARK + '|' + new Date().toISOString() + '|' + outcome
+  return [clean, line].filter(Boolean).join('\n')
+}
+
+async function syncTrialProfitForClient(client, outcome) {
+  if (!['no_open_normal', 'no_open_mygift'].includes(outcome)) return
+  const { data: { session } } = await supabase.auth.getSession()
+  const ownerEmail = session?.user?.email
+  if (!ownerEmail) return
+
+  const profit = outcome === 'no_open_mygift' ? MYGIFT_TRIAL_PROFIT : NORMAL_TRIAL_PROFIT
+  const tag = '[TRIAL_PROFIT:' + String(client?.id || 'unknown') + ':' + String(client?.trial_date || '').slice(0,16) + ']'
+  const note = tag + ' ' + (outcome === 'no_open_mygift' ? 'MyGift 試堂未開卡' : '普通試堂未開卡')
+  const existing = store.transactions.find(t => String(t?.note || '').includes(tag))
+
+  if (existing) {
+    const { error } = await supabase.from('transactions').update({ profit, note, client_name: client?.name || '', branch: client?.branch || '' }).eq('id', existing.id)
+    if (!error) Object.assign(existing, { profit, note, client_name: client?.name || '', branch: client?.branch || '' })
+    return
+  }
+
+  const row = {
+    owner_email: ownerEmail,
+    type: 'income',
+    category: '試堂調整',
+    amount: 0,
+    profit,
+    note,
+    client_id: client?.id || null,
+    client_name: client?.name || '',
+    branch: client?.branch || '',
+    created_at: client?.trial_date || new Date().toISOString()
+  }
+  const { data, error } = await supabase.from('transactions').insert(row).select().single()
+  if (!error && data) store.transactions.unshift(data)
+}
 
 const getLocalHKDate = () => {
   return new Intl.DateTimeFormat('en-CA', { 
@@ -419,6 +469,14 @@ async function handleUpdateClient() {
 
   dataToUpdate.trial_date = dataToUpdate.trial_date ? dataToUpdate.trial_date.slice(0, 16) : null
 
+  const trialResultChanged = editingTrialResult.value !== editingOriginalTrialResult.value
+  if (trialResultChanged) {
+    dataToUpdate.remark = replaceTrialResultMarker(dataToUpdate.remark, editingTrialResult.value)
+    if (editingTrialResult.value === 'no_show') dataToUpdate.status = 'absent'
+    else if (editingTrialResult.value === 'no_open_normal' || editingTrialResult.value === 'no_open_mygift') dataToUpdate.status = 'prospect'
+    else if (editingTrialResult.value === 'opened_small' || editingTrialResult.value === 'opened_big') dataToUpdate.status = 'active'
+  }
+
   // 🚀 智能引擎：偵測如果將客戶改為「缺席」，自動將其 98 蚊試堂費的成本改為 0
   if (dataToUpdate.status === 'absent') {
     const targetTxn = store.transactions.find(t => 
@@ -439,7 +497,10 @@ async function handleUpdateClient() {
   const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
   
   if (error) alert('更新失敗: ' + error.message)
-  else { 
+  else {
+    if (trialResultChanged) {
+      await syncTrialProfitForClient(dataToUpdate, editingTrialResult.value)
+    }
     await store.syncAll(); // 🚀 等待同步
     showEditModal.value = false; 
     setTimeout(() => {
@@ -468,8 +529,10 @@ function openEditModal(client) {
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
-  referrerSearch.value = '' 
-  activeTab.value = 'basic' 
+  referrerSearch.value = ''
+  editingTrialResult.value = getTrialResultValue(editingClient.value)
+  editingOriginalTrialResult.value = editingTrialResult.value
+  activeTab.value = 'basic'
   showEditModal.value = true
 }
 
@@ -762,6 +825,21 @@ async function handleImport(e) {
               </select>
             </div>
             
+            <div class="f-item" v-if="editingClient.trial_date" style="margin-top: 12px; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:14px;">
+              <label>📝 試堂結果</label>
+              <select v-model="editingTrialResult" class="modern-select">
+                <option value="">未填結果／保留舊資料判斷</option>
+                <option value="opened_small">✅ 已出席・開小卡（常規A）</option>
+                <option value="opened_big">✅ 已出席・開大卡（常規B）</option>
+                <option value="no_open_normal">👀 已出席・廣告/普通試堂未開卡（+$44.6）</option>
+                <option value="no_open_mygift">🎁 已出席・MyGift 未開卡（-$53.4）</option>
+                <option value="no_show">🚫 沒有出席</option>
+              </select>
+              <div style="font-size:11px;color:#64748b;margin-top:6px;line-height:1.45;">
+                新結果會優先供漏斗統計使用；舊客戶未填結果時仍保留原本購買紀錄／狀態判斷。
+              </div>
+            </div>
+
             <div class="grid-2" style="margin-top: 12px;">
               <div class="f-item"><label>加入日期</label><input type="date" v-model="editingClient.join_date" class="modern-date"></div>
               <div class="f-item"><label>套票到期日</label><input type="date" v-model="editingClient.expiry_date" class="modern-date" placeholder="若無可留空"></div>
