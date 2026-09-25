@@ -55,3 +55,4 @@ installTrialBatchMonthFix()
 installTrialWorkflowFinalFix(store)
 installTrialMonthlyAuditFix(store)
 // deploy-refresh: trial-metrics-accounting-profit
+// deploy-refresh: vercel-retry-20260926
