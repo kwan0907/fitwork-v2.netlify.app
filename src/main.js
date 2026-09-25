@@ -21,6 +21,7 @@ import { installSubmitGuard } from './submitGuard'
 import { installClientModalMobileFix } from './clientModalMobileFix'
 import { installInventoryOrderImportV2 } from './inventoryOrderImportV2'
 import { installInventoryPhotoUploadFix } from './inventoryPhotoUploadFix'
+import { installStocktakeImport } from './stocktakeImport'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -36,3 +37,4 @@ installSubmitGuard()
 installClientModalMobileFix()
 installInventoryOrderImportV2(store)
 installInventoryPhotoUploadFix()
+installStocktakeImport(store)
