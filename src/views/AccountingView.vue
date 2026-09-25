@@ -155,22 +155,23 @@ const getTxnDisplayAmount = (t) => {
 }
 const getTxnAmountClass = (t) => getTxnDisplayAmount(t) >= 0 ? 'g' : 'r'
 const formatTxnAmount = (t) => {
-  const v = Math.round(Math.abs(getTxnDisplayAmount(t)) * 100) / 100
-  return (getTxnDisplayAmount(t) >= 0 ? '+' : '-') + '  let client = t?.client_name || null
+  const value = getTxnDisplayAmount(t)
+  const absValue = Math.round(Math.abs(value) * 100) / 100
+  return (value >= 0 ? '+' : '-') + 'HK$' + absValue
+}
+
+const getDisplayData = (t) => {
+  let client = t?.client_name || null
   let text = t?.note || '無備註'
-  
   const m = text.match(/^【(.*?)】\s*(.*)$/)
   if (m) {
     if (!client) client = m[1]
     text = m[2] || '無其他備註'
-  } 
-  else if (client && text.startsWith(client + ' (')) {
+  } else if (client && text.startsWith(client + ' (')) {
     text = text.replace(client + ' ', '')
   }
-  
   return { client, text }
 }
-
 
 
 // 自動抓取資料庫內所有出現過的分類，並依照「使用頻率」從多到少排序
@@ -1617,8 +1618,8 @@ async function handleTxnImport(e) {
           </div>
           
           <div style="text-align:right;display:flex;align-items:center;gap:10px; margin-left: 10px; flex-shrink: 0;">
-            <div class="t-amt" :class="t.type==='income'?'g':'r'">
-              {{ t.type==='income'?'+':'-' }}${{ Math.round(t.amount * 100) / 100 }}
+            <div class="t-amt" :class="getTxnAmountClass(t)">
+              {{ formatTxnAmount(t) }}
             </div>
             <div style="display:flex; flex-direction:column; gap:5px;">
               <button class="icon-btn" @click="openEditTransaction(t)">✏️</button>
