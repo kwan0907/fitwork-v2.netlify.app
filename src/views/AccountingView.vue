@@ -157,21 +157,21 @@ const getTxnAmountClass = (t) => getTxnDisplayAmount(t) >= 0 ? 'g' : 'r'
 const formatTxnAmount = (t) => {
   const value = getTxnDisplayAmount(t)
   const absValue = Math.round(Math.abs(value) * 100) / 100
-  return (value >= 0 ? '+' : '-') + 'HK$' + absValue
-}
-
-const getDisplayData = (t) => {
-  let client = t?.client_name || null
+  return (value >= 0 ? '+' : '-') + 'HK  let client = t?.client_name || null
   let text = t?.note || '無備註'
+  
   const m = text.match(/^【(.*?)】\s*(.*)$/)
   if (m) {
     if (!client) client = m[1]
     text = m[2] || '無其他備註'
-  } else if (client && text.startsWith(client + ' (')) {
+  } 
+  else if (client && text.startsWith(client + ' (')) {
     text = text.replace(client + ' ', '')
   }
+  
   return { client, text }
 }
+
 
 
 // 自動抓取資料庫內所有出現過的分類，並依照「使用頻率」從多到少排序
@@ -970,9 +970,8 @@ async function handleTxnImport(e) {
 .branch-tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 2px; }
 .branch-tabs button { flex: 1; padding: 6px 8px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 11px;}
 .branch-tabs button.active { background: #eef2ff; color: #4f46e2; border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(79,70,229,0.15);}
-</style> + v
+</style> + absValue
 }
-
 const getDisplayData = (t) => {
   let client = t?.client_name || null
   let text = t?.note || '無備註'
@@ -1618,8 +1617,8 @@ async function handleTxnImport(e) {
           </div>
           
           <div style="text-align:right;display:flex;align-items:center;gap:10px; margin-left: 10px; flex-shrink: 0;">
-            <div class="t-amt" :class="getTxnAmountClass(t)">
-              {{ formatTxnAmount(t) }}
+            <div class="t-amt" :class="t.type==='income'?'g':'r'">
+              {{ t.type==='income'?'+':'-' }}${{ Math.round(t.amount * 100) / 100 }}
             </div>
             <div style="display:flex; flex-direction:column; gap:5px;">
               <button class="icon-btn" @click="openEditTransaction(t)">✏️</button>
