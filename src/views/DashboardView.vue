@@ -9,6 +9,49 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 const store = useMainStore()
 
+
+const TRIAL_RESULT_MARK='[TRIAL_RESULT]'
+const normaliseClientName=(s='')=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ')
+const trialResultEntries=(client)=>{
+  const text=String(client?.remark||'')
+  return [...text.matchAll(/\[TRIAL_RESULT\]\|([^|\n]+)\|([^|\n]+)(?:\|[^\n]*)?/g)]
+    .map(m=>({at:m[1],outcome:m[2]}))
+    .sort((a,b)=>String(a.at).localeCompare(String(b.at)))
+}
+const latestTrialResult=(client)=>{
+  const a=trialResultEntries(client)
+  return a.length?a[a.length-1]:null
+}
+const transactionClientKey=(t)=>{
+  if(t?.client_id) return 'id:'+String(t.client_id)
+  let name=t?.client_name||''
+  if(!name&&t?.note){const m=String(t.note).match(/^【(.*?)】/);if(m)name=m[1]}
+  return name?'name:'+normaliseClientName(name):''
+}
+const clientTransactionMatch=(t,c)=>{
+  if(t?.client_id&&c?.id) return String(t.client_id)===String(c.id)
+  const cn=normaliseClientName(c?.name)
+  if(!cn)return false
+  const tn=normaliseClientName(t?.client_name)
+  if(tn&&tn===cn)return true
+  return String(t?.note||'').toLowerCase().includes(String(c?.name||'').trim().toLowerCase())
+}
+const firstPackageTxnDate=(client)=>{
+  const tx=store.transactions
+    .filter(t=>t?.type==='income'&&(t?.category==='運動套票'||t?.category==='運動')&&clientTransactionMatch(t,client))
+    .sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)))[0]
+  return tx?.created_at||null
+}
+const conversionDateForClient=(client)=>{
+  const opened=trialResultEntries(client).find(x=>String(x.outcome).startsWith('opened_'))
+  if(opened?.at)return opened.at
+  const firstPkg=firstPackageTxnDate(client)
+  if(firstPkg)return firstPkg
+  // 舊資料相容：以前未有 TRIAL_RESULT / client_id 時仍沿用正式會員加入日期。
+  if(String(client?.status||'').toLowerCase()==='active'&&client?.join_date)return client.join_date
+  return null
+}
+
 // 📊 報表專用狀態
 const showReportModal = ref(false)
 const currentM = new Date().toISOString().slice(0, 7)
@@ -29,8 +72,8 @@ const monthlyReport = computed(() => {
   
   // 1. 抓取該區間交易與客戶
   const txns = store.transactions.filter(t => isInRange(t.created_at))
-  const newClientsList = store.clients.filter(c => isInRange(c.join_date) && c.status === 'active')
-  const trialClientsList = store.clients.filter(c => isInRange(c.trial_date) && c.status === 'prospect')
+  const newClientsList = store.clients.filter(c => isInRange(conversionDateForClient(c)))
+  const trialClientsList = store.clients.filter(c => isInRange(c.trial_date))
 
   // 🟢 智能追蹤：遍歷所有歷史紀錄，判斷每筆交易是該客戶的「第幾次購買」
   const clientPurchaseCount = {}
@@ -373,95 +416,82 @@ const financialStats = computed(() => {
 })
 
 const clientStats = computed(() => {
-  let newClientsList = [];
-  const sourceCount = { '廣告': 0, '廣告+朋友介紹': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 };
-  const firstTxnMap = {};
-  store.transactions.forEach(t => {
-    if (t?.type === 'income' && t?.client_id) {
-      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) firstTxnMap[t.client_id] = String(t.created_at); 
-    }
-  });
-  
+  const newClientsList = []
+  const sourceCount = { '廣告': 0, '廣告+朋友介紹': 0, '朋友介紹': 0, '傳單': 0, '朋友': 0, 'IG': 0, '其他': 0 }
+
   store.clients.forEach(c => {
-    if (c?.status !== 'active') return;
-    
-    let isNew = false;
-    let displayDate = '無紀錄';
+    const conversionDate = conversionDateForClient(c)
+    if (!conversionDate || !isDateInRange(conversionDate)) return
+    if (filterBranch.value !== '全部分店' && c?.branch !== filterBranch.value) return
 
-   // 🟢 智能判定：只要「加入日期」或「試堂日期」落喺區間內，就當係新客
-    if (c?.join_date && isDateInRange(c.join_date)) {
-        isNew = true;
-        displayDate = c.join_date;
-    } else if (c?.trial_date && isDateInRange(c.trial_date)) {
-        // 🚀 解決你講嘅問題：就算4月預定，只要5月試堂，都算係5月新客
-        isNew = true;
-        displayDate = c.trial_date.slice(0, 10);
-    } else if (firstTxnMap[c?.id] && isDateInRange(firstTxnMap[c.id])) {
-        isNew = true;
-        displayDate = firstTxnMap[c.id].slice(0, 10);
-    }
-
-    if (isNew) {
-        if (filterBranch.value === '全部分店' || c?.branch === filterBranch.value) {
-            if (!newClientsList.find(x => x?.id === c?.id)) {
-                newClientsList.push({ ...c, display_join_date: displayDate });
-                const src = c?.source || '其他';
-                if (sourceCount[src] !== undefined) sourceCount[src]++;
-                else sourceCount['其他']++;
-            }
-        }
+    if (!newClientsList.find(x => String(x?.id) === String(c?.id))) {
+      newClientsList.push({ ...c, display_join_date: String(conversionDate).slice(0,10) })
+      const src = c?.source || '其他'
+      if (sourceCount[src] !== undefined) sourceCount[src]++
+      else sourceCount['其他']++
     }
   })
-  newClientsList.sort((a,b) => String(b?.display_join_date || '').localeCompare(String(a?.display_join_date || '')));
+
+  newClientsList.sort((a,b) => String(b?.display_join_date || '').localeCompare(String(a?.display_join_date || '')))
   return { total: newClientsList.length, list: newClientsList, sources: sourceCount }
 })
-
 const trialFunnelStats = computed(() => {
-  let bookedList = [], completedList = [], convertedList = [], notConvertedList = [];
-  const todayYMD = getLocalHKDate();
-  const firstTxnMap = {};
-  store.transactions.forEach(t => {
-    if (t?.type === 'income' && t?.client_id) {
-      if (!firstTxnMap[t.client_id] || t.created_at < firstTxnMap[t.client_id]) firstTxnMap[t.client_id] = String(t.created_at);
-    }
-  });
-  
+  const bookedList = [], completedList = [], convertedList = [], notConvertedList = []
+  const todayYMD = getLocalHKDate()
+
   store.clients.forEach(c => {
-    if (filterBranch.value !== '全部分店' && c?.branch !== filterBranch.value) return;
-    
-    let hasTrialInDate = c?.trial_date && isDateInRange(c?.trial_date);
-    let isDirectConvert = false, displayTrialDate = c?.trial_date;
-    
-    if (!hasTrialInDate && c?.status === 'active') {
-        // 🟢 同樣嚴格優先使用「加入日期」判定是否為本區間的直接開卡
-        if (c?.join_date) {
-            isDirectConvert = isDateInRange(c.join_date);
-            if (isDirectConvert) displayTrialDate = c.join_date + 'T12:00:00';
-        } else if (firstTxnMap[c?.id]) {
-            let firstTxnDateStr = firstTxnMap[c.id].slice(0, 19);
-            isDirectConvert = isDateInRange(firstTxnMap[c.id]);
-            if (isDirectConvert) displayTrialDate = firstTxnDateStr;
-        }
+    if (filterBranch.value !== '全部分店' && c?.branch !== filterBranch.value) return
+    if (!c?.trial_date || !isDateInRange(c.trial_date)) return
+
+    const clientData = { ...c, virtual_trial_date: c.trial_date, is_direct: false }
+    bookedList.push(clientData)
+
+    const explicit = latestTrialResult(c)
+    const outcome = explicit?.outcome || ''
+
+    if (outcome === 'no_show') {
+      // 已預約但沒有出席，不放入「已出席」分母。
+      return
     }
-    
-    if (hasTrialInDate || isDirectConvert) {
-      const clientData = { ...c, virtual_trial_date: displayTrialDate, is_direct: isDirectConvert };
-      bookedList.push(clientData);
-      let hasRealTransaction = store.transactions.some(t => (t?.category === '運動套票' || t?.category === '運動' || t?.category === '零售收入') && t?.note && c?.name && t.note.includes(c.name));
-      if (isDirectConvert || c?.status === 'active' || hasRealTransaction || c?.expiry_date) {
-        completedList.push(clientData); convertedList.push(clientData);
-      } else {
-        const tDateStr = String(c?.trial_date || '').slice(0, 10);
-        if (tDateStr <= todayYMD) { completedList.push(clientData); notConvertedList.push(clientData); }
+    if (outcome === 'no_open_normal' || outcome === 'no_open_mygift' || outcome === 'no_open') {
+      completedList.push(clientData)
+      notConvertedList.push(clientData)
+      return
+    }
+    if (outcome.startsWith('opened_')) {
+      completedList.push(clientData)
+      convertedList.push(clientData)
+      return
+    }
+
+    // 舊資料相容：未有明確試堂結果時，才用舊有狀態/購買紀錄判斷。
+    const hasRealPackage = store.transactions.some(t =>
+      (t?.category === '運動套票' || t?.category === '運動') &&
+      t?.type === 'income' && clientTransactionMatch(t,c)
+    )
+    if (String(c?.status||'').toLowerCase() === 'active' || hasRealPackage || c?.expiry_date) {
+      completedList.push(clientData)
+      convertedList.push(clientData)
+    } else {
+      const tDateStr = String(c?.trial_date || '').slice(0,10)
+      if (tDateStr <= todayYMD && String(c?.status||'').toLowerCase() !== 'absent') {
+        completedList.push(clientData)
+        notConvertedList.push(clientData)
       }
     }
-  });
-  
-  const sortByTrial = (a, b) => String(b?.virtual_trial_date || '').localeCompare(String(a?.virtual_trial_date || ''));
-  bookedList.sort(sortByTrial); completedList.sort(sortByTrial); convertedList.sort(sortByTrial); notConvertedList.sort(sortByTrial);
-  return { totalBooked: bookedList.length, completedTrials: completedList.length, converted: convertedList.length, notConverted: notConvertedList.length, conversionRate: completedList.length > 0 ? ((convertedList.length / completedList.length) * 100).toFixed(1) : "0.0", bookedList, completedList, convertedList, notConvertedList };
-})
+  })
 
+  const sortByTrial = (a,b)=>String(b?.virtual_trial_date||'').localeCompare(String(a?.virtual_trial_date||''))
+  bookedList.sort(sortByTrial); completedList.sort(sortByTrial); convertedList.sort(sortByTrial); notConvertedList.sort(sortByTrial)
+  return {
+    totalBooked: bookedList.length,
+    completedTrials: completedList.length,
+    converted: convertedList.length,
+    notConverted: notConvertedList.length,
+    conversionRate: completedList.length > 0 ? ((convertedList.length / completedList.length) * 100).toFixed(1) : '0.0',
+    bookedList, completedList, convertedList, notConvertedList
+  }
+})
 function openFunnelModal(type) {
   funnelViewType.value = type
   showFunnelModal.value = true
@@ -489,16 +519,11 @@ const packageStats = computed(() => {
   
   sortedAllTxns.forEach(t => {
     if (t?.type === 'income' && (t?.category === '運動套票' || t?.category === '運動')) {
-      let cName = t.client_name
-      if (!cName && t.note) {
-        const match = t.note.match(/^【(.*?)】/)
-        if (match) cName = match[1]
-      }
-      if (cName) {
-        cName = cName.trim()
-        if (!clientPurchaseCount[cName]) clientPurchaseCount[cName] = 0
-        clientPurchaseCount[cName]++
-        txnPurchaseOrder[t.id] = clientPurchaseCount[cName]
+      const key = transactionClientKey(t)
+      if (key) {
+        if (!clientPurchaseCount[key]) clientPurchaseCount[key] = 0
+        clientPurchaseCount[key]++
+        txnPurchaseOrder[t.id] = clientPurchaseCount[key]
       }
     }
   })
