@@ -4,111 +4,27 @@ const RESULT='[TRIAL_RESULT]'
 const PROFIT='[TRIAL_PROFIT:'
 const NORMAL_PROFIT=44.6
 const MYGIFT_PROFIT=-53.4
-
+const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]/g,'')
+const esc=(s='')=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))
 const cleanResult=(r='')=>String(r).replace(/\n?\[TRIAL_RESULT\]\|[^\n]*/g,'').trim()
-const resultLine=(outcome)=>`${RESULT}|${new Date().toISOString()}|${outcome}`
+const resultLine=(outcome,when=new Date().toISOString(),extra='')=>`${RESULT}|${when}|${outcome}${extra?'|'+extra:''}`
 const trialKey=(c)=>`${String(c?.id||'unknown')}:${String(c?.trial_date||'').slice(0,16)}`
 const profitTag=(c)=>`${PROFIT}${trialKey(c)}]`
 
-async function sessionEmail(){
-  const {data:{session}}=await supabase.auth.getSession()
-  return session?.user?.email||null
-}
+async function sessionEmail(){const {data:{session}}=await supabase.auth.getSession();return session?.user?.email||null}
+async function writeProfit(store,c,kind){const profit=kind==='mygift'?MYGIFT_PROFIT:NORMAL_PROFIT,tag=profitTag(c);if(store.transactions.some(t=>String(t?.note||'').includes(tag)))return;const owner_email=await sessionEmail();if(!owner_email)throw new Error('尚未登入');const row={owner_email,type:'income',category:'試堂調整',amount:0,profit,note:`${tag} ${kind==='mygift'?'MyGift 試堂未開卡':'普通試堂未開卡'}`,client_id:c?.id||null,client_name:c?.name||'',branch:c?.branch||'',created_at:c?.trial_date||new Date().toISOString()};const {data,error}=await supabase.from('transactions').insert(row).select().single();if(error)throw error;if(data)store.transactions.unshift(data)}
+async function saveNoOpen(store,c,kind,when=null,referrer=''){const outcome=kind==='mygift'?'no_open_mygift':'no_open_normal';const extra=referrer?`referrer=${referrer}`:'';const remark=[cleanResult(c?.remark),resultLine(outcome,when||new Date().toISOString(),extra)].filter(Boolean).join('\n');const patch={remark,status:'prospect'};if(when)patch.trial_date=String(when).slice(0,16);const {error}=await supabase.from('clients').update(patch).eq('id',c.id);if(error)throw error;Object.assign(c,patch);const local=store.clients.find(x=>String(x.id)===String(c.id));if(local)Object.assign(local,patch);await writeProfit(store,c,kind)}
+function currentResultClient(store,root){const text=root?.textContent||'';return store.clients.find(c=>c?.name&&text.includes(c.name))||null}
+function enhanceResultCard(store,root){if(!root||root.dataset.profitEnhanced==='1')return;const old=root.querySelector('[data-a="no_open"]');if(!old)return;root.dataset.profitEnhanced='1';const btn=old.cloneNode(true);btn.textContent='❌ 試堂後冇開卡';old.replaceWith(btn);const choices=document.createElement('div');choices.className='tf-profit-choices';choices.innerHTML='<button data-profit="normal">廣告 / 普通試堂 <b>+$44.6</b></button><button data-profit="mygift">朋友介紹 / MyGift <b>-$53.4</b></button>';btn.insertAdjacentElement('afterend',choices);btn.onclick=()=>choices.classList.toggle('show');choices.querySelectorAll('button').forEach(b=>b.onclick=async()=>{const c=currentResultClient(store,root);if(!c)return alert('找不到這位試堂客戶，請重新開啟待辦。');b.disabled=true;try{await saveNoOpen(store,c,b.dataset.profit);root.remove()}catch(e){b.disabled=false;alert('更新失敗：'+(e?.message||e))}})}
+async function syncLegacyNoOpen(store){for(const c of store.clients){const r=String(c?.remark||'');if(!r.includes(RESULT)||!r.includes('|no_open'))continue;if(r.includes('|no_open_mygift'))await writeProfit(store,c,'mygift').catch(()=>{});else await writeProfit(store,c,'normal').catch(()=>{})}}
 
-async function writeProfit(store,c,kind){
-  const profit=kind==='mygift'?MYGIFT_PROFIT:NORMAL_PROFIT
-  const tag=profitTag(c)
-  if(store.transactions.some(t=>String(t?.note||'').includes(tag))) return
-  const owner_email=await sessionEmail()
-  if(!owner_email) throw new Error('尚未登入')
-  const row={
-    owner_email,
-    type:'income',
-    category:'試堂調整',
-    amount:0,
-    profit,
-    note:`${tag} ${kind==='mygift'?'MyGift 試堂未開卡':'普通試堂未開卡'}`,
-    client_id:c?.id||null,
-    client_name:c?.name||'',
-    branch:c?.branch||'',
-    created_at:c?.trial_date||new Date().toISOString()
-  }
-  const {data,error}=await supabase.from('transactions').insert(row).select().single()
-  if(error) throw error
-  if(data) store.transactions.unshift(data)
-}
+function parseTSV(text){const rows=[];let row=[],cell='',q=false;const s=String(text||'').replace(/\r\n?/g,'\n');for(let i=0;i<s.length;i++){const ch=s[i];if(ch==='"'){if(q&&s[i+1]==='"'){cell+='"';i++}else q=!q}else if(ch==='\t'&&!q){row.push(cell);cell=''}else if(ch==='\n'&&!q){row.push(cell);if(row.some(x=>String(x).trim()))rows.push(row);row=[];cell=''}else cell+=ch}row.push(cell);if(row.some(x=>String(x).trim()))rows.push(row);return rows}
+function parseExcel(text){return parseTSV(text).map(cols=>{while(cols.length<7)cols.push('');const day=parseInt(String(cols[0]||'').trim(),10),branch=String(cols[1]||'').trim(),sheetSource=String(cols[2]||'').trim(),owner=String(cols[3]||'').trim();let name=String(cols[5]||'').replace(/\s*\n\s*/g,' & ').replace(/\s+/g,' ').trim();const item=String(cols[6]||'').replace(/\s+/g,' ').trim();const pm=(name+' '+item).match(/(?:\+?852[\s-]?)?[2-9]\d{3}[\s-]?\d{4}/);const phone=pm?pm[0].replace(/\D/g,'').replace(/^852(?=\d{8}$)/,''):'';name=name.replace(pm?.[0]||'','').replace(/[+·,，]\s*$/,'').trim();const keep=/(廣告)?試堂\s*(未開卡|冇開卡)|試堂後\s*(未開卡|冇開卡)/.test(item);return{day:isNaN(day)?null:day,branch,sheetSource,owner,name,phone,item,keep,kind:'normal',referrer:''}}).filter(r=>r.name||r.item)}
+function bestClient(store,r){const p=norm(r.phone),n=norm(r.name);if(p){const x=store.clients.find(c=>norm(c.phone)===p);if(x)return x}if(n){const exact=store.clients.find(c=>norm(c.name)===n);if(exact)return exact;const near=store.clients.filter(c=>{const cn=norm(c.name);return cn&&n.length>=4&&(cn.includes(n)||n.includes(cn))});if(near.length===1)return near[0]}return null}
+function dateFor(month,day){const [y,m]=String(month).split('-').map(Number);const last=new Date(y,m,0).getDate(),d=Math.max(1,Math.min(last,+day||1));return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}T12:00`}
+async function saveBatchRow(store,r,month){const dt=dateFor(month,r.day),stamp=new Date(dt).toISOString(),found=bestClient(store,r);if(found){await saveNoOpen(store,found,r.kind,stamp,r.referrer);if(r.branch&&found.branch!==r.branch){await supabase.from('clients').update({branch:r.branch}).eq('id',found.id);found.branch=r.branch}return found}const owner_email=await sessionEmail();const remark=resultLine(r.kind==='mygift'?'no_open_mygift':'no_open_normal',stamp,r.referrer?`referrer=${r.referrer}`:'');const row={name:r.name||r.phone,phone:r.phone||null,branch:r.branch||'觀塘',source:r.kind==='mygift'?'朋友介紹 / MyGift':'廣告',status:'prospect',join_date:dt.slice(0,10),trial_date:dt,remark,owner_email};const {data,error}=await supabase.from('clients').insert(row).select().single();if(error)throw error;if(data){store.clients.unshift(data);await writeProfit(store,data,r.kind)}return data}
+function monthOptions(){const now=new Date(),a=[];for(let i=0;i<18;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1),v=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;a.push(`<option value="${v}">${d.getFullYear()}年${d.getMonth()+1}月</option>`)}return a.join('')}
+function refOptions(store,val=''){const names=[...new Set(store.clients.map(c=>String(c.name||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh-HK'));return `<option value="">請選擇介紹人</option>`+names.map(n=>`<option ${n===val?'selected':''}>${esc(n)}</option>`).join('')}
+function installBatchV2(store,root){if(root.dataset.batchV2==='1')return;const tabs=root.querySelector('.tf-tabs'),oldBatch=root.querySelector('.tf-batch');if(!tabs||!oldBatch)return;root.dataset.batchV2='1';const oldTab=[...tabs.querySelectorAll('.tf-tab')].find(x=>x.dataset.tab==='batch');if(!oldTab)return;const tab=oldTab.cloneNode(true);oldTab.replaceWith(tab);const panel=document.createElement('div');panel.className='tf-batch-v2';panel.style.display='none';panel.innerHTML=`<div class="tf-filter-note">直接貼 Excel / Google Sheets。只會抽出「試堂未開卡／試堂冇開卡」。電話可以留空。</div><div class="tf-row" style="margin-top:10px"><div><label>📅 記錄月份</label><select data-v2-month>${monthOptions()}</select></div><div><label>預設來源</label><select data-v2-default><option value="normal">廣告（+$44.6）</option><option value="mygift">朋友介紹 / MyGift（-$53.4）</option></select></div></div><div class="tf-smart" style="margin-top:10px"><label>📋 貼上 Excel / Google Sheets</label><textarea data-v2-text style="min-height:180px"></textarea><button class="tf-save" data-v2-analyse style="margin-top:8px">分析並篩選</button></div><div data-v2-summary class="tf-batch-summary"></div><div data-v2-list class="tf-batch-list"></div><button class="tf-save tf-batch-save" data-v2-save style="display:none">確認並一次過儲存</button>`;oldBatch.insertAdjacentElement('afterend',panel);tab.onclick=()=>{root.querySelectorAll('.tf-tab').forEach(x=>x.classList.toggle('on',x===tab));const single=root.querySelector('.tf-single');if(single)single.classList.add('off');oldBatch.classList.remove('on');oldBatch.style.display='none';panel.style.display='block'};const singleTab=[...tabs.querySelectorAll('.tf-tab')].find(x=>x.dataset.tab==='single');if(singleTab){const orig=singleTab.onclick;singleTab.onclick=e=>{panel.style.display='none';oldBatch.style.display='';if(orig)orig.call(singleTab,e)}};let rows=[];const list=panel.querySelector('[data-v2-list]'),sum=panel.querySelector('[data-v2-summary]'),save=panel.querySelector('[data-v2-save]');panel.querySelector('[data-v2-analyse]').onclick=()=>{rows=parseExcel(panel.querySelector('[data-v2-text]').value).filter(r=>r.keep);const def=panel.querySelector('[data-v2-default]').value;rows.forEach(r=>r.kind=def);sum.textContent=`已篩出 ${rows.length} 位試堂未開卡`;save.style.display=rows.length?'block':'none';list.innerHTML=rows.length?rows.map((r,i)=>{const found=bestClient(store,r);return `<div class="tf-batch-row ${found?'':'bad'}" data-v2-i="${i}"><div class="tf-batch-top"><div><div class="tf-batch-name">${esc(r.name||'(未有姓名)')}</div><div class="tf-batch-meta">${esc(r.day||'?')}日 · ${esc(r.branch||'未填分店')} ${r.phone?'· '+esc(r.phone):''}<br>${esc(r.item)}</div></div><span class="tf-batch-tag">${found?'已配對':'新記錄'}</span></div><select data-v2-branch><option ${r.branch==='觀塘'?'selected':''}>觀塘</option><option ${r.branch==='中環'?'selected':''}>中環</option><option ${r.branch==='佐敦'?'selected':''}>佐敦</option></select><select data-v2-kind><option value="normal">廣告（+$44.6）</option><option value="mygift">朋友介紹 / MyGift（-$53.4）</option></select><div data-v2-ref style="display:none"><select data-v2-referrer>${refOptions(store)}</select></div></div>`}).join(''):'<div class="tf-empty">未找到試堂未開卡記錄</div>';list.querySelectorAll('[data-v2-kind]').forEach((el,i)=>{el.value=rows[i].kind;const toggle=()=>{rows[i].kind=el.value;el.closest('.tf-batch-row').querySelector('[data-v2-ref]').style.display=el.value==='mygift'?'block':'none'};el.onchange=toggle;toggle()})};save.onclick=async()=>{const month=panel.querySelector('[data-v2-month]').value;if(!month)return alert('請選擇記錄月份');for(let i=0;i<rows.length;i++){const el=list.querySelector(`[data-v2-i="${i}"]`);rows[i].branch=el.querySelector('[data-v2-branch]').value;rows[i].kind=el.querySelector('[data-v2-kind]').value;rows[i].referrer=el.querySelector('[data-v2-referrer]')?.value||'';if(rows[i].kind==='mygift'&&!rows[i].referrer){el.classList.add('bad');alert(`請先選擇 ${rows[i].name} 的介紹人`);return}}if(!confirm(`確認補回 ${month} 共 ${rows.length} 筆試堂未開卡？`))return;save.disabled=true;let ok=0,fail=0;for(const r of rows){try{await saveBatchRow(store,r,month);ok++}catch(e){fail++}}save.disabled=false;save.textContent=`完成：成功 ${ok} · 失敗 ${fail}`}}
 
-async function saveNoOpen(store,c,kind){
-  const outcome=kind==='mygift'?'no_open_mygift':'no_open_normal'
-  const remark=[cleanResult(c?.remark),resultLine(outcome)].filter(Boolean).join('\n')
-  const {error}=await supabase.from('clients').update({remark,status:'prospect'}).eq('id',c.id)
-  if(error) throw error
-  c.remark=remark
-  const local=store.clients.find(x=>String(x.id)===String(c.id))
-  if(local){local.remark=remark;local.status='prospect'}
-  await writeProfit(store,c,kind)
-}
-
-function currentResultClient(store,root){
-  const text=root?.textContent||''
-  return store.clients.find(c=>c?.name&&text.includes(c.name))||null
-}
-
-function enhanceResultCard(store,root){
-  if(!root||root.dataset.profitEnhanced==='1') return
-  const old=root.querySelector('[data-a="no_open"]')
-  if(!old) return
-  root.dataset.profitEnhanced='1'
-  const btn=old.cloneNode(true)
-  btn.textContent='❌ 試堂後冇開卡'
-  old.replaceWith(btn)
-  const choices=document.createElement('div')
-  choices.className='tf-profit-choices'
-  choices.innerHTML='<button data-profit="normal">普通試堂 <b>+$44.6</b></button><button data-profit="mygift">MyGift <b>-$53.4</b></button>'
-  btn.insertAdjacentElement('afterend',choices)
-  btn.onclick=()=>choices.classList.toggle('show')
-  choices.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
-    const c=currentResultClient(store,root)
-    if(!c)return alert('找不到這位試堂客戶，請重新開啟待辦。')
-    b.disabled=true
-    try{
-      await saveNoOpen(store,c,b.dataset.profit)
-      root.remove()
-    }catch(e){b.disabled=false;alert('更新失敗：'+(e?.message||e))}
-  })
-}
-
-async function syncLegacyNoOpen(store){
-  for(const c of store.clients){
-    const r=String(c?.remark||'')
-    if(!r.includes(RESULT)||!r.includes('|no_open')) continue
-    if(r.includes('|no_open_mygift')) await writeProfit(store,c,'mygift').catch(()=>{})
-    else await writeProfit(store,c,'normal').catch(()=>{})
-  }
-}
-
-export function installTrialFollowUpEnhance(store){
-  if(document.getElementById('tf-enhance-style'))return
-  const style=document.createElement('style')
-  style.id='tf-enhance-style'
-  style.textContent=`
-    .tf-tools{bottom:118px!important;left:20px!important;gap:7px!important;transition:none!important}
-    .tf-tool{padding:10px 13px!important;border-radius:16px!important;line-height:1.1!important}
-    .tf-profit-choices{display:none;grid-template-columns:1fr 1fr;gap:8px;margin:-2px 0 4px}.tf-profit-choices.show{display:grid}.tf-profit-choices button{border:0;border-radius:14px;padding:13px 8px;background:#eef2ff;color:#3730a3;font-weight:900;font-size:15px}.tf-profit-choices button:last-child{background:#fff1f2;color:#be123c}
-    @media(max-width:480px){.tf-tools{bottom:116px!important;left:18px!important}.tf-tool{font-size:13px!important;padding:9px 11px!important}}
-  `
-  document.head.appendChild(style)
-
-  const refresh=()=>{
-    const tools=document.querySelector('.tf-tools')
-    if(tools) tools.style.display=store.view==='dashboard'?'flex':'none'
-    document.querySelectorAll('.tf-backdrop').forEach(x=>enhanceResultCard(store,x))
-  }
-  refresh()
-  if(store.$subscribe) store.$subscribe(()=>refresh(),{detached:true})
-  const observer=new MutationObserver(()=>refresh())
-  observer.observe(document.body,{childList:true,subtree:true})
-  window.addEventListener('popstate',refresh)
-  window.addEventListener('hashchange',refresh)
-  setTimeout(()=>syncLegacyNoOpen(store),1200)
-}
+export function installTrialFollowUpEnhance(store){if(document.getElementById('tf-enhance-style'))return;const style=document.createElement('style');style.id='tf-enhance-style';style.textContent=`.tf-tools{bottom:132px!important;left:18px!important;gap:7px!important;transition:none!important}.tf-tool{padding:9px 12px!important;border-radius:15px!important;line-height:1.1!important}.tf-profit-choices{display:none;grid-template-columns:1fr 1fr;gap:8px;margin:-2px 0 4px}.tf-profit-choices.show{display:grid}.tf-profit-choices button{border:0;border-radius:14px;padding:13px 8px;background:#eef2ff;color:#3730a3;font-weight:900;font-size:15px}.tf-profit-choices button:last-child{background:#fff1f2;color:#be123c}.tf-batch-v2 select{margin-top:8px}.tf-batch-v2 [data-v2-ref]{margin-top:4px}@media(max-width:480px){.tf-tools{bottom:128px!important;left:12px!important}.tf-tool{font-size:12px!important;padding:8px 10px!important}}`;document.head.appendChild(style);const refresh=()=>{const tools=document.querySelector('.tf-tools');if(tools)tools.style.display=store.view==='dashboard'?'flex':'none';document.querySelectorAll('.tf-backdrop').forEach(x=>{enhanceResultCard(store,x);installBatchV2(store,x)})};refresh();if(store.$subscribe)store.$subscribe(()=>refresh(),{detached:true});const observer=new MutationObserver(()=>refresh());observer.observe(document.body,{childList:true,subtree:true});window.addEventListener('popstate',refresh);window.addEventListener('hashchange',refresh);setTimeout(()=>syncLegacyNoOpen(store),1200)}
