@@ -26,6 +26,7 @@ import { installStocktakeMobileUXFix } from './stocktakeMobileUXFix'
 import { installClientSmartPasteV2 } from './clientSmartPasteV2'
 import { installTrialFollowUp } from './trialFollowUp'
 import { installTrialFollowUpEnhance } from './trialFollowUpEnhance'
+import { installTrialFollowUpSpeedFix } from './trialFollowUpSpeedFix'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -46,3 +47,4 @@ installStocktakeMobileUXFix()
 installClientSmartPasteV2()
 installTrialFollowUp(store)
 installTrialFollowUpEnhance(store)
+installTrialFollowUpSpeedFix(store)
