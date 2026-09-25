@@ -54,3 +54,4 @@ installTrialFollowUpSpeedFix(store)
 installTrialBatchMonthFix()
 installTrialWorkflowFinalFix(store)
 installTrialMonthlyAuditFix(store)
+// deploy-refresh: trial-metrics-accounting-profit
