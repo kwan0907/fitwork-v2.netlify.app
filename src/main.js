@@ -27,6 +27,7 @@ import { installClientSmartPasteV2 } from './clientSmartPasteV2'
 import { installTrialFollowUp } from './trialFollowUp'
 import { installTrialFollowUpEnhance } from './trialFollowUpEnhance'
 import { installTrialFollowUpSpeedFix } from './trialFollowUpSpeedFix'
+import { installTrialBatchMonthFix } from './trialBatchMonthFix'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -48,3 +49,4 @@ installClientSmartPasteV2()
 installTrialFollowUp(store)
 installTrialFollowUpEnhance(store)
 installTrialFollowUpSpeedFix(store)
+installTrialBatchMonthFix()
