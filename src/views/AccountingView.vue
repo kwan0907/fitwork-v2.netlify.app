@@ -148,6 +148,830 @@ const activeClientsOptions = computed(() => {
   return store.clients.map(c => c?.name || '').sort((a,b) => a.localeCompare(b, 'zh-HK'))
 })
 
+const getTxnDisplayAmount = (t) => {
+  if (t?.category === '試堂調整') return Number(t?.profit || 0)
+  const amt = Number(t?.amount || 0)
+  return t?.type === 'expense' ? -amt : amt
+}
+const getTxnAmountClass = (t) => getTxnDisplayAmount(t) >= 0 ? 'g' : 'r'
+const formatTxnAmount = (t) => {
+  const v = Math.round(Math.abs(getTxnDisplayAmount(t)) * 100) / 100
+  return (getTxnDisplayAmount(t) >= 0 ? '+' : '-') + '  let client = t?.client_name || null
+  let text = t?.note || '無備註'
+  
+  const m = text.match(/^【(.*?)】\s*(.*)$/)
+  if (m) {
+    if (!client) client = m[1]
+    text = m[2] || '無其他備註'
+  } 
+  else if (client && text.startsWith(client + ' (')) {
+    text = text.replace(client + ' ', '')
+  }
+  
+  return { client, text }
+}
+
+
+
+// 自動抓取資料庫內所有出現過的分類，並依照「使用頻率」從多到少排序
+const uniqueCategories = computed(() => {
+  const counts = {}
+  store.transactions.forEach(t => {
+    if (t?.category) counts[t.category] = (counts[t.category] || 0) + 1
+  })
+  const sortedCats = Object.keys(counts).sort((a, b) => counts[b] - counts[a])
+  return ['全部', ...sortedCats]
+})
+// ==========================================
+
+const groupedTxns = computed(() => {
+  const g = {}
+  
+  // 1. 根據選擇的分類過濾
+  let filteredList = activeCategory.value === '全部' 
+    ? store.transactions 
+    : store.transactions.filter(t => t?.category === activeCategory.value)
+
+// 2. 🟢 根據選擇的月份過濾
+  if (filterMonth.value !== 'all') {
+    filteredList = filteredList.filter(t => String(t?.created_at || '').startsWith(filterMonth.value))
+  }
+
+  // 3. 🟢 根據關鍵字搜尋 (客戶名稱、備註、分類)
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    filteredList = filteredList.filter(t => 
+      (t?.client_name || '').toLowerCase().includes(q) ||
+      (t?.note || '').toLowerCase().includes(q) ||
+      (t?.category || '').toLowerCase().includes(q)
+    )
+  }
+
+  // 4. 🟢 新增：根據選擇的分店過濾
+  if (filterBranch.value !== '全部分店') {
+    filteredList = filteredList.filter(t => t?.branch === filterBranch.value)
+  }
+
+  filteredList.forEach(t => {
+  if (!t?.created_at) return
+  
+ // 🟢 極限粗暴法：直接斬件，唔經 Date 轉換，所見即所得
+  const dateStr = String(t.created_at).slice(0, 10);
+    
+    const [yyyy, mm, dd] = dateStr.split('-')
+    const displayDate = `${dd}/${mm}/${yyyy}`
+    
+    if (!g[displayDate]) g[displayDate] = []
+    g[displayDate].push(t)
+  })
+  
+  return Object.entries(g).map(([date, items]) => ({ date, items })).sort((a,b)=>{
+    const d1 = a?.date || ''
+    const d2 = b?.date || ''
+    if (!d1 || !d2) return 0;
+    const [day1, m1, y1] = d1.split('/')
+    const [day2, m2, y2] = d2.split('/')
+    const strA = `${y1}-${m1}-${day1}`
+    const strB = `${y2}-${m2}-${day2}`
+    return strB.localeCompare(strA)
+  })
+})
+
+// ==========================================
+// 🏃 套裝拆解引擎：為了退還庫存與再來一套
+// ==========================================
+const marathonCombos = [
+  {
+    name: '慢跑計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 1 },
+      { name: '佳能蛋白質粉', qty: 1 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 }
+    ]
+  },
+  {
+    name: '快跑計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 1 },
+      { name: '佳能蛋白質粉', qty: 1 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 }
+    ]
+  },
+  {
+    name: '運動vip計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 5 },
+      { name: '佳能蛋白質粉', qty: 5 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 },
+      { name: '消脂片', qty: 1 },
+      { name: '抗脂片', qty: 1 }
+    ]
+  },
+  {
+    name: '運動vVip計劃',
+    subItems: [
+      { name: '營養蛋白素', isShake: true, qty: 5 },
+      { name: '佳能蛋白質粉', qty: 5 },
+      { name: '即溶草本飲品50克-桃味', qty: 1 },
+      { name: 'BC30 益生菌', qty: 1 },
+      { name: '濃縮蘆薈汁', isAloe: true, qty: 1 },
+      { name: '消脂片', qty: 1 },
+      { name: '抗脂片', qty: 1 },
+      { name: '夜寧新營養飲品', qty: 1 },
+      { name: '莓之寶', qty: 1 },
+      { name: '營養纖維粉(蘋果味)', qty: 1 },
+      { name: '膠原蛋白美肌飲料', qty: 1 },
+      { name: '深海魚油', qty: 1 } 
+    ]
+  }
+]
+
+function handleRepeatOrder(t) {
+  const { client, text } = getDisplayData(t)
+  let items = []
+  
+  // 1. 抓取備註文字
+  let itemString = ''
+  const match = t?.note?.match(/\((.*)\)$/)
+  if (match) {
+    itemString = match[1]
+  } else {
+    itemString = (t?.note || '').replace(/^【.*?】\s*/, '').replace(/^(售出|採購)\s*/, '')
+  }
+
+  // 2. 簡單暴力切開所有產品
+  if (itemString) {
+    // 遇到任何逗號或加號都直接切開
+    const parts = itemString.split(/[,+，、]/) 
+    
+    parts.forEach(p => {
+      p = p.trim()
+      if (!p) return
+
+      let parsedName = p
+      let parsedQty = 1
+
+      // 找最後一個 x 或 X 來分離數量
+      const lastX = p.toLowerCase().lastIndexOf('x')
+      if (lastX !== -1) {
+         parsedName = p.substring(0, lastX).trim()
+         const cleanQty = p.substring(lastX + 1).replace(/\s/g, '')
+         parsedQty = parseInt(cleanQty, 10) || 1
+      }
+
+      if (parsedName) {
+        const existing = items.find(x => x.name === parsedName)
+        if (existing) existing.qty += parsedQty
+        else items.push({ name: parsedName, qty: parsedQty })
+      }
+    })
+  }
+
+  if (items.length === 0) return alert('⚠️ 無法從備註中辨識產品，請手動結帳。')
+
+  // 🚀 【終極診斷彈窗】這行會證明系統到底抽出了幾件！
+  alert(`🔍 系統診斷報告：\n成功從備註中抽出 ${items.length} 件產品！\n\n清單如下：\n` + items.map(i => `👉 ${i.name} (數量: ${i.qty})`).join('\n') + `\n\n💡 如果這裡顯示 5 件，但跳轉後畫面只有 3 件，代表是「購物車畫面」隱藏了產品！`)
+
+  // 3. 送入購物車
+  store.pendingRepeatOrder = { clientName: client, branch: t?.branch, items: items }
+  store.view = 'retail'
+}
+
+async function saveTransaction() {
+  if (!expForm.value.amount) return alert('請輸入金額！')
+  
+  const { data: authData } = await supabase.auth.getSession()
+  const userEmail = authData?.session?.user?.email
+  if (!userEmail) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
+  
+  let finalNote = expForm.value.note || ''
+  if (expForm.value.client_name && !finalNote.startsWith(`【${expForm.value.client_name}】`)) {
+    finalNote = `【${expForm.value.client_name}】 ${finalNote}`.trim()
+  }
+
+  const amt = Number(expForm.value.amount)
+  
+  const data = { 
+    ...expForm.value, 
+    amount: amt, 
+    note: finalNote, 
+    client_name: expForm.value.client_name || null, 
+    own_email: userEmail, 
+    profit: expForm.value.type === 'income' ? amt : -amt,
+    handled_by: expForm.value.staff 
+  }
+  
+  delete data.date 
+
+  if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
+  
+  const now = new Date()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  
+  // 🚀 補丁 3：智能判斷！如果是編輯舊紀錄且有舊時間，就沿用；否則用現在時間
+  const timeString = (editingTxn.value && expForm.value.originalTime) 
+    ? expForm.value.originalTime 
+    : `${hh}:${mm}:${ss}`
+
+  const finalString = `${expForm.value.date}T${timeString}`
+  
+  // 組合準備上傳的資料，並確保刪掉不需要上傳資料庫的 originalTime 變數
+  const updatePayload = { ...data, created_at: finalString }
+  delete updatePayload.originalTime
+
+  let error
+  if (editingTxn.value) {
+    const res = await supabase.from('transactions').update(updatePayload).eq('id', editingTxn.value)
+    error = res.error
+  } else {
+    const res = await supabase.from('transactions').insert(updatePayload)
+    error = res.error
+  }
+
+  if (error) alert('儲存失敗: ' + error.message)
+  else {
+    showExpModal.value = false
+    await store.syncAll()
+    alert('✅ 紀錄已儲存')
+  }
+}
+
+async function handleDeleteTransaction(t) {
+  if (!confirm('⚠️ 確定要永久刪除這筆紀錄嗎？\n(若包含零售/自用/採購/套裝紀錄，系統將自動同步校正庫存)')) return
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return alert('⚠️ 無法取得帳號資訊，請重新登入！')
+
+  let itemsToRefund = []
+  let isProcurement = false 
+  
+  // 🟢 智能拆解文字與退回庫存計算邏輯
+  const parseItemsStr = (str) => {
+    const parts = str.split(/,\s*(?![^()]*\))/)
+    parts.forEach(p => {
+      const lastXIndex = p.lastIndexOf('x')
+          if (lastXIndex !== -1) {
+            let pNameFull = p.substring(0, lastXIndex).trim()
+            // 🛡️ 防呆：將 x 後面的字串「清空所有空白」後再轉數字
+            const cleanQtyStr = p.substring(lastXIndex + 1).replace(/\s/g, '')
+            const pQty = parseInt(cleanQtyStr, 10)
+            
+            if (pNameFull && !isNaN(pQty)) {
+           // 偵測是否為馬拉松套裝
+           const comboMatch = pNameFull.match(/^(.*?)\s*(?:\((.*?)\))?$/)
+           const baseName = comboMatch ? comboMatch[1].trim() : pNameFull
+           const flavorsPart = comboMatch && comboMatch[2] ? comboMatch[2] : ''
+           
+           const comboDef = marathonCombos.find(c => c.name === baseName)
+           
+           if (comboDef) {
+              // 找到套裝了！拆解裡面的項目來退庫存
+              let sFlavor = ''
+              let aFlavor = ''
+              if (flavorsPart.includes('Shake:')) {
+                  sFlavor = flavorsPart.split('Shake:')[1].split(/,|$/)[0].trim()
+              }
+              if (flavorsPart.includes('蘆薈:')) {
+                  aFlavor = flavorsPart.split('蘆薈:')[1].split(/,|$/)[0].trim()
+              }
+              
+              comboDef.subItems.forEach(sub => {
+                  let sName = sub.name;
+                  if (sub.isShake && sFlavor) sName = `${sName}-${sFlavor}`
+                  if (sub.isAloe && aFlavor) sName = `${sName}-${aFlavor}`
+                  
+                  const existing = itemsToRefund.find(x => x.name === sName)
+                  if(existing) existing.qty += sub.qty * pQty
+                  else itemsToRefund.push({ name: sName, qty: sub.qty * pQty })
+              })
+           } else {
+              // 普通產品，直接退還
+              const existing = itemsToRefund.find(x => x.name === pNameFull)
+              if(existing) existing.qty += pQty
+              else itemsToRefund.push({ name: pNameFull, qty: pQty })
+           }
+        }
+      }
+    })
+  }
+
+  // 分析不同類別的備註內容
+  if ((t?.category === '零售收入' || t?.category === '產品採購') && t?.note) {
+    if (t.category === '產品採購') isProcurement = true
+    
+    const match = t.note.match(/\((.*)\)$/)
+    if (match) {
+       parseItemsStr(match[1])
+    } else {
+       const str = t.note.replace(/^【.*?】\s*/, '').replace(/^(售出|採購)\s*/, '')
+       parseItemsStr(str)
+    }
+  } else if (t?.category === '自用消耗' && t?.note) {
+    const match = t.note.match(/提取自用:\s*(.*?)\s*x(\d+)$/)
+    if (match) {
+      itemsToRefund.push({ name: match[1].trim(), qty: parseInt(match[2]) })
+    }
+  }
+
+  // 正式刪除紀錄
+  const { error } = await supabase.from('transactions').delete().eq('id', t.id)
+  if (error) return alert('刪除失敗: ' + error.message)
+
+// 開始退還(或扣除)庫存 (🛡️ 修正：呼叫後端 RPC 絕對防止併發衝突！)
+  if (itemsToRefund.length > 0) {
+    let stockUpdateFailed = false
+    
+    for (const item of itemsToRefund) {
+      // 採購紀錄刪除代表「退貨」要扣庫存，其他紀錄刪除代表「退還」要加庫存
+      const qtyChange = isProcurement ? -item.qty : item.qty; 
+      
+      const { error: rpcError } = await supabase.rpc('adjust_stock', {
+        p_prod_name: item.name,
+        p_branch: t.branch || '觀塘',
+        p_qty_change: qtyChange,
+        p_user_id: user.id,
+        p_email: user.email
+      });
+
+      if (rpcError) {
+        console.error("庫存還原失敗:", rpcError);
+        stockUpdateFailed = true;
+      }
+    }
+
+    if (stockUpdateFailed) alert('⚠️ 流水帳已刪除，但部分庫存校正失敗！請手動至「庫存管理」確認。')
+    else {
+      if (isProcurement) alert('✅ 採購紀錄已刪除，剛剛進的貨已經從庫存中自動扣除了！')
+      else alert('✅ 紀錄已成功刪除，套裝與產品庫存已全數自動補回！')
+    }
+  } else {
+    alert('✅ 紀錄已成功刪除')
+  }
+
+  await store.syncAll()
+}
+// ==========================================
+// 🚀 對齊 Google Sheet 專屬 Export 功能
+// ==========================================
+
+function exportRetail() {
+  let list = []
+  groupedTxns.value.forEach(g => { list.push(...g.items.filter(t => t.category === '零售收入')) })
+  if(list.length === 0) return alert('當前條件下沒有零售收入紀錄！')
+
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+  csvContent += "日期,收錢,客戶名稱,產品最多一行選四個,客戶級別\n"
+
+  list.forEach(t => {
+    const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : '' 
+    const staff = t.staff || t.handled_by || ''
+    const clientName = t.client_name || ''
+    
+    const clientObj = store.clients.find(c => c.name === clientName)
+    const vipTier = clientObj ? (clientObj.vip_tier || '') : ''
+
+    let products = ''
+    const match = t.note?.match(/\((.*)\)$/)
+    if (match) products = match[1].replace(/,/g, ' / ') 
+    else products = t.note?.replace(/【.*?】\s*/, '').replace(/,/g, ' / ') || ''
+
+    csvContent += `"${day}","${staff}","${clientName}","${products}","${vipTier}"\n`
+  })
+
+  const link = document.createElement("a")
+  link.setAttribute("href", encodeURI(csvContent))
+  link.setAttribute("download", `零售產品紀錄_${filterMonth.value}.csv`)
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+
+function exportMovement() {
+  let list = []
+  groupedTxns.value.forEach(g => { list.push(...g.items.filter(t => t.category === '運動套票' || t.category === '試堂' || t.category === '運動')) })
+  if(list.length === 0) return alert('當前條件下沒有運動/套票紀錄！')
+
+  let csvContent = "data:text/csv;charset=utf-8,\uFEFF"
+  // 🚀 關鍵更新：加入一個空列來對齊你的 "提醒MyGift" 欄位，確保貼上時完全吻合
+  csvContent += "日期,分店,來源,負責聯繫,提醒MyGift,客戶名稱,購買項目\n"
+
+  list.forEach(t => {
+    const day = t.created_at ? parseInt(t.created_at.slice(8, 10)) : ''
+    const branch = t.branch || '觀塘'
+    const staff = t.staff || t.handled_by || ''
+    const clientName = t.client_name || ''
+    
+    const clientObj = store.clients.find(c => c.name === clientName)
+    const source = clientObj ? (clientObj.source || '') : ''
+
+    let item = t.note?.replace(/【.*?】\s*/, '').replace(/,/g, ' / ') || ''
+
+    // 🚀 關鍵更新：中間加多咗一個 `""` 代表留空 MyGift 嗰欄
+    csvContent += `"${day}","${branch}","${source}","${staff}","","${clientName}","${item}"\n`
+  })
+
+  const link = document.createElement("a")
+  link.setAttribute("href", encodeURI(csvContent))
+  link.setAttribute("download", `運動套票紀錄_${filterMonth.value}.csv`)
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+
+// ==========================================
+// 🚀 新增：批量匯入交易紀錄功能
+// ==========================================
+function downloadTxnCSVTemplate() {
+  const BOM = "\uFEFF";
+  const header = "日期(YYYY-MM-DD),時間(HH:MM:SS),收支(income或expense),分類(運動套票/試堂/零售收入/廣告費用/產品採購等),金額,成本,客戶名稱(無則留空),分店(觀塘/中環/佐敦),經手人,備註\n";
+  const sample1 = "2026-05-01,14:30:00,income,運動套票,2550,1272.5,陳大文,觀塘,kwan,售出 35點套票\n";
+  const sample2 = "2026-05-02,15:00:00,expense,廣告費用,500,500,,中環,Cat,IG 廣告費\n";
+
+  const csvContent = BOM + header + sample1 + sample2;
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", "fitwork_transactions_template.csv");
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function triggerTxnFileInput() {
+  document.getElementById('txnCsvFileInput').click()
+}
+
+async function handleTxnImport(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const { data: authData } = await supabase.auth.getSession();
+  const userEmail = authData?.session?.user?.email;
+
+  if (!userEmail) {
+    alert('❌ 系統偵測不到登入狀態，請確認網路連線或重新登入。');
+    e.target.value = ''; return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (evt) => {
+    try {
+      const content = evt.target.result;
+      const lines = content.split(/\r?\n/);
+      const rows = lines.slice(1).filter(line => line.trim() !== '');
+
+      const isConfirmed = confirm(`準備匯入 ${rows.length} 筆交易紀錄。\n請確定格式無誤 (備註內請勿包含英文逗號)，是否繼續？`);
+      if (!isConfirmed) { e.target.value = ''; return; }
+
+      let insertedCount = 0;
+      const payloads = [];
+
+      for (const line of rows) {
+        const row = line.split(',');
+        if (!row[0]) continue;
+
+        const dateStr = (row[0] || '').trim();
+        const timeStr = (row[1] || '00:00:00').trim();
+        const typeStr = (row[2] || 'income').trim();
+        const catStr = (row[3] || '其他收入').trim();
+        const amtStr = parseFloat(row[4]) || 0;
+        const costStr = parseFloat(row[5]) || 0;
+        const clientName = (row[6] || '').trim();
+        const branchStr = (row[7] || '觀塘').trim();
+        const staffStr = (row[8] || '').trim();
+        const noteStr = (row[9] || '').trim();
+
+        const createdAt = `${dateStr}T${timeStr}`;
+        const profit = typeStr === 'income' ? (amtStr - costStr) : -amtStr;
+
+        let clientId = null;
+        if (clientName) {
+          const foundClient = store.clients.find(c => c.name === clientName);
+          if (foundClient) clientId = foundClient.id;
+        }
+
+        payloads.push({
+          created_at: createdAt,
+          type: typeStr,
+          category: catStr,
+          amount: amtStr,
+          cost: costStr,
+          profit: profit,
+          client_name: clientName || null,
+          client_id: clientId,
+          branch: branchStr,
+          staff: staffStr,
+          handled_by: staffStr,
+          note: noteStr,
+          own_email: userEmail
+        });
+      }
+
+      if (payloads.length > 0) {
+         const chunkSize = 100;
+         for (let i = 0; i < payloads.length; i += chunkSize) {
+            const chunk = payloads.slice(i, i + chunkSize);
+            const { error } = await supabase.from('transactions').insert(chunk);
+            if (!error) insertedCount += chunk.length;
+            else console.error('匯入錯誤:', error);
+         }
+      }
+
+      await store.syncAll();
+      setTimeout(() => alert(`✅ 匯入完畢！\n\n✨ 成功新增：${insertedCount} 筆交易紀錄。`), 100);
+
+    } catch (err) {
+      console.error('匯入出錯:', err);
+      alert('❌ 檔案讀取失敗，請確保使用正確的 CSV 格式。');
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+</script>
+
+<template>
+  <div class="page" style="padding-bottom: 150px;">
+    
+  <!-- 💡 置頂區塊 Wrapper 開始 -->
+    <div class="sticky-top-bar">
+      <!-- 🟢 1. 加了 flex-wrap: nowrap !important 強迫絕對不准掉到下一行 -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap: nowrap !important; gap: 6px;">
+        
+        <!-- 🟢 2. 標題稍微縮小到 18px 讓出空間 -->
+        <h2 class="page-title" style="margin: 0; white-space: nowrap !important; flex-shrink: 0 !important; font-size: 18px !important;">收支流水帳</h2>
+        
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap !important; min-width: 0;">
+          <!-- 🟢 3. 縮短文字成「所有紀錄」，並縮小內距 -->
+          <select v-model="filterMonth" class="modern-select" style="padding: 6px 8px; width: auto; font-size: 13px; border-radius: 10px; margin: 0; background: white; border-color: #e2e8f0; flex-shrink: 1; text-overflow: ellipsis; white-space: nowrap;">
+           <option value="all">🌍 所有紀錄</option>
+            <option v-for="m in availableMonths" :key="m" :value="m">{{ formatMonthLabel(m) }}</option>
+          </select>
+          
+          <!-- 🟢 4. 按鈕鎖死不准換行、不准被擠壓，稍微縮小內距 -->
+          <button class="btn-primary" style="padding: 6px 10px; border-radius: 10px; font-weight: 800; font-size: 13px; white-space: nowrap !important; flex-shrink: 0 !important;" @click="openExpForm">+ 新增收支</button>
+        </div>
+      </div>
+      <div v-if="store.hasMoreTxn" style="text-align: center; margin: 5px 0 10px 0;">
+        <button @click="store.loadMoreTransactions()" :disabled="store.isFetchingMore" style="background: #eef2ff; color: #4f46e2; border: 1.5px solid #c7d2fe; padding: 6px 16px; border-radius: 10px; font-weight: 800; cursor: pointer; transition: 0.2s; font-size: 12px;">
+          {{ store.isFetchingMore ? '🔄 正在拿取中...' : '📜 載入舊紀錄' }}
+        </button>
+      </div>
+      <div v-else style="text-align: center; margin: 5px 0 10px 0; color: #94a3b8; font-weight: 700; font-size: 11px;">
+        ✅ 已經到底了，所有歷史交易皆已載入
+      </div>
+
+   <div class="filter-row" style="margin-bottom: 5px;">
+        <button v-for="cat in uniqueCategories" :key="cat" class="f-btn" :class="{ active: activeCategory === cat }" @click="activeCategory = cat">
+          {{ cat }}
+        </button>
+      </div>
+      
+      <!-- 🟢 新增：分店篩選按鈕 -->
+      <div class="branch-tabs">
+        <button :class="{active: filterBranch==='全部分店'}" @click="filterBranch='全部分店'">🌍 全部</button>
+        <button :class="{active: filterBranch==='觀塘'}" @click="filterBranch='觀塘'">📍 觀塘</button>
+        <button :class="{active: filterBranch==='中環'}" @click="filterBranch='中環'">📍 中環</button>
+        <button :class="{active: filterBranch==='佐敦'}" @click="filterBranch='佐敦'">📍 佐敦</button>
+      </div>
+
+      <div style="position: relative; margin-bottom: 10px;">
+        <span style="position: absolute; left: 12px; top: 10px; font-size: 14px;">🔍</span>
+        <input class="modern-inp" v-model="searchQuery" placeholder="搜尋客戶名稱、項目或備註..." style="padding: 10px 10px 10px 35px; border-radius: 12px; font-size: 14px; background: white; border: 1px solid #cbd5e1; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); width: 100%; outline: none; transition: 0.2s;">
+      </div>
+
+     <!-- 🟢 空間魔法：下拉式摺疊選單 (收納四個匯出/匯入按鈕) -->
+      <details style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 10px;">
+        <summary style="padding: 8px 12px; font-size: 12px; font-weight: 800; color: #475569; cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: #f8fafc; list-style: none; outline: none;">
+          <span>⚙️ 展開工具 (匯出 / 匯入資料)</span>
+          <span style="font-size: 10px;">▼</span>
+        </summary>
+        <div style="padding: 10px; border-top: 1px solid #e2e8f0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: white;">
+          <button @click="exportRetail" style="background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📊 匯出零售</button>
+          <button @click="exportMovement" style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📊 匯出套票</button>
+          <button @click="downloadTxnCSVTemplate" style="background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📥 下載格式</button>
+          <button @click="triggerTxnFileInput" style="background: #eef2ff; color: #4f46e2; border: 1px solid #c7d2fe; padding: 8px; border-radius: 8px; font-weight: 800; font-size: 11px;">📤 批量匯入</button>
+          <input type="file" id="txnCsvFileInput" accept=".csv" style="display: none;" @change="handleTxnImport">
+        </div>
+      </details>
+
+    </div>
+    <!-- 💡 置頂區塊 Wrapper 結束 -->
+    <div v-if="groupedTxns.length === 0" style="text-align: center; color: #94a3b8; font-weight: 800; margin-top: 50px;">
+      目前沒有相關紀錄
+    </div>
+
+    <div v-for="group in groupedTxns" :key="group.date">
+      <div class="date-header">📅 {{ group.date }}</div>
+      <div class="card" style="padding:0 15px;">
+        <div v-for="t in group.items" :key="t.id" class="txn-item">
+          <div style="flex:1; min-width:0;">
+            
+           <!-- 🟢 精簡版：強制單行、縮減多餘文字省空間 -->
+            <div class="t-header-row" style="display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; margin-bottom: 2px; overflow-x: auto; padding-bottom: 2px;">
+              <div class="t-cat" style="white-space: nowrap; padding: 2px 6px;">{{ t.category }}</div>
+              
+              <!-- 💡 拿掉「客戶：」兩個字，只留圖示與名字 -->
+              <div v-if="getDisplayData(t).client" class="t-client-highlight" style="white-space: nowrap; padding: 2px 6px; font-size: 11px;">
+                👤 {{ getDisplayData(t).client }}
+              </div>
+              
+              <!-- 💡 縮短按鈕字眼，並防止被擠壓 -->
+              <button v-if="t.category === '零售收入'" class="repeat-btn" @click="handleRepeatOrder(t)" style="white-space: nowrap; padding: 2px 6px; font-size: 11px; flex-shrink: 0;">🔁 再來</button>
+            </div>
+            
+            <div class="t-desc-box">
+              <div class="t-desc">
+                <span class="icon-lbl">📝 項目/備註:</span> 
+                <span class="t-desc-val">{{ getDisplayData(t).text }}</span>
+              </div>
+              <div class="t-desc" style="margin-top: 6px;">
+                <span class="icon-lbl">💼 經手(收款):</span> 
+                <span class="t-staff">{{ t.staff || t.handled_by || '未記錄' }}</span>
+              </div>
+            </div>
+
+            <div v-if="t.category==='廣告費用' && (t.ad_inquiries>0 || t.ad_phones>0)" class="t-ad">
+              廣告回報: {{ t.ad_inquiries }} 查詢 / {{ t.ad_phones }} 電話
+            </div>
+          </div>
+          
+          <div style="text-align:right;display:flex;align-items:center;gap:10px; margin-left: 10px; flex-shrink: 0;">
+            <div class="t-amt" :class="getTxnAmountClass(t)">
+              {{ formatTxnAmount(t) }}
+            </div>
+            <div style="display:flex; flex-direction:column; gap:5px;">
+              <button class="icon-btn" @click="openEditTransaction(t)">✏️</button>
+              <button class="icon-btn" style="color:#ef4444;" @click="handleDeleteTransaction(t)">🗑️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <BaseModal :show="showExpModal" :title="editingTxn ? '✏️ 修改記錄' : '➕ 新增記錄'" @close="showExpModal = false">
+      <div class="form-item">
+        <label>類型</label>
+        <div style="display:flex;gap:12px;">
+          <button class="t-btn" :class="{activeI: expForm.type==='income'}" @click="expForm.type='income';expForm.category='運動套票'">💰 收入</button>
+          <button class="t-btn" :class="{activeE: expForm.type==='expense'}" @click="expForm.type='expense';expForm.category='廣告費用'">💸 支出</button>
+        </div>
+      </div>
+      
+      <div class="form-item" style="margin-top:15px;">
+        <label>日期</label>
+        <input class="modern-inp" type="date" v-model="expForm.date">
+      </div>
+
+      <div class="form-item" style="margin-top:15px;">
+        <label>選擇分類</label>
+        <select class="modern-select" v-model="expForm.category">
+          <option v-for="cat in (expForm.type==='income' ? incCategories : expCategories)" :key="cat" :value="cat">{{ cat }}</option>
+          <option v-if="expForm.type==='income' && !incCategories.includes('運動套票')" value="運動套票">運動套票</option>
+          <option v-if="expForm.type==='income' && !incCategories.includes('試堂')" value="試堂">試堂</option>
+          <option v-if="expForm.type==='income' && !incCategories.includes('運動')" value="運動">運動</option>
+          <option v-if="expForm.type==='income' && !incCategories.includes('零售收入')" value="零售收入">零售收入</option>
+        </select>
+      </div>
+
+      <!-- 🟢 新增：選擇關聯分店 -->
+      <div class="form-item" style="margin-top:15px;">
+        <label>📍 關聯分店</label>
+        <select class="modern-select" v-model="expForm.branch">
+          <option value="觀塘">觀塘總店</option>
+          <option value="中環">中環分店</option>
+          <option value="佐敦">佐敦分店</option>
+        </select>
+      </div>
+
+      <div class="form-item" style="margin-top:15px;" v-if="expForm.type === 'income'">
+        <label>👤 關聯客戶 (誰買的？)</label>
+        <select class="modern-select" v-model="expForm.client_name">
+          <option value="">-- 無關聯 / 非系統內客戶 --</option>
+          <option v-for="name in activeClientsOptions" :key="name" :value="name">{{ name }}</option>
+        </select>
+      </div>
+
+      <div v-if="expForm.category==='廣告費用'" class="ad-box">
+        <div class="ad-title">📈 記錄廣告成效 (選填)</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div><label>產生查詢數</label><input class="modern-inp" type="tel" inputmode="numeric" pattern="[0-9]*" v-model="expForm.ad_inquiries"></div>
+          <div><label>獲得電話數</label><input class="modern-inp" type="tel" inputmode="numeric" pattern="[0-9]*" v-model="expForm.ad_phones"></div>
+        </div>
+      </div>
+
+      <div class="form-item" style="margin-top:15px;">
+     <label>金額 (HK$)</label>
+    <input class="modern-inp amt-inp" type="tel" inputmode="decimal" pattern="[0-9.]*" v-model="expForm.amount">
+    </div>
+      <div class="form-item" style="margin-top:15px;">
+        <label>📝 補充購買項目 / 備註</label>
+        <input class="modern-inp" v-model="expForm.note" placeholder="例如：售出 35點套票 / 送搖搖杯">
+      </div>
+      <div class="form-item" style="margin-top:15px;">
+        <label>經手人 (收款/付款人)</label>
+        <select class="modern-select" v-model="expForm.staff">
+          <option v-for="staff in staffList" :key="staff" :value="staff">{{ staff }}</option>
+        </select>
+      </div>
+      
+<!-- 加上一個外層的 div 來把按鈕頂上來，避免被手機底部控制列擋住 -->
+<div style="padding-bottom: 80px;">
+  <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" @click="saveTransaction">✅ 儲存</button>
+</div>    </BaseModal>
+
+    <!-- 💡 浮動回到最上層按鈕 -->
+    <button v-if="showScrollTop" class="scroll-top-btn" @click="scrollToTop">⬆️</button>
+
+  </div>
+</template>
+
+<style scoped>
+
+/* 🟢 極限壓縮頂部留白樣式 */
+.sticky-top-bar {
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: #f8fafc; 
+  margin-top: -10px;  /* 減少外距 */
+  margin-left: -10px;
+  margin-right: -10px;
+  padding-top: 5px;   /* 💡 核心：大幅減少標題上方的空白 */
+  padding-left: 10px; /* 減少左右空白 */
+  padding-right: 10px;
+  padding-bottom: 5px; /* 💡 核心：減少標題下方的空白 */
+  box-shadow: 0 4px 10px -3px rgba(248, 250, 252, 0.95);
+}
+
+/* 💡 核心：將整個頁面的四周留白從 20px 縮小到 10px */
+.page { padding: 10px; background: #f8fafc; min-height: 100vh; }
+.page-title { font-weight: 900; font-size: 24px; color: #1e293b; }
+
+/* 🟢 修改這組：分類過濾列 (縮小 20%，減少底部距離) */
+.filter-row { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+.filter-row::-webkit-scrollbar { display: none; }
+.f-btn { padding: 6px 12px; border-radius: 99px; border: 1px solid #e2e8f0; background: white; font-weight: 800; font-size: 11px; color: #64748b; white-space: nowrap; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
+.f-btn.active { background: #4f46e2; color: white; border-color: #4f46e2; box-shadow: 0 4px 10px rgba(79, 70, 226, 0.2); }
+
+.card { background: white; border-radius: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.02);}
+.date-header { font-size: 13px; font-weight: 900; color: #64748b; margin: 15px 0 8px; }
+/* 💡 極限省空間版：縮小上下內距與字體 */
+.txn-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0; }
+.t-header-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+
+/* 標籤縮小 */
+.t-cat { font-weight: 900; font-size: 11px; color: #475569; background: #f1f5f9; padding: 2px 6px; border-radius: 6px; border: 1px solid #e2e8f0;}
+.t-client-highlight { font-weight: 900; font-size: 12px; color: #ec4899; background: #fdf2f8; padding: 2px 6px; border-radius: 6px; border: 1px solid #fbcfe8; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(236,72,153,0.1);}
+
+.repeat-btn { background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center;}
+.repeat-btn:active { transform: scale(0.95); background: #c7d2fe; }
+
+/* 內容區塊間距縮細 */
+.t-desc-box { background: white; border-left: 3px solid #cbd5e1; padding-left: 10px; margin-bottom: 2px; }
+.t-desc { font-size: 12px; color: #64748b; font-weight: 600; display: flex; align-items: flex-start; gap: 6px; line-height: 1.3; margin-top: 2px !important; }
+.icon-lbl { font-size: 11px; font-weight: 800; color: #94a3b8; white-space: nowrap; margin-top: 1px;}
+.t-desc-val { 
+  color: #1e293b; 
+  font-weight: 900; 
+  font-size: 13px; 
+  word-break: break-word; 
+  white-space: pre-wrap; /* 🟢 確保正常換行 */
+  flex: 1; /* 🟢 填滿剩餘空間，避免被擠壓 */
+  min-width: 0;
+}
+.t-staff { font-weight: 900; color: #4f46e2; font-size: 13px; } 
+.t-ad { font-size: 11px; color: #d97706; margin-top: 4px; font-weight: 800; background: #fff7ed; display: inline-block; padding: 2px 6px; border-radius: 6px; }
+
+/* 金額與操作按鈕縮細 */
+.t-amt { font-weight: 900; font-size: 18px; white-space: nowrap;}
+.t-amt.g { color: #10b981; }
+.t-amt.r { color: #ef4444; }
+.icon-btn { background: #f1f5f9; border: none; font-size: 12px; padding: 6px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+.icon-btn:active { transform: scale(0.9); }
+.form-item label { display: block; margin-bottom: 8px; font-weight: 800; font-size: 13px; color: #475569; }
+.modern-inp, .modern-select { width: 100%; border: 2px solid #e2e8f0; padding: 12px; border-radius: 12px; font-weight: 700; color: #1e293b; outline: none; background: #f8fafc; appearance: none;}
+.modern-inp:focus, .modern-select:focus { border-color: #4f46e2; background: white;}
+.amt-inp { font-size: 26px; font-weight: 900; color: #4f46e2; text-align: center;}
+.t-btn { flex: 1; padding: 12px; border-radius: 12px; font-weight: 800; border: none; background: #f1f5f9; color: #64748b; cursor: pointer; transition: 0.2s; }
+.t-btn.activeI { background: #10b981; color: white; box-shadow: 0 4px 10px rgba(16,185,129,0.2);}
+.t-btn.activeE { background: #ef4444; color: white; box-shadow: 0 4px 10px rgba(239,68,68,0.2);}
+.ad-box { background: #fff7ed; border: 1px solid #fed7aa; padding: 15px; border-radius: 12px; margin-top: 15px; }
+.ad-title { font-weight: 900; color: #d97706; margin-bottom: 10px; font-size: 13px; }
+.btn-primary { background: #4f46e2; color: white; border: none; transition: 0.2s; cursor: pointer;}
+.btn-primary:active { transform: scale(0.96); }
+
+/* 🟢 修改這組：分店過濾標籤 (縮小 20%，減少底部距離) */
+.branch-tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; padding-bottom: 2px; }
+.branch-tabs button { flex: 1; padding: 6px 8px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; font-weight: 800; color: #64748b; cursor: pointer; white-space: nowrap; transition: 0.2s; font-size: 11px;}
+.branch-tabs button.active { background: #eef2ff; color: #4f46e2; border-color: #c7d2fe; box-shadow: 0 2px 8px rgba(79,70,229,0.15);}
+</style> + v
+}
+
 const getDisplayData = (t) => {
   let client = t?.client_name || null
   let text = t?.note || '無備註'
