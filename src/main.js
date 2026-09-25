@@ -22,6 +22,7 @@ import { installClientModalMobileFix } from './clientModalMobileFix'
 import { installInventoryOrderImportV2 } from './inventoryOrderImportV2'
 import { installInventoryPhotoUploadFix } from './inventoryPhotoUploadFix'
 import { installStocktakeImport } from './stocktakeImport'
+import { installStocktakeMobileUXFix } from './stocktakeMobileUXFix'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -38,3 +39,4 @@ installClientModalMobileFix()
 installInventoryOrderImportV2(store)
 installInventoryPhotoUploadFix()
 installStocktakeImport(store)
+installStocktakeMobileUXFix()
