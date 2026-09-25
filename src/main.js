@@ -29,6 +29,7 @@ import { installTrialFollowUpEnhance } from './trialFollowUpEnhance'
 import { installTrialFollowUpSpeedFix } from './trialFollowUpSpeedFix'
 import { installTrialBatchMonthFix } from './trialBatchMonthFix'
 import { installTrialWorkflowFinalFix } from './trialWorkflowFinalFix'
+import { installTrialMonthlyAuditFix } from './trialMonthlyAuditFix'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -52,3 +53,4 @@ installTrialFollowUpEnhance(store)
 installTrialFollowUpSpeedFix(store)
 installTrialBatchMonthFix()
 installTrialWorkflowFinalFix(store)
+installTrialMonthlyAuditFix(store)
