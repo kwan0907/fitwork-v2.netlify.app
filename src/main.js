@@ -23,6 +23,7 @@ import { installInventoryOrderImportV2 } from './inventoryOrderImportV2'
 import { installInventoryPhotoUploadFix } from './inventoryPhotoUploadFix'
 import { installStocktakeImport } from './stocktakeImport'
 import { installStocktakeMobileUXFix } from './stocktakeMobileUXFix'
+import { installClientSmartPasteV2 } from './clientSmartPasteV2'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -40,3 +41,4 @@ installInventoryOrderImportV2(store)
 installInventoryPhotoUploadFix()
 installStocktakeImport(store)
 installStocktakeMobileUXFix()
+installClientSmartPasteV2()
