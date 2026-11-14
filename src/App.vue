@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useMainStore } from './stores/mainStore'
-import { supabase } from './supabase'
+import { supabase, isReadOnlyPreview } from './supabase'
 
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
@@ -277,6 +277,7 @@ const scrollToTop = () => {
       </div>
     </header>
 
+    <div v-if="isReadOnlyPreview" class="bz-preview-banner" role="status">預覽模式：只供查看，儲存操作已停用。</div>
     <div class="content" ref="contentRef" @scroll="checkScroll">
       <HomeView v-if="store.view === 'home'" @search="searchOpen=true" />
       <MoreView v-else-if="store.view === 'more'" />

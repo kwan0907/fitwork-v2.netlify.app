@@ -26,3 +26,4 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 @media(prefers-reduced-motion:reduce){.bz-actions button,.bz-quick-trigger,.bz-header-icon{transition:none!important}}
 .bz-backup-card{padding:20px;margin-bottom:16px}.bz-backup-card .btn-save{max-width:100%}.bz-backup-card .btn-save:disabled{opacity:.6;cursor:wait}.bz-backup-result{color:#2454c6;font-size:13px;font-weight:800;line-height:1.5}
 .bz-client-add{padding:10px 15px;font-size:13px;white-space:nowrap}.bz-inventory-count{font-size:11px;font-weight:800;color:#8190a6;margin:9px 4px 1px}
+.bz-preview-banner{padding:7px 16px;background:#fff5da;color:#78550f;font-size:11px;font-weight:800;text-align:center;border-bottom:1px solid #f1d88f}
