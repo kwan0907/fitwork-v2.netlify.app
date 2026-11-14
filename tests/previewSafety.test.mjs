@@ -7,6 +7,7 @@ const preview = 'deploy-preview-46--dynamic-gumption-005003.netlify.app'
 
 test('only Netlify deploy preview hosts are read only', () => {
   assert.equal(isReadOnlyPreviewHost(preview), true)
+  assert.equal(isReadOnlyPreviewHost('fitwork-v2-netlify-app-git-codex-bz-m-3fee72-kwan0907s-projects.vercel.app'), true)
   assert.equal(isReadOnlyPreviewHost('dynamic-gumption-005003.netlify.app'), false)
   assert.equal(isReadOnlyPreviewHost('localhost'), false)
 })

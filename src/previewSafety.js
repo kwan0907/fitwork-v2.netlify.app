@@ -1,5 +1,7 @@
 export function isReadOnlyPreviewHost(hostname) {
-  return /^deploy-preview-\d+--[a-z0-9-]+\.netlify\.app$/i.test(String(hostname || ''))
+  const host = String(hostname || '')
+  return /^deploy-preview-\d+--[a-z0-9-]+\.netlify\.app$/i.test(host)
+    || /^[a-z0-9-]+-git-[a-z0-9-]+\.vercel\.app$/i.test(host)
 }
 
 export function shouldBlockPreviewRequest(url, method, hostname, supabaseOrigin) {

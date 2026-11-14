@@ -190,6 +190,7 @@ const scrollToTop = () => {
       <div class="login-logo">BZ</div>
       <h1 class="login-title">BZ記錄器</h1>
       <p class="login-subtitle">生意、客戶、庫存，一個地方記好。</p>
+      <p v-if="isReadOnlyPreview" class="bz-preview-login-banner">呢個係只讀預覽。可用現有帳戶查看資料，儲存操作已停用。</p>
 
       <div v-if="isVerifying">
         
@@ -234,19 +235,19 @@ const scrollToTop = () => {
 
         <div class="login-options">
           <span>登入後會喺呢部裝置保持登入</span>
-          <button v-if="!isRegistering" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
+          <button v-if="!isRegistering && !isReadOnlyPreview" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
         </div>
 
         <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
           {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
         </button>
 
-        <div class="auth-switch">
+        <div v-if="!isReadOnlyPreview" class="auth-switch">
           {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
           <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
         </div>
 
-        <div class="auth-switch" style="margin-top: 15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;" v-if="!isRegistering">
+        <div class="auth-switch" style="margin-top: 15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;" v-if="!isRegistering && !isReadOnlyPreview">
           <span @click="isVerifying = true; isRegistering = false">👉 已經有 6 碼驗證碼？點此輸入</span>
         </div>
 
