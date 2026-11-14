@@ -1,10 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useMainStore } from './stores/mainStore'
 import { supabase } from './supabase'
 
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
+import HomeView from './views/HomeView.vue'
+import MoreView from './views/MoreView.vue'
+import GlobalSearch from './components/GlobalSearch.vue'
 import PromoView from './views/PromoView.vue'
 import HerbalifePromo from './views/HerbalifePromo.vue' 
 import ClientsView from './views/ClientsView.vue'
@@ -15,7 +18,6 @@ import RetailView from './views/RetailView.vue'
 import SettingsView from './views/SettingsView.vue'
 
 // 公用組件引入
-import BaseModal from './components/BaseModal.vue'
 
 const store = useMainStore()
 
@@ -25,36 +27,34 @@ const email = ref('')
 const password = ref('')
 const isLoggingIn = ref(false)
 const isRegistering = ref(false)
-const rememberMe = ref(false)
 
 // 💡 驗證碼專用狀態
 const isVerifying = ref(false)
 const verificationCode = ref('')
 
 const tempName = ref('')
-const showUpdateModal = ref(false)
+const searchOpen = ref(false)
+const quickOpen = ref(false)
 
 onMounted(() => {
   supabase.auth.getSession().then(({ data }) => {
     session.value = data.session
     if (session.value) {
-      store.syncAll()
+      store.syncAll().then(() => store.loadAllTransactions())
     }
   })
 
   supabase.auth.onAuthStateChange((_event, _session) => {
     session.value = _session
-    if (_session) {
-      store.syncAll()
+    if (_session && _event === 'SIGNED_IN') {
+      store.syncAll().then(() => store.loadAllTransactions())
     }
   })
+})
 
-  const hasSeen = localStorage.getItem('hasSeenUpdate_v2')
-  if (!hasSeen) {
-    setTimeout(() => {
-      showUpdateModal.value = true
-    }, 500)
-  }
+watch(() => store.view, () => {
+  quickOpen.value = false
+  contentRef.value?.scrollTo({ top: 0 })
 })
 
 function saveName() {
@@ -62,9 +62,16 @@ function saveName() {
   store.setDeviceUsers(tempName.value.trim())
 }
 
-function closeUpdateModal() {
-  localStorage.setItem('hasSeenUpdate_v2', 'true')
-  showUpdateModal.value = false
+function go(view) { store.view = view; quickOpen.value = false }
+function quick(kind, type) {
+  quickOpen.value = false
+  if (kind === 'transaction') {
+    store.pendingQuickEntry = { kind, type }
+    go('accounting')
+  } else if (kind === 'client') {
+    store.pendingQuickEntry = { kind }
+    go('clients')
+  } else go(kind)
 }
 
 // 💡 智能升級：攔截「Email未驗證」錯誤，自動引導輸入驗證碼
@@ -150,8 +157,6 @@ async function handleForgotPassword() {
 async function handleLogout() {
   if(confirm('確定要登出系統嗎？')) {
     await supabase.auth.signOut()
-    localStorage.clear()
-    sessionStorage.clear()
     window.location.reload()
   }
 }
@@ -182,9 +187,9 @@ const scrollToTop = () => {
 <template>
   <div v-if="!session" class="login-screen">
     <div class="login-card">
-      <div class="login-logo">💪</div>
-      <h1 class="login-title">FITWORK PRO</h1>
-      <p class="login-subtitle">旗艦版店務管理系統</p>
+      <div class="login-logo">BZ</div>
+      <h1 class="login-title">BZ記錄器</h1>
+      <p class="login-subtitle">生意、客戶、庫存，一個地方記好。</p>
 
       <div v-if="isVerifying">
         
@@ -228,9 +233,7 @@ const scrollToTop = () => {
         </div>
 
         <div class="login-options">
-          <label class="remember-me">
-            <input type="checkbox" v-model="rememberMe"> 記住我
-          </label>
+          <span>登入後會喺呢部裝置保持登入</span>
           <button v-if="!isRegistering" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
         </div>
 
@@ -256,7 +259,7 @@ const scrollToTop = () => {
     <div v-if="!store.currentUser" class="welcome-overlay">
       <div class="welcome-modal">
         <div class="w-icon">👋</div>
-        <h2 class="w-title">歡迎來到 FITWORK PRO</h2>
+        <h2 class="w-title">歡迎來到 BZ記錄器</h2>
         <p class="w-desc">請輸入你們的稱呼（若有兩人請用逗號隔開）：</p>
         
         <input v-model="tempName" placeholder="例如：Kwan, Cat" class="w-inp" @keyup.enter="saveName">
@@ -264,26 +267,20 @@ const scrollToTop = () => {
       </div>
     </div>
 
-    <div class="header">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-size:24px;">💪</span>
-        <span style="font-weight:900; font-size:18px; color:var(--p); letter-spacing:-1px;">FITWORK PRO</span>
+    <header class="header bz-header">
+      <button type="button" class="bz-brand" @click="go('home')"><span>BZ</span><span><b>BZ記錄器</b><small>{{ store.currentUser || '工作台' }}</small></span></button>
+      <div class="bz-header-actions">
+        <button v-if="store.deviceUsers?.length > 1" class="bz-user-switch" type="button" @click="store.switchUser()">{{ store.currentUser }} ⇄</button>
+        <button class="bz-header-icon" type="button" aria-label="搜尋資料" @click="searchOpen=true">⌕</button>
+        <button class="bz-header-icon" type="button" :aria-label="store.isSyncing ? '同步中' : '重新同步'" @click="store.syncAll()">{{ store.isSyncing ? '◌' : '↻' }}</button>
+        <button class="bz-header-icon" type="button" aria-label="更多工具" @click="go('more')">⋯</button>
       </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        
-        <button v-if="store.deviceUsers && store.deviceUsers.length > 1" class="user-switch-btn" @click="store.switchUser()">
-          🔄 {{ store.currentUser }}
-        </button>
-        <button v-else-if="store.currentUser" class="icon-btn" style="width:auto; padding:0 10px; font-size:12px;">👤 {{ store.currentUser }}</button>
-
-        <button class="icon-btn" @click="store.syncAll()"><span>↻</span></button>
-        <button class="icon-btn" @click="store.view='settings'"><span style="font-size:16px;">⚙️</span></button>
-        <button class="icon-btn" @click="handleLogout"><span style="font-size:14px;">🚪</span></button>
-      </div>
-    </div>
+    </header>
 
     <div class="content" ref="contentRef" @scroll="checkScroll">
-      <DashboardView v-if="store.view === 'dashboard'" />
+      <HomeView v-if="store.view === 'home'" @search="searchOpen=true" />
+      <MoreView v-else-if="store.view === 'more'" />
+      <DashboardView v-else-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
       <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
       <ClientsView v-else-if="store.view === 'clients'" />
@@ -294,35 +291,28 @@ const scrollToTop = () => {
       <SettingsView v-else-if="store.view === 'settings'" />
     </div>
 
-    <div class="nav">
-      <div class="nav-item" :class="{active: store.view==='dashboard'}" @click="store.view='dashboard'"><span>📊</span><span>總覽</span></div>
-      <div class="nav-item" :class="{active: store.view==='promo'}" @click="store.view='promo'"><span>📢</span><span>宣傳</span></div>
-      <div class="nav-item" :class="{active: store.view==='herbalife'}" @click="store.view='herbalife'"><span>🏆</span><span>獎賞</span></div>
-      <div class="nav-item" :class="{active: store.view==='clients'}" @click="store.view='clients'"><span>👥</span><span>客戶</span></div>
-      <div class="nav-item" :class="{active: store.view==='movement'}" @click="store.view='movement'"><span>🏋️</span><span>運動</span></div>
-      <div class="nav-item" :class="{active: store.view==='retail'}" @click="store.view='retail'"><span>🛒</span><span>零售</span></div>
-      <div class="nav-item" :class="{active: store.view==='inventory'}" @click="store.view='inventory'"><span>📦</span><span>庫存</span></div>
-      <div class="nav-item" :class="{active: store.view==='accounting'}" @click="store.view='accounting'"><span>📝</span><span>記帳</span></div>
+    <nav class="nav bz-nav" aria-label="主要導覽">
+      <button type="button" class="nav-item" :class="{active: store.view==='home'}" @click="go('home')"><span>⌂</span><span>首頁</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='clients'}" @click="go('clients')"><span>♙</span><span>客戶</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='accounting'}" @click="go('accounting')"><span>▤</span><span>記帳</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='inventory'}" @click="go('inventory')"><span>▦</span><span>庫存</span></button>
+      <button type="button" class="nav-item" :class="{active: ['more','dashboard','promo','herbalife','movement','retail','settings'].includes(store.view)}" @click="go('more')"><span>⋯</span><span>更多</span></button>
+    </nav>
+    <button type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
+    <div v-if="quickOpen" class="bz-quick-backdrop" @click.self="quickOpen=false">
+      <section class="bz-quick-sheet" role="dialog" aria-modal="true" aria-label="快速新增">
+        <div class="bz-quick-head"><div><small>最常用嘅操作</small><h2>快速新增</h2></div><button type="button" @click="quickOpen=false">關閉</button></div>
+        <div class="bz-quick-grid">
+          <button type="button" @click="quick('transaction','income')"><span>＋</span><b>記收入</b><small>新增一筆收入</small></button>
+          <button type="button" @click="quick('transaction','expense')"><span>−</span><b>記支出</b><small>新增一筆支出</small></button>
+          <button type="button" @click="quick('client')"><span>♙</span><b>新客戶</b><small>登記姓名電話</small></button>
+          <button type="button" @click="quick('retail')"><span>▣</span><b>零售收銀</b><small>產品結帳</small></button>
+          <button type="button" @click="quick('movement')"><span>♧</span><b>運動套票</b><small>收款及續卡</small></button>
+        </div>
+      </section>
     </div>
+    <GlobalSearch :open="searchOpen" @close="searchOpen=false" />
   </div>
-
-  <BaseModal :show="showUpdateModal" title="🚀 系統更新通知" @close="closeUpdateModal">
-    <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
-      <p>大家好！我們的系統已經進行了全新升級：</p>
-      <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
-        <li>✅ <strong>全面升級多帳號隱私防護層</strong></li>
-        <li>✅ 智能防呆：自動攔截未驗證帳號並引導驗證</li>
-        <li>✅ 新增手動輸入驗證碼安全通道</li>
-        <li>✅ 大幅提升頁面滾動與拖曳流暢度</li>
-      </ul>
-      <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
-        (此訊息僅顯示一次)
-      </p>
-    </div>
-    <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
-      我知道了，開始使用！
-    </button>
-    </BaseModal>
 
   <!-- 🟢 將按鈕搬出 Modal，放喺最外層，咁先會全域顯示！ -->
   <Transition name="fab-fade">

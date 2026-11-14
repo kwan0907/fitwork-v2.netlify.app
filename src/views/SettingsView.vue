@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { supabase } from '../supabase'
 import { useMainStore } from '../stores/mainStore'
+import { downloadAccountBackup } from '../accountBackup'
 import {
   loadMovementPackages,
   normalizeMovementPackage,
@@ -14,6 +15,21 @@ const userEmail = ref('')
 const payeesInput = ref('kwan, Cat')
 const newPassword = ref('')
 const loadingPwd = ref(false)
+const exportingBackup = ref(false)
+const backupSummary = ref('')
+
+async function exportBackup() {
+  exportingBackup.value = true
+  backupSummary.value = ''
+  try {
+    const counts = await downloadAccountBackup()
+    backupSummary.value = `已匯出 ${counts.clients} 位客戶、${counts.transactions} 筆交易，以及其他帳戶資料。請將檔案妥善保存。`
+  } catch (error) {
+    backupSummary.value = error?.message || '匯出失敗，請再試。'
+  } finally {
+    exportingBackup.value = false
+  }
+}
 
 const packageRows = ref([])
 const packagesLoading = ref(false)
@@ -48,7 +64,7 @@ onMounted(async () => {
 async function refreshPackages() {
   packagesLoading.value = true
   try {
-    packageRows.value = await loadMovementPackages({ includeInactive: true, ensureDefaults: true })
+    packageRows.value = await loadMovementPackages({ includeInactive: true, ensureDefaults: false })
   } catch (err) {
     alert('套票設定讀取失敗：' + (err?.message || '未知錯誤'))
   } finally {
@@ -133,6 +149,14 @@ async function handleLogout() {
       <div class="section-title">👤 個人資訊</div>
       <div class="email-display">{{ userEmail || '載入中...' }}</div>
       <p class="desc">這是您目前的登入帳號</p>
+    </div>
+
+    <div class="card bz-backup-card">
+      <div class="section-title">資料備份</div>
+      <p class="desc">下載呢個帳戶可讀取嘅客戶、交易、庫存、收支、活動同套票設定。匯出只會讀取資料，唔會改動紀錄。</p>
+      <button class="btn-save" type="button" :disabled="exportingBackup" @click="exportBackup">{{ exportingBackup ? '正在整理資料…' : '下載帳戶資料 JSON' }}</button>
+      <p v-if="backupSummary" class="bz-backup-result" role="status">{{ backupSummary }}</p>
+      <p class="desc">登入密碼、伺服器操作日誌同檔案儲存需要另外喺 Supabase 做專案級備份。</p>
     </div>
 
     <div class="card">

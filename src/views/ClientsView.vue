@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase' 
 
@@ -9,7 +9,21 @@ const showAddModal = ref(false)
 const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
-const filterStatus = ref('active')
+const filterStatus = ref('')
+function consumeNavigation() {
+  if (store.pendingQuickEntry?.kind === 'client') {
+    store.pendingQuickEntry = null
+    openAddModal()
+  }
+  if (store.pendingSearch?.kind === 'client') {
+    clientSearch.value = store.pendingSearch.query || ''
+    filterStatus.value = ''
+    store.pendingSearch = null
+  }
+}
+onMounted(consumeNavigation)
+watch(() => store.pendingQuickEntry, consumeNavigation)
+watch(() => store.pendingSearch, consumeNavigation)
 const filterMyGiftExpiring = ref(false) 
 const sortBy = ref('default') 
 const consumeMyGift = ref(false)
@@ -298,9 +312,10 @@ const filteredClients = computed(() => {
   const q = rawQ.replace(/\s+/g, '') // 🚀 搜尋字串去除空格
   if (q) {
     list = list.filter(c => {
-      const nameMatch = c?.name && c?.name.toLowerCase().includes(q);
+      const nameMatch = c?.name && c?.name.toLowerCase().replace(/\s+/g, '').includes(q);
       const phoneStr = c?.phone ? String(c?.phone).replace(/\s+/g, '') : ''; // 🚀 資料庫號碼去除空格
-      return nameMatch || phoneStr.includes(q);
+      const staffMatch = String(c?.handled_by || '').toLowerCase().replace(/\s+/g, '').includes(q)
+      return nameMatch || phoneStr.includes(q) || staffMatch;
     })
   }
   
@@ -673,8 +688,8 @@ async function handleImport(e) {
 <template>
   <div class="page">
     <div class="header-section">
-      <h2 class="page-title">FITWORK PRO 管理端</h2>
-      <p class="subtitle">數據即時同步中 ⚡️</p>
+      <div><h2 class="page-title">客戶</h2><p class="subtitle">{{ filteredClients.length }} 位符合條件</p></div>
+      <button class="btn-primary bz-client-add" type="button" @click="openAddModal">＋ 新客戶</button>
     </div>
     
     <div class="card search-box">
@@ -683,6 +698,7 @@ async function handleImport(e) {
 
       <!-- 2. 客戶狀態過濾 (移除分店，減輕滑動負擔) -->
       <div class="filter-row">
+        <button class="f-btn" :class="{active: filterStatus===''}" @click="filterStatus=''">全部</button>
         <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
         <button class="f-btn" :class="{active: filterStatus==='absent'}" @click="filterStatus='absent'">⚠️ 缺席/需補堂</button>
@@ -716,6 +732,7 @@ async function handleImport(e) {
     </div>
 
     <div class="list-container">
+      <p v-if="!filteredClients.length" class="bz-empty">冇符合條件嘅客戶，試吓清除搜尋或更改篩選。</p>
       <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openActionModal(c)">
         <div class="c-avatar">{{ (c.name || '?').charAt(0) }}</div>
         <div class="c-main">

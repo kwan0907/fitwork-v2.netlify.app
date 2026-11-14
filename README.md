@@ -1,16 +1,20 @@
-# FITWORK PRO
+# BZ記錄器
 
-FITWORK PRO 是 Fitwork 的店務管理 Web App，使用 Vue 3 + Vite 建立，並以 Supabase 處理登入及資料。
+BZ記錄器（原 FITWORK PRO）係店務管理 Web App，用 Vue 3 + Vite 建立，並以 Supabase 處理登入及資料。
 
 ## 主要模組
 
-- 總覽 Dashboard
+- 手機工作台、跨資料搜尋、快速記帳
+- 詳細報表 Dashboard
 - 宣傳及獎賞
 - 客戶管理
 - 運動／課堂記錄
 - 零售及庫存
 - 記帳
 - 設定及資料同步
+- 帳戶資料 JSON 匯出
+
+今次手機改版同資料保護安排見 [docs/BZ_REDESIGN.md](docs/BZ_REDESIGN.md)。
 
 ## 技術
 
