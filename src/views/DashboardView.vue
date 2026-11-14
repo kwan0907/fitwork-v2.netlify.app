@@ -1328,7 +1328,7 @@ onMounted(() => {
         <!-- 💡 修正後的頂部標題區 -->
         <div class="r-header" style="flex-direction: column; align-items: flex-start; gap: 5px;">
           <div style="width: 100%;">
-            <h1 class="r-title" style="font-size: 22px; white-space: nowrap;">BZ PRO 營運報告</h1>
+            <h1 class="r-title" style="font-size: 22px; white-space: nowrap;">BZ記錄器 營運報告</h1>
             <p class="r-subtitle">
               結算區間：{{ monthlyReport.startMonth }}{{ monthlyReport.startMonth !== monthlyReport.endMonth ? ' 至 ' + monthlyReport.endMonth : '' }} | 
               產出日期：{{ new Date().toLocaleDateString() }}
@@ -1418,7 +1418,7 @@ onMounted(() => {
           </tbody>
         </table>
 
-        <div class="r-footer">此報表由 FITWORK PRO 系統自動結算產生。</div>
+        <div class="r-footer">此報表由 BZ記錄器自動結算產生。</div>
       </div>
     </div>
   </div>

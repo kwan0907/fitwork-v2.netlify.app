@@ -8,11 +8,13 @@ import DashboardView from './views/DashboardView.vue'
 import HomeView from './views/HomeView.vue'
 import MoreView from './views/MoreView.vue'
 import GlobalSearch from './components/GlobalSearch.vue'
+import BzIcon from './components/BzIcon.vue'
 import PromoView from './views/PromoView.vue'
 import HerbalifePromo from './views/HerbalifePromo.vue' 
 import ClientsView from './views/ClientsView.vue'
 import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
+import ProductsView from './views/ProductsView.vue'
 import MovementView from './views/MovementView.vue'
 import RetailView from './views/RetailView.vue'
 import SettingsView from './views/SettingsView.vue'
@@ -37,6 +39,19 @@ const searchOpen = ref(false)
 const quickOpen = ref(false)
 
 onMounted(() => {
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('bz-preview')) {
+    session.value = { user: { id: 'local-preview' } }
+    store.currentUser = '預覽'
+    store.isInitialLoading = false
+    store.hasMoreTxn = false
+    const stamp = new Date().toISOString()
+    store.transactions = [
+      { id: 'preview-1', type: 'income', amount: 1280, profit: 480, category: '產品零售', product_name: '營養蛋白素', created_at: stamp },
+      { id: 'preview-2', type: 'income', amount: 980, profit: 390, category: '運動套票', created_at: stamp },
+      { id: 'preview-3', type: 'expense', amount: 220, category: '廣告費用', created_at: stamp }
+    ]
+    return
+  }
   supabase.auth.getSession().then(({ data }) => {
     session.value = data.session
     if (session.value) {
@@ -268,7 +283,7 @@ const scrollToTop = () => {
       </div>
     </div>
 
-    <header class="header bz-header">
+    <header v-if="store.view !== 'home'" class="header bz-header">
       <button type="button" class="bz-brand" @click="go('home')"><span>BZ</span><span><b>BZ記錄器</b><small>{{ store.currentUser || '工作台' }}</small></span></button>
       <div class="bz-header-actions">
         <button v-if="store.deviceUsers?.length > 1" class="bz-user-switch" type="button" @click="store.switchUser()">{{ store.currentUser }} ⇄</button>
@@ -289,27 +304,28 @@ const scrollToTop = () => {
       <MovementView v-else-if="store.view === 'movement'" />
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
+      <ProductsView v-else-if="store.view === 'products'" />
       <AccountingView v-else-if="store.view === 'accounting'" />
       <SettingsView v-else-if="store.view === 'settings'" />
     </div>
 
     <nav class="nav bz-nav" aria-label="主要導覽">
-      <button type="button" class="nav-item" :class="{active: store.view==='home'}" @click="go('home')"><span>⌂</span><span>首頁</span></button>
-      <button type="button" class="nav-item" :class="{active: store.view==='clients'}" @click="go('clients')"><span>♙</span><span>客戶</span></button>
-      <button type="button" class="nav-item" :class="{active: store.view==='accounting'}" @click="go('accounting')"><span>▤</span><span>記帳</span></button>
-      <button type="button" class="nav-item" :class="{active: store.view==='inventory'}" @click="go('inventory')"><span>▦</span><span>庫存</span></button>
-      <button type="button" class="nav-item" :class="{active: ['more','dashboard','promo','herbalife','movement','retail','settings'].includes(store.view)}" @click="go('more')"><span>⋯</span><span>更多</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='home'}" @click="go('home')"><BzIcon name="home"/><span>首頁</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='clients'}" @click="go('clients')"><BzIcon name="users"/><span>客戶</span></button>
+      <button type="button" class="nav-item" :class="{active: ['inventory','products'].includes(store.view)}" @click="go('inventory')"><BzIcon name="box"/><span>庫存</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='dashboard'}" @click="go('dashboard')"><BzIcon name="chart"/><span>報表</span></button>
+      <button type="button" class="nav-item" :class="{active: ['more','promo','herbalife','movement','retail','settings','accounting'].includes(store.view)}" @click="go('more')"><BzIcon name="more"/><span>更多</span></button>
     </nav>
-    <button type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
+    <button v-if="store.view !== 'home'" type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
     <div v-if="quickOpen" class="bz-quick-backdrop" @click.self="quickOpen=false">
       <section class="bz-quick-sheet" role="dialog" aria-modal="true" aria-label="快速新增">
         <div class="bz-quick-head"><div><small>最常用嘅操作</small><h2>快速新增</h2></div><button type="button" @click="quickOpen=false">關閉</button></div>
         <div class="bz-quick-grid">
-          <button type="button" @click="quick('transaction','income')"><span>＋</span><b>記收入</b><small>新增一筆收入</small></button>
-          <button type="button" @click="quick('transaction','expense')"><span>−</span><b>記支出</b><small>新增一筆支出</small></button>
-          <button type="button" @click="quick('client')"><span>♙</span><b>新客戶</b><small>登記姓名電話</small></button>
-          <button type="button" @click="quick('retail')"><span>▣</span><b>零售收銀</b><small>產品結帳</small></button>
-          <button type="button" @click="quick('movement')"><span>♧</span><b>運動套票</b><small>收款及續卡</small></button>
+          <button type="button" @click="quick('retail')"><span>＋</span><b>新增交易</b><small>產品結帳</small></button>
+          <button type="button" @click="quick('retail')"><span>▣</span><b>出貨／銷售</b><small>記錄銷售同扣庫存</small></button>
+          <button type="button" @click="quick('inventory')"><span>▤</span><b>入貨／補貨</b><small>新增庫存</small></button>
+          <button type="button" @click="quick('transaction','expense')"><span>−</span><b>支出記錄</b><small>新增一筆支出</small></button>
+          <button type="button" @click="quick('client')"><span>♙</span><b>新增客戶</b><small>登記資料</small></button>
         </div>
       </section>
     </div>

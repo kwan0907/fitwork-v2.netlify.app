@@ -2,8 +2,8 @@
 import { useMainStore } from '../stores/mainStore'
 const store = useMainStore()
 const groups = [
-  { title: '銷售與客戶', items: [['retail', '零售收銀', '產品結帳'], ['movement', '運動套票', '套票及服務'], ['promo', '宣傳記錄', '活動成效']] },
-  { title: '管理工具', items: [['dashboard', '詳細報表', '完整數據分析'], ['herbalife', '康寶萊獎賞', '業績及獎賞'], ['settings', '設定與資料匯出', '帳戶及備份']] }
+  { title: '記錄與銷售', items: [['retail', '新增交易／出貨', '產品結帳及庫存扣減'], ['inventory', '入貨／補貨', '批量採購及單件入庫'], ['accounting', '收支流水帳', '查閱及新增帳目'], ['movement', '運動套票', '套票及服務']] },
+  { title: '管理與分析', items: [['products', '產品管理', '產品資料、售價及成本'], ['dashboard', '報表分析', '完整數據分析'], ['promo', '宣傳記錄', '活動成效'], ['herbalife', '康寶萊獎賞', '業績及獎賞'], ['settings', '設定與資料匯出', '帳戶及備份']] }
 ]
 </script>
 <template>

@@ -1,86 +1,78 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useMainStore } from '../stores/mainStore'
+import BzIcon from '../components/BzIcon.vue'
 
 defineEmits(['search'])
 const store = useMainStore()
-const hkDay = value => new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit'
-}).format(new Date(value))
-const today = computed(() => hkDay(Date.now()))
-const month = computed(() => today.value.slice(0, 7))
-const monthLabel = computed(() => `${Number(month.value.slice(5))} 月`)
-const money = value => Number(value || 0).toLocaleString('en-HK', { maximumFractionDigits: 2 })
-const thisMonth = computed(() => store.transactions.filter(row => row.created_at && hkDay(row.created_at).startsWith(month.value)))
-const income = computed(() => thisMonth.value.reduce((sum, row) => sum + (row.type === 'income' ? Number(row.amount || 0) : 0), 0))
-const expense = computed(() => thisMonth.value.reduce((sum, row) => sum + (row.type === 'expense' ? Number(row.amount || 0) : 0), 0))
-const recent = computed(() => [...store.transactions].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 5))
-const followUps = computed(() => store.clients.filter(c => c.status === 'prospect' || c.status === 'absent').sort((a, b) => String(a.trial_date || '').localeCompare(String(b.trial_date || ''))).slice(0, 3))
-const lowStock = computed(() => Object.entries(store.stock).filter(([, qty]) => Number(qty) <= 5).sort((a, b) => Number(a[1]) - Number(b[1])).slice(0, 3))
-
-function quick(type) {
-  store.pendingQuickEntry = { kind: 'transaction', type }
-  store.view = 'accounting'
-}
-function newClient() {
-  store.pendingQuickEntry = { kind: 'client' }
-  store.view = 'clients'
+const hkDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
+const today = hkDate(Date.now())
+const currentMonth = today.slice(0, 7)
+const selectedMonth = ref(currentMonth)
+const months = computed(() => [...new Set([currentMonth, ...store.transactions.map(t => t.created_at && hkDate(t.created_at).slice(0, 7)).filter(Boolean)])].sort((a, b) => b.localeCompare(a)))
+const monthRows = computed(() => store.transactions.filter(t => t.created_at && hkDate(t.created_at).startsWith(selectedMonth.value)))
+const todayRows = computed(() => store.transactions.filter(t => t.created_at && hkDate(t.created_at) === today))
+const income = computed(() => monthRows.value.reduce((n, t) => n + (t.type === 'income' ? Number(t.amount || 0) : 0), 0))
+const profit = computed(() => monthRows.value.reduce((n, t) => n + (t.type === 'income' ? Number(t.profit ?? t.amount ?? 0) : t.type === 'expense' ? -Number(t.amount || 0) : 0), 0))
+const todayIncome = computed(() => todayRows.value.reduce((n, t) => n + (t.type === 'income' ? Number(t.amount || 0) : 0), 0))
+const todaySales = computed(() => todayRows.value.filter(t => t.type === 'income').length)
+const todayShipments = computed(() => todayRows.value.filter(t => t.type === 'income' && (t.product_name || /零售|產品|出貨/.test(t.category || ''))).length)
+const todayExpenses = computed(() => todayRows.value.filter(t => t.type === 'expense'))
+const expenseTotal = computed(() => todayExpenses.value.reduce((n, t) => n + Number(t.amount || 0), 0))
+const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+const greeting = hour < 11 ? '早晨！' : hour < 18 ? '午安！' : '晚上好！'
+const greetingIcon = hour < 18 ? '☀️' : '🌙'
+const money = n => Number(n || 0).toLocaleString('en-HK', { maximumFractionDigits: 2 })
+function quick(view, kind) {
+  store.pendingQuickEntry = kind ? { kind, type: 'expense' } : null
+  store.view = view
 }
 </script>
 
 <template>
-  <div class="bz-home">
-    <section class="bz-hero">
-      <div class="bz-hero-top"><span>今日工作台</span><span>{{ today }}</span></div>
-      <h1>記低每一單，<br>生意更清楚。</h1>
-      <p>記帳、搵客戶、睇庫存，由呢度開始。</p>
-      <button class="bz-hero-search" type="button" @click="$emit('search')"><span>⌕</span> 搜尋客戶、紀錄或產品 <span>→</span></button>
+  <main class="bz-home">
+    <div class="bz-home-wash" aria-hidden="true"><i/><i/><i/></div>
+    <header class="bz-home-header">
+      <div class="bz-home-brand"><span class="bz-leaf-mark" aria-hidden="true"><i/><i/></span><span><strong>BZ記錄器</strong><small>康寶萊業務管理 · 客戶 · 產品 · 記帳 · 報表</small></span></div>
+      <div class="bz-home-icons"><button type="button" aria-label="搜尋" @click="$emit('search')"><BzIcon name="search" :size="20" /></button><button type="button" aria-label="查看設定" @click="store.view='settings'"><BzIcon name="user" :size="21" /></button></div>
+    </header>
+
+    <section class="bz-welcome">
+      <div><h1>{{ greeting }} <span>{{ greetingIcon }}</span></h1><p>今日都繼續為健康與事業加油！</p></div>
+      <label class="bz-month-picker"><BzIcon name="calendar" :size="19"/><select v-model="selectedMonth" aria-label="選擇月份"><option v-for="month in months" :key="month" :value="month">{{ month.slice(0, 4) }}年{{ Number(month.slice(5)) }}月</option></select><span aria-hidden="true">⌄</span></label>
     </section>
 
-    <section class="bz-actions" aria-label="常用操作">
-      <button type="button" @click="quick('income')"><span class="bz-action-icon income">＋</span><b>記收入</b><small>快速新增</small></button>
-      <button type="button" @click="quick('expense')"><span class="bz-action-icon expense">−</span><b>記支出</b><small>快速新增</small></button>
-      <button type="button" @click="newClient"><span class="bz-action-icon client">♙</span><b>新客戶</b><small>登記資料</small></button>
-      <button type="button" @click="store.view='retail'"><span class="bz-action-icon retail">▣</span><b>零售</b><small>開始結帳</small></button>
+    <section class="bz-metrics" aria-label="每月財務概況">
+      <button type="button" class="bz-metric" @click="store.view='dashboard'"><span class="bz-metric-icon terracotta"><BzIcon name="coins" :size="23" /></span><span class="bz-metric-copy"><span>本月收入</span><strong>HK$ {{ money(income) }}</strong></span><BzIcon class="bz-metric-chevron" name="chevronRight" :size="18" /></button>
+      <button type="button" class="bz-metric" @click="store.view='dashboard'"><span class="bz-metric-icon olive"><BzIcon name="chart" :size="23" /></span><span class="bz-metric-copy"><span>本月利潤</span><strong>HK$ {{ money(profit) }}</strong><small v-if="income">利潤率 {{ (profit / income * 100).toFixed(1) }}%</small></span><BzIcon class="bz-metric-chevron" name="chevronRight" :size="18" /></button>
     </section>
+    <p v-if="store.isSyncing || store.hasMoreTxn" class="bz-sync-note">{{ store.isSyncing ? '正在同步最新資料…' : '舊交易仍在載入，金額會自動更新。' }}</p>
 
-    <section class="bz-section">
-      <div class="bz-section-head"><div><small>生意概況</small><h2>{{ monthLabel }}收支</h2></div><button type="button" @click="store.view='dashboard'">詳細報表 →</button></div>
-      <p v-if="store.hasMoreTxn" class="bz-subtle">較舊紀錄仍在載入，金額會隨同步更新。</p>
-      <div class="bz-stat-grid">
-        <div class="bz-stat"><span>收入</span><strong class="positive">HK$ {{ money(income) }}</strong></div>
-        <div class="bz-stat"><span>支出</span><strong class="negative">HK$ {{ money(expense) }}</strong></div>
-        <div class="bz-stat wide"><span>收支差額</span><strong>HK$ {{ money(income - expense) }}</strong><small>按交易金額計算</small></div>
+    <section class="bz-quick-section">
+      <h2><span aria-hidden="true">ϟ</span> 快速記錄</h2>
+      <div class="bz-quick-actions">
+        <button class="primary" type="button" @click="quick('retail')"><BzIcon name="plus" :size="26"/><span>新增交易</span></button>
+        <button type="button" @click="quick('retail')"><BzIcon name="box"/><span>出貨／銷售</span></button>
+        <button type="button" @click="quick('inventory')"><BzIcon name="cart"/><span>入貨／補貨</span></button>
+        <button type="button" @click="quick('accounting', 'transaction')"><BzIcon name="receipt"/><span>支出記錄</span></button>
+        <button type="button" @click="quick('clients', 'client')"><BzIcon name="userPlus"/><span>新增客戶</span></button>
       </div>
     </section>
 
-    <section class="bz-section">
-      <div class="bz-section-head"><div><small>唔使逐頁搵</small><h2>最近紀錄</h2></div><button type="button" @click="store.view='accounting'">查看全部 →</button></div>
-      <div class="bz-list">
-        <div v-for="row in recent" :key="row.id" class="bz-list-row">
-          <span class="bz-row-icon" :class="row.type">{{ row.type === 'expense' ? '−' : '+' }}</span>
-          <div><b>{{ row.client_name || row.category || '未分類' }}</b><small>{{ row.category }} · {{ hkDay(row.created_at) }}</small></div>
-          <strong :class="row.type">{{ row.type === 'expense' ? '−' : '+' }}${{ money(row.amount) }}</strong>
-        </div>
-        <p v-if="!recent.length" class="bz-empty">暫時未有紀錄。用上面嘅快捷按鈕記第一筆。</p>
-      </div>
+    <section class="bz-management" aria-label="管理功能">
+      <button class="clients" type="button" @click="store.view='clients'"><BzIcon name="users" :size="29"/><span><strong>客戶管理</strong><small>客戶資料 · 跟進 · 購買紀錄</small></span><BzIcon name="chevronRight" :size="18"/></button>
+      <button class="stock" type="button" @click="store.view='inventory'"><BzIcon name="box" :size="29"/><span><strong>庫存管理</strong><small>產品庫存 · 有效期 · 補貨提醒</small></span><BzIcon name="chevronRight" :size="18"/></button>
+      <button class="products" type="button" @click="store.view='products'"><BzIcon name="bag" :size="29"/><span><strong>產品管理</strong><small>產品資料 · 售價 · 成本</small></span><BzIcon name="chevronRight" :size="18"/></button>
+      <button class="reports" type="button" @click="store.view='dashboard'"><BzIcon name="chart" :size="29"/><span><strong>報表分析</strong><small>收入 · 利潤 · 銷售統計</small></span><BzIcon name="chevronRight" :size="18"/></button>
     </section>
 
-    <div class="bz-two-columns">
-      <section class="bz-section">
-        <div class="bz-section-head"><div><small>客戶管理</small><h2>待跟進</h2></div><button type="button" @click="store.view='clients'">客戶 →</button></div>
-        <div class="bz-list">
-          <div v-for="client in followUps" :key="client.id" class="bz-list-row"><span class="bz-row-icon client">{{ (client.name || '?').charAt(0) }}</span><div><b>{{ client.name }}</b><small>{{ client.branch || '未設定分店' }} · {{ client.status === 'absent' ? '需補堂' : '試堂／預約' }}</small></div></div>
-          <p v-if="!followUps.length" class="bz-empty">目前冇待跟進客戶。</p>
-        </div>
-      </section>
-      <section class="bz-section">
-        <div class="bz-section-head"><div><small>庫存管理</small><h2>低存量</h2></div><button type="button" @click="store.view='inventory'">庫存 →</button></div>
-        <div class="bz-list">
-          <div v-for="[key, qty] in lowStock" :key="key" class="bz-list-row"><span class="bz-row-icon stock">▤</span><div><b>{{ key.replace(/_[^_]+$/, '') }}</b><small>{{ key.split('_').at(-1) }}</small></div><strong class="negative">{{ qty }} 件</strong></div>
-          <p v-if="!lowStock.length" class="bz-empty">暫時冇低存量項目。</p>
-        </div>
-      </section>
-    </div>
-  </div>
+    <section class="bz-today">
+      <div class="bz-today-title"><h2><BzIcon name="calendar" :size="21"/> 今日概況</h2><button type="button" @click="store.view='accounting'">查看全部 <BzIcon name="chevronRight" :size="15"/></button></div>
+      <div class="bz-today-card">
+        <div><BzIcon name="bag" :size="20"/><strong>銷售收入</strong><span>{{ todaySales }} 筆</span><b class="green">HK$ {{ money(todayIncome) }}</b></div>
+        <div><BzIcon name="box" :size="20"/><strong>產品出貨</strong><span>{{ todayShipments }} 筆</span><b>—</b></div>
+        <div><BzIcon name="wallet" :size="20"/><strong>支出</strong><span>{{ todayExpenses.length }} 筆</span><b class="orange">HK$ {{ money(expenseTotal) }}</b></div>
+      </div>
+    </section>
+  </main>
 </template>

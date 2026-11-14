@@ -3,8 +3,8 @@
   "short_name": "BZ記錄器",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#4f46e2",
+  "background_color": "#f8f2ec",
+  "theme_color": "#b96d4a",
   "icons": [
     {
       "src": "/icon-192.png",
