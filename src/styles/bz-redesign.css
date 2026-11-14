@@ -107,10 +107,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #app-main .inp:focus,#app-main .modern-inp:focus,#app-main .search-box:focus { border-color:var(--p); box-shadow:0 0 0 3px var(--ps); }
 #app-main .header-section,#app-main .page .glass-card,#app-main .page .card { background-color:#fffaf5; }
 #app-main .page [style*="#4f46e2"],#app-main .page [style*="#4f46e5"] { accent-color:var(--p); }
-.login-screen { background:radial-gradient(circle at 75% 8%,#f4e4d0,#f8f2ec 53%); }
-.login-card { border:1px solid var(--border); background:#fffaf5; box-shadow:0 20px 55px rgba(82,52,35,.12); }
+.login-screen { background:radial-gradient(circle at 75% 8%,#f4e4d0,#f8f2ec 53%) !important; }
+.login-screen .login-card { border:1px solid var(--border); background:#fffaf5; box-shadow:0 20px 55px rgba(82,52,35,.12) !important; }
 .login-logo { display:grid; place-items:center; width:59px; height:59px; margin:0 auto 13px; border-radius:18px; background:var(--p); color:white; font-size:23px; font-weight:900; }
-.login-title { color:var(--t); }.login-btn { box-shadow:0 9px 20px rgba(164,91,55,.2) !important; }
+.login-screen .login-logo { filter:drop-shadow(0 8px 12px rgba(139,81,53,.14)); }.login-title { color:var(--t); }.login-btn { box-shadow:0 9px 20px rgba(164,91,55,.2) !important; }
 .welcome-overlay { background:rgba(51,38,29,.68); }.welcome-modal { background:#fffaf5; }.w-inp { color:var(--p); border-color:var(--border); }.w-inp:focus { border-color:var(--p); background:var(--ps); }
 
 /* More and search */
