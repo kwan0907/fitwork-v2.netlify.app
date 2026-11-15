@@ -1183,7 +1183,7 @@ async function handleImport(e) {
               <div class="bz-class-picker-head"><strong>由課程時間表揀</strong><button type="button" @click="loadClasses">{{ scheduleOpened ? '重新讀取' : '查看課堂' }}</button></div>
               <div v-if="scheduleOpened" class="bz-class-picker-body">
                 <label for="class-schedule-date">課堂日期</label><input id="class-schedule-date" v-model="scheduleDate" type="date" class="modern-date" :min="todayStr" :max="maxScheduleDate">
-                <p v-if="scheduleSample" class="bz-class-note">示範資料只顯示 {{ sampleClassDate }} 嘅部分課堂；登入後可讀即時課表。</p>
+                <p v-if="scheduleSample" class="bz-class-note">呢啲係 {{ sampleClassDate }} 嘅示範課堂；即時課表連線尚待設定。</p>
                 <p v-if="scheduleLoading || checkingCourse" class="bz-class-note" role="status">{{ checkingCourse ? '核對最新課堂中…' : '讀取課堂中…' }}</p>
                 <p v-else-if="scheduleError" class="bz-flow-error" role="alert">{{ scheduleError }}</p>
                 <p v-else-if="!scheduleRows.length" class="bz-class-note">當日暫時冇課堂；可以轉日期或手動輸入。</p>
