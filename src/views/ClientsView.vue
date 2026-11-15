@@ -491,14 +491,18 @@ const quickSaving = ref(false)
 const quickError = ref('')
 const quickSaveLocked = ref(false)
 const quickPackageRows = ref([])
-const quickTrialPaid = computed(() => quickFlow.value === 'trial' && quickOutcome.value.startsWith('opened_') &&
-  store.transactions.some(t => String(t.client_id) === String(quickClient.value?.id) && t.category === '試堂' && Number(t.amount) === 98))
-const quickPackages = computed(() => Object.fromEntries(quickPackageRows.value.filter(pkg => ['pkg_10', 'pkg_35'].includes(pkg.package_key) && pkg.is_active).map(pkg => [pkg.package_key, {
-  label: pkg.label, amount: calculateMovementPackage(pkg, { isNewCustomer: quickTrialPaid.value }).amount,
-  cost: calculateMovementPackage(pkg, { isNewCustomer: quickTrialPaid.value }).cost,
-  profit: calculateMovementPackage(pkg, { isNewCustomer: quickTrialPaid.value }).profit,
-  category: pkg.category, expiryYears: pkg.expiry_years, incrementCount: pkg.increment_pkg_count
-}])))
+const quickApplyTrialDiscount = ref(false)
+const quickPackages = computed(() => Object.fromEntries(quickPackageRows.value
+  .filter(pkg => ['pkg_10', 'pkg_35'].includes(pkg.package_key) && pkg.is_active)
+  .map(pkg => {
+    const calc = calculateMovementPackage(pkg, {
+      isNewCustomer: quickFlow.value === 'trial' && quickOutcome.value.startsWith('opened_') && quickApplyTrialDiscount.value
+    })
+    return [pkg.package_key, {
+      label: pkg.label, amount: calc.amount, cost: calc.cost, profit: calc.profit,
+      category: pkg.category, expiryYears: pkg.expiry_years, incrementCount: pkg.increment_pkg_count
+    }]
+  })))
 const quickNeedsPackage = computed(() => quickFlow.value === 'renewal' || quickOutcome.value.startsWith('opened_'))
 const quickTotals = computed(() => {
   return quickPackages.value[quickPackage.value] || { label: '未有可用套票', amount: 0, cost: 0, profit: 0 }
@@ -511,6 +515,8 @@ async function openQuickFlow(kind) {
   quickPackage.value = quickOutcome.value === 'opened_big' ? 'pkg_35' : 'pkg_10'
   quickDate.value = getLocalHKDate()
   quickStaff.value = store.currentUser || store.settings?.payees?.[0] || '系統'
+  quickApplyTrialDiscount.value = kind === 'trial' && store.transactions.some(t =>
+    String(t.client_id) === String(quickClient.value?.id) && t.category === '試堂' && Number(t.amount) === 98)
   quickError.value = ''
   quickSaveLocked.value = false
   showActionModal.value = false
@@ -562,7 +568,7 @@ async function saveQuickFlow() {
         client_id: client.id, client_name: client.name,
         staff: quickStaff.value.trim(), handled_by: quickStaff.value.trim(),
         created_at: stamp, own_email: user.email,
-        note: `售出 ${pkg.label}${opened ? '（試堂開卡）' : '（續卡）'}`
+        note: `售出 ${pkg.label}${opened ? '（試堂開卡）' : '（續卡）'}${opened && quickApplyTrialDiscount.value ? '（扣已付試堂$98）' : ''}`
       }
       const { error: txnError } = await supabase.from('transactions').insert(row)
       if (txnError) throw txnError
@@ -1229,6 +1235,7 @@ async function handleImport(e) {
           <p v-else class="bz-flow-intro">揀套票、核對日期同金額，儲存後會自動延長有效期。</p>
           <template v-if="quickNeedsPackage">
             <div v-if="quickFlow==='renewal'" class="bz-package-choices" role="group" aria-label="套票"><button v-for="(pkg,key) in quickPackages" :key="key" type="button" :class="{active:quickPackage===key}" @click="quickPackage=key">{{ pkg.label }}<small>${{ pkg.amount }}</small></button></div>
+            <label v-if="quickFlow==='trial'" class="bz-check-row"><input v-model="quickApplyTrialDiscount" type="checkbox">已收 $98 試堂費，今次開卡扣返 $98</label>
             <div class="grid-2"><div class="f-item"><label>收款日期</label><input v-model="quickDate" type="date" class="modern-date"></div><div class="f-item"><label>處理人</label><input v-model="quickStaff" class="modern-inp" placeholder="處理人"></div></div>
             <div class="bz-flow-total"><span>{{ quickTotals.label }} · {{ quickClient?.branch }}</span><strong>${{ quickTotals.amount }}</strong><small>成本 ${{ quickTotals.cost }} · 利潤 ${{ quickTotals.profit }}</small></div>
           </template>
