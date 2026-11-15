@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useMainStore } from './stores/mainStore'
 import { supabase, isReadOnlyPreview } from './supabase'
+import { makeDemoPreviewData } from './demoPreview'
 
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
@@ -29,6 +30,8 @@ const email = ref('')
 const password = ref('')
 const isLoggingIn = ref(false)
 const isRegistering = ref(false)
+const isDemoMode = ref(false)
+const loginError = ref('')
 
 // 💡 驗證碼專用狀態
 const isVerifying = ref(false)
@@ -38,21 +41,36 @@ const tempName = ref('')
 const searchOpen = ref(false)
 const quickOpen = ref(false)
 
+function enterDemoPreview() {
+  if (!isReadOnlyPreview && !import.meta.env.DEV) return
+  if (isReadOnlyPreview && !new URLSearchParams(window.location.search).has('demo')) {
+    window.location.search = '?demo=1'
+    return
+  }
+  const demo = makeDemoPreviewData()
+  isDemoMode.value = true
+  session.value = { user: { id: 'local-demo-preview' } }
+  store.currentUser = '示範預覽'
+  store.view = 'home'
+  store.clients = demo.clients
+  store.products = demo.products
+  store.transactions = demo.transactions
+  store.stock = demo.stock
+  store.stockExpiry = demo.stockExpiry
+  store.promotions = demo.promotions
+  store.isInitialLoading = false
+  store.isSyncing = false
+  store.hasMoreTxn = false
+}
+
 onMounted(() => {
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('bz-preview')) {
-    session.value = { user: { id: 'local-preview' } }
-    store.currentUser = '預覽'
-    store.isInitialLoading = false
-    store.hasMoreTxn = false
-    const stamp = new Date().toISOString()
-    store.transactions = [
-      { id: 'preview-1', type: 'income', amount: 1280, profit: 480, category: '產品零售', product_name: '營養蛋白素', created_at: stamp },
-      { id: 'preview-2', type: 'income', amount: 980, profit: 390, category: '運動套票', created_at: stamp },
-      { id: 'preview-3', type: 'expense', amount: 220, category: '廣告費用', created_at: stamp }
-    ]
+  const params = new URLSearchParams(window.location.search)
+  if ((isReadOnlyPreview && params.has('demo')) || (import.meta.env.DEV && params.has('bz-preview'))) {
+    enterDemoPreview()
     return
   }
   supabase.auth.getSession().then(({ data }) => {
+    if (isDemoMode.value) return
     session.value = data.session
     if (session.value) {
       store.syncAll().then(() => store.loadAllTransactions())
@@ -60,6 +78,7 @@ onMounted(() => {
   })
 
   supabase.auth.onAuthStateChange((_event, _session) => {
+    if (isDemoMode.value) return
     session.value = _session
     if (_session && _event === 'SIGNED_IN') {
       store.syncAll().then(() => store.loadAllTransactions())
@@ -91,16 +110,17 @@ function quick(kind, type) {
 
 // 💡 智能升級：攔截「Email未驗證」錯誤，自動引導輸入驗證碼
 async function handleAuth() {
-  if (!email.value || !password.value) {
+  const loginEmail = email.value.trim()
+  if (!loginEmail || !password.value) {
     return alert('請完整輸入帳號與密碼')
   }
-  
+  loginError.value = ''
   isLoggingIn.value = true
   let authError = null
 
   if (isRegistering.value) {
     const result = await supabase.auth.signUp({
-      email: email.value,
+      email: loginEmail,
       password: password.value,
     })
     authError = result.error
@@ -110,7 +130,7 @@ async function handleAuth() {
     }
   } else {
     const result = await supabase.auth.signInWithPassword({
-      email: email.value,
+      email: loginEmail,
       password: password.value,
     })
     authError = result.error
@@ -126,7 +146,10 @@ async function handleAuth() {
   isLoggingIn.value = false
 
   if (authError) {
-    alert((isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message)
+    loginError.value = authError.code === 'invalid_credentials'
+      ? `電郵或密碼唔正確，請核對原有帳戶資料。${isReadOnlyPreview ? '你亦可以先用下方示範資料體驗新版。' : ''}`
+      : (isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message
+    if (!isReadOnlyPreview) alert(loginError.value)
   } else if (!isVerifying.value) {
     // 只有在真的登入成功且不需要驗證時，才清空密碼
     email.value = ''
@@ -170,6 +193,10 @@ async function handleForgotPassword() {
 }
 
 async function handleLogout() {
+  if (isDemoMode.value) {
+    window.location.href = window.location.pathname
+    return
+  }
   if(confirm('確定要登出系統嗎？')) {
     await supabase.auth.signOut()
     window.location.reload()
@@ -205,7 +232,7 @@ const scrollToTop = () => {
       <div class="login-logo">BZ</div>
       <h1 class="login-title">BZ記錄器</h1>
       <p class="login-subtitle">生意、客戶、庫存，一個地方記好。</p>
-      <p v-if="isReadOnlyPreview" class="bz-preview-login-banner">呢個係只讀預覽。可用現有帳戶查看資料，儲存操作已停用。</p>
+      <p v-if="isReadOnlyPreview" class="bz-preview-login-banner">呢個係只讀預覽。可以免登入用示範資料體驗；用現有帳戶登入則可查看本人資料。儲存操作已停用。</p>
 
       <div v-if="isVerifying">
         
@@ -240,12 +267,12 @@ const scrollToTop = () => {
       <div v-else>
         <div class="form-group">
           <label>Email 帳號</label>
-          <input v-model="email" type="email" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
+          <input v-model="email" type="email" autocomplete="username" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
         </div>
 
         <div class="form-group">
           <label>密碼</label>
-          <input v-model="password" type="password" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth">
+          <input v-model="password" type="password" autocomplete="current-password" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth">
         </div>
 
         <div class="login-options">
@@ -256,6 +283,8 @@ const scrollToTop = () => {
         <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
           {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
         </button>
+        <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
+        <button v-if="isReadOnlyPreview" type="button" class="bz-demo-button" @click="enterDemoPreview">免登入體驗新版（示範資料）</button>
 
         <div v-if="!isReadOnlyPreview" class="auth-switch">
           {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
@@ -288,12 +317,12 @@ const scrollToTop = () => {
       <div class="bz-header-actions">
         <button v-if="store.deviceUsers?.length > 1" class="bz-user-switch" type="button" @click="store.switchUser()">{{ store.currentUser }} ⇄</button>
         <button class="bz-header-icon" type="button" aria-label="搜尋資料" @click="searchOpen=true">⌕</button>
-        <button class="bz-header-icon" type="button" :aria-label="store.isSyncing ? '同步中' : '重新同步'" @click="store.syncAll()">{{ store.isSyncing ? '◌' : '↻' }}</button>
+        <button v-if="!isDemoMode" class="bz-header-icon" type="button" :aria-label="store.isSyncing ? '同步中' : '重新同步'" @click="store.syncAll()">{{ store.isSyncing ? '◌' : '↻' }}</button>
         <button class="bz-header-icon" type="button" aria-label="更多工具" @click="go('more')">⋯</button>
       </div>
     </header>
 
-    <div v-if="isReadOnlyPreview" class="bz-preview-banner" role="status">預覽模式：只供查看，儲存操作已停用。</div>
+    <div v-if="isReadOnlyPreview" class="bz-preview-banner" role="status">{{ isDemoMode ? '示範資料預覽：只供查看，唔會連接你嘅正式資料。' : '預覽模式：只供查看，儲存操作已停用。' }} <button v-if="isDemoMode" type="button" @click="handleLogout">返回登入</button></div>
     <div class="content" ref="contentRef" @scroll="checkScroll">
       <HomeView v-if="store.view === 'home'" @search="searchOpen=true" />
       <MoreView v-else-if="store.view === 'more'" />

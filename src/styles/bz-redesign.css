@@ -175,5 +175,9 @@ body .tf-tools .tf-tool:first-child { background:var(--p) !important; color:whit
 #app-main .profit-box > div > div[style] { color:#6f754d !important; }
 .bz-preview-banner { padding:7px 14px; background:#f5e8ca; color:#725532; font-size:11px; font-weight:800; text-align:center; border-bottom:1px solid #e8d7ae; }
 .bz-preview-login-banner { padding:10px 12px; border:1px solid #ead8ae; border-radius:12px; background:#fbf3e1; color:#735632; font-size:12px; line-height:1.5; font-weight:700; text-align:left; margin:0 0 20px; }
+.bz-demo-button { width:100%; margin-top:14px; padding:14px 16px; border:1px solid #c88562; border-radius:14px; background:#fffaf5; color:#9c593c; font:inherit; font-size:14px; font-weight:800; cursor:pointer; }
+.bz-demo-button:hover,.bz-demo-button:focus-visible { background:#f9ede5; outline:2px solid #dbab8a; outline-offset:2px; }
+.bz-login-error { margin:11px 0 0; padding:11px 12px; border-radius:10px; background:#fff0e9; color:#9d4d36; font-size:12px; line-height:1.55; text-align:left; }
+.bz-preview-banner button { margin-left:10px; border:0; background:none; color:#865032; text-decoration:underline; font:inherit; font-weight:800; cursor:pointer; }
 .bz-backup-card { padding:20px; margin-bottom:16px; }.bz-backup-card .btn-save { max-width:100%; }.bz-backup-card .btn-save:disabled { opacity:.6; cursor:wait; }.bz-backup-result { color:var(--g); font-size:13px; font-weight:800; line-height:1.5; }
 .bz-client-add { padding:10px 14px; font-size:13px; white-space:nowrap; }.bz-inventory-count { font-size:11px; font-weight:800; color:var(--t3); margin:9px 4px 1px; }.bz-empty { color:var(--t3); font-size:13px; text-align:center; padding:20px 8px; }

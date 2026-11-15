@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { isReadOnlyPreviewHost, shouldBlockPreviewRequest } from './previewSafety.js'
+import { isReadOnlyPreviewHost, shouldBlockDemoRequest, shouldBlockPreviewRequest } from './previewSafety.js'
 
 // Supabase project connection
 const SUPABASE_URL = 'https://ajnunehxtiofcphdyhqn.supabase.co'
@@ -72,6 +72,14 @@ async function postRpcWithRetry(rpcName, id, patch, init) {
 async function resilientSupabaseFetch(input, init = {}) {
   const method = String(init?.method || input?.method || 'GET').toUpperCase()
   const url = typeof input === 'string' ? input : String(input?.url || '')
+
+  // The public demo must never request private records or mutate live data.
+  if (shouldBlockDemoRequest(url, globalThis.location?.hostname, globalThis.location?.search, SUPABASE_URL)) {
+    return new Response(JSON.stringify({ code: 'demo_local_only', message: '示範預覽只使用本機資料。' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' }
+    })
+  }
 
   if (shouldBlockPreviewRequest(url, method, globalThis.location?.hostname, SUPABASE_URL)) {
     return new Response(JSON.stringify({ code: 'preview_read_only', message: '預覽模式只供查看，唔會寫入正式資料。' }), {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isReadOnlyPreviewHost, shouldBlockPreviewRequest } from '../src/previewSafety.js'
+import { isReadOnlyPreviewHost, shouldBlockDemoRequest, shouldBlockPreviewRequest } from '../src/previewSafety.js'
 
 const origin = 'https://ajnunehxtiofcphdyhqn.supabase.co'
 const preview = 'deploy-preview-46--dynamic-gumption-005003.netlify.app'
@@ -27,4 +27,13 @@ test('preview blocks database, RPC, storage and account changes', () => {
     ['/auth/v1/user', 'PUT']
   ]) assert.equal(shouldBlockPreviewRequest(`${origin}${path}`, method, preview, origin), true)
   assert.equal(shouldBlockPreviewRequest(`${origin}/rest/v1/clients`, 'POST', 'localhost', origin), false)
+})
+
+test('demo preview blocks every Supabase request, including reads and auth', () => {
+  for (const path of ['/rest/v1/clients', '/auth/v1/token?grant_type=password', '/storage/v1/object/public/demo']) {
+    assert.equal(shouldBlockDemoRequest(`${origin}${path}`, preview, '?demo=1', origin), true)
+  }
+  assert.equal(shouldBlockDemoRequest(`${origin}/rest/v1/clients`, preview, '', origin), false)
+  assert.equal(shouldBlockDemoRequest(`${origin}/rest/v1/clients`, 'localhost', '?demo=1', origin), false)
+  assert.equal(shouldBlockDemoRequest('https://example.com/', preview, '?demo=1', origin), false)
 })

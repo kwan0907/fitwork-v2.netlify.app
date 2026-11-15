@@ -4,6 +4,11 @@ export function isReadOnlyPreviewHost(hostname) {
     || /^[a-z0-9-]+-git-[a-z0-9-]+\.vercel\.app$/i.test(host)
 }
 
+export function shouldBlockDemoRequest(url, hostname, search, supabaseOrigin) {
+  if (!isReadOnlyPreviewHost(hostname) || !new URLSearchParams(search || '').has('demo')) return false
+  try { return new URL(url).origin === supabaseOrigin } catch { return false }
+}
+
 export function shouldBlockPreviewRequest(url, method, hostname, supabaseOrigin) {
   if (!isReadOnlyPreviewHost(hostname)) return false
   const action = String(method || 'GET').toUpperCase()
