@@ -9,14 +9,21 @@ export function shouldBlockDemoRequest(url, hostname, search, supabaseOrigin) {
   try { return new URL(url).origin === supabaseOrigin } catch { return false }
 }
 
-export function shouldBlockPreviewRequest(url, method, hostname, supabaseOrigin) {
+export function shouldBlockPreviewRequest(url, method, hostname, supabaseOrigin, body) {
   if (!isReadOnlyPreviewHost(hostname)) return false
   const action = String(method || 'GET').toUpperCase()
   if (['GET', 'HEAD', 'OPTIONS'].includes(action)) return false
   let target
   try { target = new URL(url) } catch { return false }
   if (target.origin !== supabaseOrigin) return false
-  // Existing users may sign in, refresh a session and sign out to inspect records.
-  if (action === 'POST' && ['/auth/v1/token', '/auth/v1/logout'].includes(target.pathname)) return false
+  // Account creation and recovery are Auth operations. Business tables remain read only.
+  if (action === 'POST' && ['/auth/v1/token', '/auth/v1/logout', '/auth/v1/signup', '/auth/v1/verify', '/auth/v1/recover', '/auth/v1/resend'].includes(target.pathname)) return false
+  if (action === 'PUT' && target.pathname === '/auth/v1/user') {
+    try {
+      const patch = JSON.parse(String(body || ''))
+      const allowed = ['password', 'code_challenge', 'code_challenge_method', 'nonce']
+      if (typeof patch.password === 'string' && patch.password.length >= 6 && Object.keys(patch).every(key => allowed.includes(key))) return false
+    } catch { /* block unknown account edits */ }
+  }
   return true
 }

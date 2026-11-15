@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { isReadOnlyPreviewHost, shouldBlockDemoRequest, shouldBlockPreviewRequest } from './previewSafety.js'
+import { authStorage } from './authStorage.js'
 
 // Supabase project connection
 const SUPABASE_URL = 'https://ajnunehxtiofcphdyhqn.supabase.co'
@@ -81,7 +82,7 @@ async function resilientSupabaseFetch(input, init = {}) {
     })
   }
 
-  if (shouldBlockPreviewRequest(url, method, globalThis.location?.hostname, SUPABASE_URL)) {
+  if (shouldBlockPreviewRequest(url, method, globalThis.location?.hostname, SUPABASE_URL, init?.body)) {
     return new Response(JSON.stringify({ code: 'preview_read_only', message: '預覽模式只供查看，唔會寫入正式資料。' }), {
       status: 403,
       headers: { 'content-type': 'application/json' }
@@ -120,6 +121,7 @@ async function resilientSupabaseFetch(input, init = {}) {
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
+    storage: authStorage,
     autoRefreshToken: true,
     detectSessionInUrl: true
   },

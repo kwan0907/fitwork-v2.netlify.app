@@ -3,6 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useMainStore } from './stores/mainStore'
 import { supabase, isReadOnlyPreview } from './supabase'
 import { makeDemoPreviewData } from './demoPreview'
+import { getRememberLogin, setRememberLogin } from './authStorage'
 
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
@@ -32,6 +33,12 @@ const isLoggingIn = ref(false)
 const isRegistering = ref(false)
 const isDemoMode = ref(false)
 const loginError = ref('')
+const authMessage = ref('')
+const rememberLogin = ref(getRememberLogin())
+const showPassword = ref(false)
+const isResettingPassword = ref(false)
+const newPassword = ref('')
+const showNewPassword = ref(false)
 
 // 💡 驗證碼專用狀態
 const isVerifying = ref(false)
@@ -72,7 +79,8 @@ onMounted(() => {
   supabase.auth.getSession().then(({ data }) => {
     if (isDemoMode.value) return
     session.value = data.session
-    if (session.value) {
+    if (session.value && params.has('password-reset')) isResettingPassword.value = true
+    if (session.value && !isResettingPassword.value) {
       store.syncAll().then(() => store.loadAllTransactions())
     }
   })
@@ -80,7 +88,8 @@ onMounted(() => {
   supabase.auth.onAuthStateChange((_event, _session) => {
     if (isDemoMode.value) return
     session.value = _session
-    if (_session && _event === 'SIGNED_IN') {
+    if (_event === 'PASSWORD_RECOVERY' || (_session && params.has('password-reset'))) isResettingPassword.value = true
+    if (_session && _event === 'SIGNED_IN' && !isResettingPassword.value) {
       store.syncAll().then(() => store.loadAllTransactions())
     }
   })
@@ -115,7 +124,9 @@ async function handleAuth() {
     return alert('請完整輸入帳號與密碼')
   }
   loginError.value = ''
+  authMessage.value = ''
   isLoggingIn.value = true
+  setRememberLogin(rememberLogin.value)
   let authError = null
 
   if (isRegistering.value) {
@@ -125,8 +136,12 @@ async function handleAuth() {
     })
     authError = result.error
     if (!authError) {
-      alert('系統已發送驗證碼到您的信箱！請輸入信件中的 6 位數驗證碼。')
-      isVerifying.value = true 
+      if (result.data?.session) {
+        authMessage.value = '帳戶已建立，登入成功。'
+      } else {
+        authMessage.value = '已送出驗證電郵。請按信內連結，或輸入 6 位驗證碼；驗證後返嚟登入。'
+        isVerifying.value = true
+      }
     }
   } else {
     const result = await supabase.auth.signInWithPassword({
@@ -137,7 +152,7 @@ async function handleAuth() {
     
     // 💡 關鍵防呆：如果登入失敗是因為「信箱未驗證」，自動幫他打開驗證碼格子！
     if (authError && authError.message.includes('Email not confirmed')) {
-      alert('您的信箱尚未驗證！請檢查您的信箱，並輸入 6 位數驗證碼。')
+      authMessage.value = '電郵尚未驗證。請按信內連結，或輸入 6 位驗證碼。'
       isVerifying.value = true
       authError = null // 清除錯誤，因為我們已經幫他切換畫面了
     }
@@ -149,7 +164,6 @@ async function handleAuth() {
     loginError.value = authError.code === 'invalid_credentials'
       ? `電郵或密碼唔正確，請核對原有帳戶資料。${isReadOnlyPreview ? '你亦可以先用下方示範資料體驗新版。' : ''}`
       : (isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message
-    if (!isReadOnlyPreview) alert(loginError.value)
   } else if (!isVerifying.value) {
     // 只有在真的登入成功且不需要驗證時，才清空密碼
     email.value = ''
@@ -171,9 +185,9 @@ async function handleVerify() {
   isLoggingIn.value = false
 
   if (error) {
-    alert('驗證失敗：' + error.message + ' (請確認驗證碼是否正確或已過期)')
+    loginError.value = '驗證失敗：' + error.message
   } else {
-    alert('✅ 驗證成功！系統將為您自動登入。')
+    authMessage.value = '電郵驗證成功，登入中。'
     isVerifying.value = false
     isRegistering.value = false
     verificationCode.value = ''
@@ -183,13 +197,38 @@ async function handleVerify() {
 }
 
 async function handleForgotPassword() {
-  if (!email.value) return alert('請先輸入您的 Email 帳號')
-  const { error } = await supabase.auth.resetPasswordForEmail(email.value)
+  if (!email.value.trim()) { loginError.value = '請先輸入 Email 帳號。'; return }
+  loginError.value = ''
+  authMessage.value = ''
+  isLoggingIn.value = true
+  const redirectTo = `${window.location.origin}${window.location.pathname}?password-reset=1`
+  const { error } = await supabase.auth.resetPasswordForEmail(email.value.trim(), { redirectTo })
+  isLoggingIn.value = false
   if (error) {
-    alert('發送重設密碼信件失敗: ' + error.message)
+    loginError.value = '發送重設密碼電郵失敗：' + error.message
   } else {
-    alert('已發送重設密碼信件，請檢查您的信箱！')
+    authMessage.value = '重設密碼電郵已送出。請按信內連結，再喺呢度設定新密碼。'
   }
+}
+
+async function handleResetPassword() {
+  if (newPassword.value.length < 6) { loginError.value = '新密碼最少要 6 個字元。'; return }
+  if (!session.value) { loginError.value = '重設連結未完成驗證，請重新按電郵內連結。'; return }
+  isLoggingIn.value = true
+  loginError.value = ''
+  const { error } = await supabase.auth.updateUser({ password: newPassword.value })
+  isLoggingIn.value = false
+  if (error) { loginError.value = '更新密碼失敗：' + error.message; return }
+  newPassword.value = ''
+  isResettingPassword.value = false
+  window.history.replaceState({}, '', window.location.pathname)
+  await store.syncAll()
+  await store.loadAllTransactions()
+}
+
+function returnToLogin() {
+  isResettingPassword.value = false
+  window.history.replaceState({}, '', window.location.pathname)
 }
 
 async function handleLogout() {
@@ -227,14 +266,26 @@ const scrollToTop = () => {
 </script>
 
 <template>
-  <div v-if="!session" class="login-screen">
+  <div v-if="!session || isResettingPassword" class="login-screen">
     <div class="login-card">
       <div class="login-logo">BZ</div>
       <h1 class="login-title">BZ記錄器</h1>
       <p class="login-subtitle">生意、客戶、庫存，一個地方記好。</p>
-      <p v-if="isReadOnlyPreview" class="bz-preview-login-banner">呢個係只讀預覽。可以免登入用示範資料體驗；用現有帳戶登入則可查看本人資料。儲存操作已停用。</p>
+      <p v-if="isReadOnlyPreview" class="bz-preview-login-banner">呢個係只讀預覽。可以註冊／登入帳戶體驗；客戶、交易同庫存只供查看，儲存操作已停用。</p>
 
-      <div v-if="isVerifying">
+      <div v-if="isResettingPassword">
+        <h2 class="bz-auth-heading">設定新密碼</h2>
+        <p class="bz-auth-help">重設連結驗證後，輸入新密碼就完成。</p>
+        <div class="form-group"><label for="reset-password">新密碼</label>
+          <div class="bz-password-field"><input id="reset-password" v-model="newPassword" :type="showNewPassword ? 'text' : 'password'" autocomplete="new-password" class="inp" placeholder="最少 6 個字元" @keyup.enter="handleResetPassword"><button type="button" :aria-label="showNewPassword ? '隱藏新密碼' : '顯示新密碼'" :aria-pressed="showNewPassword" @click="showNewPassword=!showNewPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.7"/><path v-if="showNewPassword" d="M3 21 21 3"/></svg></button></div>
+        </div>
+        <button type="button" class="btn-primary login-btn" :disabled="isLoggingIn || !session" @click="handleResetPassword">{{ isLoggingIn ? '更新中…' : '更新密碼' }}</button>
+        <p v-if="!session" class="bz-auth-help">請先按重設電郵內嘅連結完成驗證。</p>
+        <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
+        <button v-if="!session" type="button" class="bz-auth-link" @click="returnToLogin">返回登入</button>
+      </div>
+
+      <div v-else-if="isVerifying">
         
         <div class="form-group">
           <label>請確認您的 Email 帳號</label>
@@ -258,6 +309,8 @@ const scrollToTop = () => {
         <button class="btn-primary login-btn" @click="handleVerify" :disabled="isLoggingIn">
           {{ isLoggingIn ? '驗證中...' : '確認並登入' }}
         </button>
+        <p v-if="authMessage" class="bz-auth-message" role="status">{{ authMessage }}</p>
+        <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
 
         <div class="auth-switch">
           <span @click="isVerifying = false; isRegistering = false; verificationCode = ''">取消並返回登入</span>
@@ -271,28 +324,30 @@ const scrollToTop = () => {
         </div>
 
         <div class="form-group">
-          <label>密碼</label>
-          <input v-model="password" type="password" autocomplete="current-password" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth">
+          <label for="login-password">密碼</label>
+          <div class="bz-password-field"><input id="login-password" v-model="password" :type="showPassword ? 'text' : 'password'" :autocomplete="isRegistering ? 'new-password' : 'current-password'" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth"><button type="button" :aria-label="showPassword ? '隱藏密碼' : '顯示密碼'" :aria-pressed="showPassword" @click="showPassword=!showPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.7"/><path v-if="showPassword" d="M3 21 21 3"/></svg></button></div>
         </div>
 
         <div class="login-options">
-          <span>登入後會喺呢部裝置保持登入</span>
-          <button v-if="!isRegistering && !isReadOnlyPreview" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
+          <label class="remember-me"><input v-model="rememberLogin" type="checkbox">記住密碼</label>
+          <button v-if="!isRegistering" type="button" class="forgot-btn" :disabled="isLoggingIn" @click="handleForgotPassword">忘記密碼？</button>
         </div>
+        <p class="bz-auth-help">記住登入狀態；密碼由裝置嘅密碼管理器儲存。</p>
 
         <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
           {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
         </button>
         <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
+        <p v-if="authMessage" class="bz-auth-message" role="status">{{ authMessage }}</p>
         <button v-if="isReadOnlyPreview" type="button" class="bz-demo-button" @click="enterDemoPreview">免登入體驗新版（示範資料）</button>
 
-        <div v-if="!isReadOnlyPreview" class="auth-switch">
+        <div class="auth-switch">
           {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
-          <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
+          <button type="button" class="bz-auth-link" @click="isRegistering = !isRegistering; loginError = ''; authMessage = ''">{{ isRegistering ? '返回登入' : '立即註冊' }}</button>
         </div>
 
-        <div class="auth-switch" style="margin-top: 15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;" v-if="!isRegistering && !isReadOnlyPreview">
-          <span @click="isVerifying = true; isRegistering = false">👉 已經有 6 碼驗證碼？點此輸入</span>
+        <div class="auth-switch" style="margin-top: 15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;" v-if="!isRegistering">
+          <button type="button" class="bz-auth-link" @click="isVerifying = true; isRegistering = false">已有 6 位驗證碼？輸入驗證碼</button>
         </div>
 
       </div>

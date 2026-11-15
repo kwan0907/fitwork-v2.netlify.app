@@ -12,10 +12,14 @@ test('only Netlify deploy preview hosts are read only', () => {
   assert.equal(isReadOnlyPreviewHost('localhost'), false)
 })
 
-test('preview allows reads and existing-account authentication', () => {
+test('preview allows reads and account registration or recovery', () => {
   assert.equal(shouldBlockPreviewRequest(`${origin}/rest/v1/clients`, 'GET', preview, origin), false)
   assert.equal(shouldBlockPreviewRequest(`${origin}/auth/v1/token?grant_type=password`, 'POST', preview, origin), false)
   assert.equal(shouldBlockPreviewRequest(`${origin}/auth/v1/logout`, 'POST', preview, origin), false)
+  for (const path of ['/auth/v1/signup', '/auth/v1/verify', '/auth/v1/recover', '/auth/v1/resend']) {
+    assert.equal(shouldBlockPreviewRequest(`${origin}${path}`, 'POST', preview, origin), false)
+  }
+  assert.equal(shouldBlockPreviewRequest(`${origin}/auth/v1/user`, 'PUT', preview, origin, JSON.stringify({ password: 'new-secret', code_challenge: null, code_challenge_method: null })), false)
 })
 
 test('preview blocks database, RPC, storage and account changes', () => {
@@ -26,6 +30,11 @@ test('preview blocks database, RPC, storage and account changes', () => {
     ['/storage/v1/object/receipts/a', 'PUT'],
     ['/auth/v1/user', 'PUT']
   ]) assert.equal(shouldBlockPreviewRequest(`${origin}${path}`, method, preview, origin), true)
+  for (const body of [
+    JSON.stringify({ email: 'somebody@example.com' }),
+    JSON.stringify({ password: 'short' }),
+    JSON.stringify({ password: 'new-secret', email: 'somebody@example.com' })
+  ]) assert.equal(shouldBlockPreviewRequest(`${origin}/auth/v1/user`, 'PUT', preview, origin, body), true)
   assert.equal(shouldBlockPreviewRequest(`${origin}/rest/v1/clients`, 'POST', 'localhost', origin), false)
 })
 
