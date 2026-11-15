@@ -748,8 +748,8 @@ const trendChartData = computed(() => {
   return {
     labels,
     datasets: [
-      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
-      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
+      { label: '營業額', borderColor: '#b57452', backgroundColor: 'rgba(181, 116, 82, 0.16)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#b57452' },
+      { label: '利潤', borderColor: '#737b50', backgroundColor: 'rgba(115, 123, 80, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#737b50' }
     ]
   }
 })
@@ -785,7 +785,7 @@ const vAutoMarquee = {
       const containerWidth = el.getBoundingClientRect().width;
 
       // 3. 判斷：文字實際寬度大於容器寬度 (容許 2px 誤差防呆) 才啟動跑馬燈
-      if (textLength > 8){
+      if (contentWidth > containerWidth + 2) {
         el.classList.add('is-overflowing'); // 加上漸層遮罩
         content.style.paddingRight = '30px'; // 頭尾間距
         const clone = content.cloneNode(true);
