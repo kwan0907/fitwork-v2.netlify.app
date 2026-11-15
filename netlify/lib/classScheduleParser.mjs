@@ -8,6 +8,10 @@ const cleanText = value => String(value || '')
   .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
   .trim()
 
+export function hasTimetableLoginError(html) {
+  return /無此帳號|密碼錯誤|帳號或密碼|登入失敗|認證失敗|id=["']loginForm["']/i.test(String(html || ''))
+}
+
 export function parseClassSchedule(html, requestedDate, branch) {
   const source = String(html || '').replace(/<!--[\s\S]*?-->/g, '')
   const table = source.match(/<table\b[^>]*class=["'][^"']*table-striped[^"']*["'][^>]*>([\s\S]*?)<\/table>/i)?.[1] || ''

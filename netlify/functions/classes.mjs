@@ -1,4 +1,4 @@
-import { parseClassSchedule } from '../lib/classScheduleParser.mjs'
+import { hasTimetableLoginError, parseClassSchedule } from '../lib/classScheduleParser.mjs'
 
 const SOURCE = 'https://system5.member-platform.com'
 const SUPABASE = 'https://ajnunehxtiofcphdyhqn.supabase.co'
@@ -37,15 +37,19 @@ async function readTimetable(branch, date, account, password) {
     body: new URLSearchParams({ UserID: account, password })
   })
   addCookies(jar, login)
+  if (!login.ok || hasTimetableLoginError(await login.text())) throw new Error('課表登入資料無效，請更新預覽版連線設定。')
   const result = await fetchSource('/Branch_inquiries.asp?', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader(jar), referer: `${SOURCE}/Branch_inquiries.asp` },
     body: new URLSearchParams({ qCustID: BRANCH_IDS[branch], qDay: date.replaceAll('-', '/') })
   })
   addCookies(jar, result)
+  if (result.status >= 300 && result.status < 400 && /\/login\.asp/i.test(result.headers.get('location') || '')) {
+    throw new Error('課表登入資料無效，請更新預覽版連線設定。')
+  }
   if (!result.ok) throw new Error('課表網站暫時無法回應。')
   const html = await result.text()
-  if (/id=["']loginForm["']|name=["']UserID["']/i.test(html)) throw new Error('課表網站登入失敗，請核對連線設定。')
+  if (hasTimetableLoginError(html)) throw new Error('課表登入資料無效，請更新預覽版連線設定。')
   return parseClassSchedule(html, date, branch)
 }
 

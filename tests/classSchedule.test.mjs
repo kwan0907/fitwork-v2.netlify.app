@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseClassSchedule } from '../netlify/lib/classScheduleParser.mjs'
+import { hasTimetableLoginError, parseClassSchedule } from '../netlify/lib/classScheduleParser.mjs'
 import scheduleHandler from '../netlify/functions/classes.mjs'
 import { findAvailableCourse } from '../src/classSchedule.js'
 
@@ -19,6 +19,12 @@ test('extracts only date, course, coach, time and capacity from timetable rows',
 test('schedule endpoint rejects unauthenticated requests before contacting source', async () => {
   const response = await scheduleHandler(new Request('https://example.netlify.app/.netlify/functions/classes?branch=觀塘&date=2026-11-16'))
   assert.equal(response.status, 401)
+})
+
+test('recognizes the timetable provider account error without exposing credentials', () => {
+  assert.equal(hasTimetableLoginError("<script>Swal.fire({title:'無此帳號，請到該店申請帳號'})</script>"), true)
+  assert.equal(hasTimetableLoginError('<form id="loginForm" action="loginChk.asp"></form>'), true)
+  assert.equal(hasTimetableLoginError('<table class="table-striped"></table>'), false)
 })
 
 test('a selected class must still match the live date, time, coach and availability', () => {
