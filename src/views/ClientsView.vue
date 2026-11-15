@@ -119,7 +119,8 @@ async function loadClasses() {
   scheduleSample.value = false
   if (isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo')) {
     scheduleSample.value = true
-    scheduleRows.value = date === sampleClassDate ? (sampleClasses[branch] || []) : []
+    scheduleRows.value = date === sampleClassDate
+      ? (sampleClasses[branch] || []).map(course => ({ ...course, date, branch })) : []
     return
   }
   scheduleLoading.value = true
