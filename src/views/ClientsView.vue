@@ -1194,7 +1194,7 @@ async function handleImport(e) {
                 <p v-else-if="scheduleError" class="bz-flow-error" role="alert">{{ scheduleError }}</p>
                 <p v-else-if="!scheduleRows.length" class="bz-class-note">當日暫時冇課堂；可以轉日期或手動輸入。</p>
                 <div v-else class="bz-class-list"><button v-for="(course,index) in scheduleRows" :key="index" type="button" :disabled="course.full || checkingCourse" :class="{active:selectedCourse && sameCourse(selectedCourse, course)}" @click="selectClass(course)"><b>{{ course.start }}–{{ course.end }}</b><span>{{ course.title }}<small>{{ course.coach }} · {{ newClient.branch }}</small></span><em>{{ course.full ? '額滿' : `${course.booked ?? '—'}/${course.capacity ?? '—'}` }}</em></button></div>
-                <p class="bz-class-note">揀課及儲存前會重新核對即時課表；實際報名由你喺課程網站自行處理。</p>
+                <p class="bz-class-note">{{ scheduleSample ? '示範課堂只供操作體驗，唔代表原站可報名時段。' : '揀課及儲存前會重新核對即時課表；實際報名由你喺課程網站自行處理。' }}</p>
               </div>
             </div>
             <div class="bz-manual-label">或者手動揀時間</div>
