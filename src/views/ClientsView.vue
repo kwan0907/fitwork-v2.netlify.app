@@ -218,14 +218,16 @@ async function selectClass(course) {
   newClient.value.remark = [String(newClient.value.remark || '').replace(/\n?試堂課程：[^\n]*/g, '').trim(), note].filter(Boolean).join('\n')
 }
 
-function clearSelectedCourse() {
+function clearSelectedCourse(clearTime = true) {
   if (!selectedCourse.value) return
+  const oldTime = `${selectedCourse.value.date}T${selectedCourse.value.start}`
   selectedCourse.value = null
   newClient.value.remark = String(newClient.value.remark || '').replace(/\n?試堂課程：[^\n]*/g, '').trim()
+  if (clearTime && newClient.value.trial_date === oldTime) newClient.value.trial_date = ''
 }
 
 function chooseTrialDay(offset) {
-  clearSelectedCourse()
+  clearSelectedCourse(false)
   const date = new Date()
   date.setDate(date.getDate() + offset)
   const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
@@ -234,7 +236,7 @@ function chooseTrialDay(offset) {
   scheduleDate.value = day
 }
 function chooseTrialTime(time) {
-  clearSelectedCourse()
+  clearSelectedCourse(false)
   newClient.value.trial_date = `${newClient.value.trial_date?.slice(0, 10) || todayStr}T${time}`
 }
 
@@ -252,7 +254,7 @@ watch([() => newClient.value.branch, scheduleDate], () => {
   if (showAddModal.value && scheduleOpened.value) loadClasses()
 })
 watch(() => newClient.value.trial_date, value => {
-  if (selectedCourse.value && value !== `${selectedCourse.value.date}T${selectedCourse.value.start}`) clearSelectedCourse()
+  if (selectedCourse.value && value !== `${selectedCourse.value.date}T${selectedCourse.value.start}`) clearSelectedCourse(false)
 })
 // 🚀 新增：智能配對快捷輸入
 const smartInput = ref('')
