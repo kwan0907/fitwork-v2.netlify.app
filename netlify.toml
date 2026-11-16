@@ -1,0 +1,2 @@
+[context.deploy-preview.environment]
+  SECRETS_SCAN_OMIT_PATHS = ".netlify/plugins/deno-cli/deno_dir/npm/registry.npmjs.org/@types/node/"
