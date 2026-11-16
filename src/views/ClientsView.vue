@@ -146,7 +146,7 @@ async function fetchClasses(branch, date, fresh = false) {
   if (!session?.access_token) throw new Error('請先登入帳戶。')
   const params = new URLSearchParams({ branch, date })
   if (fresh) params.set('fresh', '1')
-  const response = await fetch(`/.netlify/functions/classes?${params}`, {
+  const response = await fetch(`/api/classes?${params}`, {
     headers: { authorization: `Bearer ${session.access_token}` }, cache: 'no-store'
   })
   const payload = await response.json()
