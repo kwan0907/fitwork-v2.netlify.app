@@ -91,6 +91,8 @@ const formatMonthLabel = (ym) => {
 }
 const showExpModal = ref(false)
 const editingTxn = ref(null)
+const backfillSavedCount = ref(0)
+const isSavingTransaction = ref(false)
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat', '股東'])
 const incCategories = ['公司票', '其他收入']
 const expCategories = ['廣告費用', '觀塘租金', '中環租金', '馬拉松費用', '產品採購', '支付30%', '其他支出']
@@ -127,6 +129,8 @@ function consumeNavigation() {
       expForm.value.date = quick.date
       expForm.value.backfill = true
       expForm.value.historyTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(quick.time || '') ? quick.time : '12:00'
+      expForm.value.cost = 0
+      backfillSavedCount.value = 0
     }
     if (['觀塘', '中環', '佐敦'].includes(quick.branch)) expForm.value.branch = quick.branch
     store.pendingQuickEntry = null
@@ -367,8 +371,14 @@ function handleRepeatOrder(t) {
   store.view = 'retail'
 }
 
-async function saveTransaction() {
+async function saveTransaction(continueBackfill = false) {
+  if (isSavingTransaction.value) return
   if (!expForm.value.amount) return alert('請輸入金額！')
+  if (expForm.value.backfill && (!Number.isFinite(Number(expForm.value.amount)) || Number(expForm.value.amount) <= 0)) return alert('金額請填大過 0 嘅數字。')
+  const enteredCost = Number(expForm.value.cost || 0)
+  if (expForm.value.backfill && (!Number.isFinite(enteredCost) || enteredCost < 0)) return alert('成本請填 0 或正數。')
+  isSavingTransaction.value = true
+  try {
   
   const { data: authData } = await supabase.auth.getSession()
   const userEmail = authData?.session?.user?.email
@@ -387,7 +397,8 @@ async function saveTransaction() {
     note: finalNote, 
     client_name: expForm.value.client_name || null, 
     own_email: userEmail, 
-    profit: expForm.value.type === 'income' ? amt : -amt,
+    profit: expForm.value.type === 'income' ? amt - (expForm.value.backfill ? enteredCost : 0) : -amt,
+    ...(expForm.value.backfill ? { cost: enteredCost } : {}),
     handled_by: expForm.value.staff 
   }
   
@@ -430,15 +441,22 @@ async function saveTransaction() {
 
   if (error) alert('儲存失敗: ' + error.message)
   else {
-    showExpModal.value = false
+    if (!continueBackfill) showExpModal.value = false
     await store.syncAll()
     if (insertedTxn?.id) {
       store.transactions = [...store.transactions.filter(row => row.id !== insertedTxn.id), insertedTxn]
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
       filterMonth.value = expForm.value.date.slice(0, 7)
     }
-    alert('✅ 紀錄已儲存')
+    if (continueBackfill && expForm.value.backfill) {
+      backfillSavedCount.value += 1
+      expForm.value.amount = ''
+      expForm.value.note = ''
+      expForm.value.client_name = ''
+      expForm.value.cost = 0
+    } else alert('✅ 紀錄已儲存')
   }
+  } finally { isSavingTransaction.value = false }
 }
 
 async function handleDeleteTransaction(t) {
@@ -766,6 +784,10 @@ function exportMovement() {
           <option v-if="expForm.type==='income' && !incCategories.includes('零售收入')" value="零售收入">零售收入</option>
         </select>
       </div>
+      <div v-if="expForm.backfill && expForm.type==='income'" class="form-item" style="margin-top:15px;">
+        <label>當時成本（唔知可填 0，利潤會按呢度計）</label>
+        <input class="modern-inp" type="number" min="0" step="0.01" inputmode="decimal" v-model="expForm.cost">
+      </div>
 
       <!-- 🟢 新增：選擇關聯分店 -->
       <div class="form-item" style="margin-top:15px;">
@@ -810,7 +832,9 @@ function exportMovement() {
       
 <!-- 加上一個外層的 div 來把按鈕頂上來，避免被手機底部控制列擋住 -->
 <div style="padding-bottom: 80px;">
-  <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" :disabled="isReadOnlyPreview" @click="saveTransaction">{{ isReadOnlyPreview ? '預覽版只供查看' : '✅ 儲存' }}</button>
+  <p v-if="backfillSavedCount && expForm.backfill" role="status" style="margin:16px 0 0;color:#668048;font-weight:700;">已補 {{ backfillSavedCount }} 筆；日期同分店已保留，繼續填下一筆。</p>
+  <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" :disabled="isReadOnlyPreview || isSavingTransaction" @click="saveTransaction(false)">{{ isReadOnlyPreview ? '預覽版只供查看' : isSavingTransaction ? '儲存中…' : '✅ 儲存並完成' }}</button>
+  <button v-if="expForm.backfill" class="btn-outline" style="margin-top:10px; width:100%; padding:13px; font-size:15px;" :disabled="isReadOnlyPreview || isSavingTransaction" @click="saveTransaction(true)">儲存並補同日下一筆 ＋</button>
 </div>    </BaseModal>
 
     <!-- 💡 浮動回到最上層按鈕 -->

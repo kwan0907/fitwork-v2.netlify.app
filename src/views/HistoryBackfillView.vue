@@ -50,7 +50,9 @@ function downloadTemplate() {
   const link = document.createElement('a')
   link.href = url
   link.download = 'BZ舊紀錄回補範本.csv'
+  document.body.appendChild(link)
   link.click()
+  link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
@@ -171,7 +173,7 @@ async function backup() {
       <label>舊紀錄日期<input v-model="singleDate" type="date" :max="today"></label>
       <label>當時時間（唔記得就用 12:00）<input v-model="singleTime" type="time"></label>
       <div class="bz-history-choice" role="group" aria-label="收支類型"><button type="button" :class="{active:singleType==='income'}" @click="singleType='income'">＋ 收入</button><button type="button" :class="{active:singleType==='expense'}" @click="singleType='expense'">− 支出</button></div>
-      <label>分店<select v-model="branch"><option>觀塘</option><option>中環</option><option>佐敦</option></select></label>
+      <label>分店<select v-model="branch" @change="review=null"><option>觀塘</option><option>中環</option><option>佐敦</option></select></label>
       <button class="bz-history-primary" type="button" @click="singleEntry">下一步：填金額 <span aria-hidden="true">→</span></button>
     </section>
 
@@ -179,7 +181,7 @@ async function backup() {
       <h2>1. 貼上或揀檔案</h2><p>收支紀錄由 Excel／Google Sheets 複製連標題嘅整個範圍貼上；亦可讀取 CSV。唔使逐筆重新入。</p>
       <div class="bz-history-file-actions"><button type="button" @click="downloadTemplate">下載簡單範本</button><label>揀 CSV／TSV 檔<input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" @change="fileChanged"></label></div>
       <label>貼上表格<textarea v-model="sourceText" placeholder="日期　收支　金額　分類　客戶　分店…" @input="review=null"></textarea></label>
-      <div class="bz-history-defaults"><label>冇填分店時用<select v-model="branch"><option>觀塘</option><option>中環</option><option>佐敦</option></select></label><label>冇填經手人時用<input v-model="staff" placeholder="可留空"></label></div>
+      <div class="bz-history-defaults"><label>冇填分店時用<select v-model="branch" @change="review=null"><option>觀塘</option><option>中環</option><option>佐敦</option></select></label><label>冇填經手人時用<input v-model="staff" placeholder="可留空" @input="review=null"></label></div>
       <button class="bz-history-primary" type="button" :disabled="busy || !sourceText.trim()" @click="analyze">{{ busy ? '檢查中…' : '2. 檢查資料及重複項目' }}</button>
       <div v-if="review" class="bz-history-review">
         <h2>3. 睇清楚先儲存</h2>
