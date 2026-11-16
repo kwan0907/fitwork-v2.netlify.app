@@ -81,6 +81,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .bz-quick-actions button { min-height:84px; padding:9px 4px; border:1px solid #eee1d5; border-radius:16px; background:rgba(255,251,247,.73); box-shadow:0 7px 18px rgba(76,48,30,.045); color:#6e4d36; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; font-size:11px; font-weight:700; text-align:center; cursor:pointer; }
 .bz-quick-actions button span { white-space:nowrap; letter-spacing:-.025em; }
 .bz-quick-actions button.primary { border-color:#c47a55; background:linear-gradient(155deg,#d58c66,#bb6e4b); color:#fff; box-shadow:0 8px 16px rgba(167,91,55,.18); }
+.bz-history-shortcut { display:flex; align-items:center; gap:2px; margin:10px 1px 0 auto; padding:3px 0; border:0; background:none; color:var(--pd); font-size:12px; font-weight:800; cursor:pointer; }
 .bz-quick-actions button:active,.bz-management button:active,.bz-metric:active { transform:scale(.98); }
 .bz-home-start,.bz-home-tasks { margin-top:21px; border:1px solid #eadbc9; border-radius:20px; background:#fffaf4; box-shadow:var(--bz-shadow); }
 .bz-home-start { display:grid; grid-template-columns:42px 1fr; gap:9px 12px; align-items:center; padding:17px; }

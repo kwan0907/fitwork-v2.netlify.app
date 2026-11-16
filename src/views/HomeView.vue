@@ -64,6 +64,7 @@ function openTask(task) {
         <button type="button" @click="quick('accounting', 'transaction')"><BzIcon name="receipt"/><span>支出記錄</span></button>
         <button type="button" @click="quick('clients', 'client')"><BzIcon name="userPlus"/><span>新增客戶</span></button>
       </div>
+      <button class="bz-history-shortcut" type="button" @click="store.view='history'">有過去兩年嘅 Excel？快速回補舊紀錄 <BzIcon name="chevronRight" :size="15"/></button>
     </section>
 
     <section v-if="isNewAccount" class="bz-home-start" aria-label="開始使用">

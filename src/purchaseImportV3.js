@@ -234,7 +234,13 @@ export function installPurchaseImportV3(store) {
 
   const ensureButton = () => {
     if (store.view !== 'clients') return
-    if (document.getElementById(IMPORT_BUTTON_ID)) return
+    if (document.getElementById(IMPORT_BUTTON_ID)) {
+      if (store.pendingOpenPurchaseImport) {
+        store.pendingOpenPurchaseImport = false
+        openModal()
+      }
+      return
+    }
     const csvInput = document.querySelector('#csvFileInput')
     const toolbar = csvInput?.parentElement
     if (!toolbar) return
@@ -245,6 +251,10 @@ export function installPurchaseImportV3(store) {
     btn.textContent = '🧾 快速匯入購買紀錄'
     btn.addEventListener('click', openModal)
     toolbar.insertBefore(btn, csvInput)
+    if (store.pendingOpenPurchaseImport) {
+      store.pendingOpenPurchaseImport = false
+      openModal()
+    }
   }
 
   const closeModal = () => document.getElementById(MODAL_ID)?.remove()

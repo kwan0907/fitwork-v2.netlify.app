@@ -17,6 +17,7 @@ import ClientsView from './views/ClientsView.vue'
 import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
 import ProductsView from './views/ProductsView.vue'
+import HistoryBackfillView from './views/HistoryBackfillView.vue'
 import MovementView from './views/MovementView.vue'
 import RetailView from './views/RetailView.vue'
 import SettingsView from './views/SettingsView.vue'
@@ -389,6 +390,7 @@ const scrollToTop = () => {
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
       <ProductsView v-else-if="store.view === 'products'" />
+      <HistoryBackfillView v-else-if="store.view === 'history'" />
       <AccountingView v-else-if="store.view === 'accounting'" />
       <SettingsView v-else-if="store.view === 'settings'" />
     </div>
@@ -398,7 +400,7 @@ const scrollToTop = () => {
       <button type="button" class="nav-item" :class="{active: store.view==='clients'}" @click="go('clients')"><BzIcon name="users"/><span>客戶</span></button>
       <button type="button" class="nav-item" :class="{active: ['inventory','products'].includes(store.view)}" @click="go('inventory')"><BzIcon name="box"/><span>庫存</span></button>
       <button type="button" class="nav-item" :class="{active: store.view==='dashboard'}" @click="go('dashboard')"><BzIcon name="chart"/><span>報表</span></button>
-      <button type="button" class="nav-item" :class="{active: ['more','promo','herbalife','movement','retail','settings','accounting'].includes(store.view)}" @click="go('more')"><BzIcon name="more"/><span>更多</span></button>
+      <button type="button" class="nav-item" :class="{active: ['more','promo','herbalife','movement','retail','settings','accounting','history'].includes(store.view)}" @click="go('more')"><BzIcon name="more"/><span>更多</span></button>
     </nav>
     <button v-if="store.view !== 'home'" type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
     <div v-if="quickOpen" class="bz-quick-backdrop" @click.self="quickOpen=false">
@@ -410,6 +412,7 @@ const scrollToTop = () => {
           <button type="button" @click="quick('inventory')"><span>▤</span><b>入貨／補貨</b><small>新增庫存</small></button>
           <button type="button" @click="quick('transaction','expense')"><span>−</span><b>支出記錄</b><small>新增一筆支出</small></button>
           <button type="button" @click="quick('client')"><span>♙</span><b>新增客戶</b><small>登記資料</small></button>
+          <button type="button" @click="quick('history')"><span>↶</span><b>補舊紀錄</b><small>單筆或 Excel</small></button>
         </div>
       </section>
     </div>

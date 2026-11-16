@@ -28,6 +28,7 @@ export const useMainStore = defineStore('main', () => {
   const pendingQuickEntry = ref(null)
   const pendingSearch = ref(null)
   const pendingClientTask = ref(null)
+  const pendingOpenPurchaseImport = ref(false)
 
   // 🚀 新增：控制分批載入與舊資料狀態
   const isFetchingMore = ref(false) 
@@ -237,7 +238,7 @@ export const useMainStore = defineStore('main', () => {
     view, session, clients, transactions, products, stock, stockExpiry, 
     promotions, settings, displayTxnCount, syncAll,
     deviceUsers, currentUser, setDeviceUsers, switchUser,
-    pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch, pendingClientTask,
+    pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch, pendingClientTask, pendingOpenPurchaseImport,
     isInitialLoading, isSyncing,
     isFetchingMore, hasMoreTxn, transactionsLoadError, loadMoreTransactions, loadAllTransactions, fetchTransactionsByDateRange
   }
