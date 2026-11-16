@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { hasTimetableLoginError, parseClassSchedule } from '../netlify/lib/classScheduleParser.mjs'
+import { hasTimetableLoginError, isTimetableLoginAccepted, parseClassSchedule } from '../netlify/lib/classScheduleParser.mjs'
 import scheduleHandler from '../netlify/functions/classes.mjs'
 import { findAvailableCourse } from '../src/classSchedule.js'
 
@@ -25,6 +25,12 @@ test('recognizes the timetable provider account error without exposing credentia
   assert.equal(hasTimetableLoginError("<script>Swal.fire({title:'無此帳號，請到該店申請帳號'})</script>"), true)
   assert.equal(hasTimetableLoginError('<form id="loginForm" action="loginChk.asp"></form>'), true)
   assert.equal(hasTimetableLoginError('<table class="table-striped"></table>'), false)
+})
+
+test('accepts the providers successful login redirect to the timetable', () => {
+  assert.equal(isTimetableLoginAccepted(302, '/Branch_inquiries.asp?CustID=XSH028&regGcm_flag=Y', ''), true)
+  assert.equal(isTimetableLoginAccepted(302, '/login.asp', ''), false)
+  assert.equal(isTimetableLoginAccepted(200, null, "Swal.fire({title:'無此帳號'})"), false)
 })
 
 test('a selected class must still match the live date, time, coach and availability', () => {
