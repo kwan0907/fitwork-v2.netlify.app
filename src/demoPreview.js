@@ -2,10 +2,15 @@
 export function makeDemoPreviewData(now = new Date()) {
   const stamp = now.toISOString()
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+  const relativeDay = days => {
+    const value = new Date(`${date}T00:00:00Z`)
+    value.setUTCDate(value.getUTCDate() + days)
+    return value.toISOString().slice(0, 10)
+  }
   const clients = [
     { id: 'demo-client-1', name: '示範客戶 A', branch: '觀塘', status: 'active', source: '朋友介紹', join_date: date, trial_date: date, package_count: 2, payment_received: 1280 },
-    { id: 'demo-client-2', name: '示範客戶 B', branch: '觀塘', status: 'prospect', source: '廣告', join_date: date, trial_date: date, package_count: 0, payment_received: 0 },
-    { id: 'demo-client-3', name: '示範客戶 C', branch: '中環', status: 'active', source: '朋友介紹', join_date: date, trial_date: date, package_count: 1, payment_received: 980 }
+    { id: 'demo-client-2', name: '示範客戶 B', branch: '觀塘', status: 'prospect', source: '廣告', join_date: date, trial_date: `${relativeDay(-1)}T14:00`, package_count: 0, payment_received: 0 },
+    { id: 'demo-client-3', name: '示範客戶 C', branch: '中環', status: 'active', source: '朋友介紹', join_date: date, trial_date: date, expiry_date: relativeDay(4), package_count: 1, payment_received: 980 }
   ]
   const products = [
     { id: 'demo-product-1', name: '營養蛋白素', category: '內在營養', unit: '罐', retail_price: 520, price_standard: 480, cost: 285 },
