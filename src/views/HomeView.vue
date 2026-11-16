@@ -2,16 +2,19 @@
 import { computed, ref } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import BzIcon from '../components/BzIcon.vue'
+import { getHomeTasks, hkCalendarDate } from '../homeTasks'
 
 defineEmits(['search'])
 const store = useMainStore()
-const hkDate = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
-const today = hkDate(Date.now())
+const today = hkCalendarDate(Date.now())
 const currentMonth = today.slice(0, 7)
 const selectedMonth = ref(currentMonth)
-const months = computed(() => [...new Set([currentMonth, ...store.transactions.map(t => t.created_at && hkDate(t.created_at).slice(0, 7)).filter(Boolean)])].sort((a, b) => b.localeCompare(a)))
-const monthRows = computed(() => store.transactions.filter(t => t.created_at && hkDate(t.created_at).startsWith(selectedMonth.value)))
-const todayRows = computed(() => store.transactions.filter(t => t.created_at && hkDate(t.created_at) === today))
+const months = computed(() => [...new Set([currentMonth, ...store.transactions.map(t => hkCalendarDate(t.created_at).slice(0, 7)).filter(month => /^\d{4}-(0[1-9]|1[0-2])$/.test(month))])].sort((a, b) => b.localeCompare(a)))
+const monthRows = computed(() => store.transactions.filter(t => hkCalendarDate(t.created_at).startsWith(selectedMonth.value)))
+const todayRows = computed(() => store.transactions.filter(t => hkCalendarDate(t.created_at) === today))
+const tasks = computed(() => getHomeTasks(store.clients))
+const visibleTasks = computed(() => tasks.value.slice(0, 3))
+const isNewAccount = computed(() => !store.isInitialLoading && !store.clients.length && !store.transactions.length)
 const income = computed(() => monthRows.value.reduce((n, t) => n + (t.type === 'income' ? Number(t.amount || 0) : 0), 0))
 const profit = computed(() => monthRows.value.reduce((n, t) => n + (t.type === 'income' ? Number(t.profit ?? t.amount ?? 0) : t.type === 'expense' ? -Number(t.amount || 0) : 0), 0))
 const todayIncome = computed(() => todayRows.value.reduce((n, t) => n + (t.type === 'income' ? Number(t.amount || 0) : 0), 0))
@@ -26,6 +29,10 @@ const money = n => Number(n || 0).toLocaleString('en-HK', { maximumFractionDigit
 function quick(view, kind) {
   store.pendingQuickEntry = kind ? { kind, type: 'expense' } : null
   store.view = view
+}
+function openTask(task) {
+  store.pendingClientTask = { id: task.id, action: task.action }
+  store.view = 'clients'
 }
 </script>
 
@@ -57,6 +64,24 @@ function quick(view, kind) {
         <button type="button" @click="quick('accounting', 'transaction')"><BzIcon name="receipt"/><span>支出記錄</span></button>
         <button type="button" @click="quick('clients', 'client')"><BzIcon name="userPlus"/><span>新增客戶</span></button>
       </div>
+    </section>
+
+    <section v-if="isNewAccount" class="bz-home-start" aria-label="開始使用">
+      <span class="bz-home-start-icon" aria-hidden="true">✦</span>
+      <div><h2>由第一位客戶開始</h2><p>只需填姓名，分店會記住上次選擇；試堂時間可以直接由課表揀。</p></div>
+      <button type="button" @click="quick('clients', 'client')">新增客戶 <BzIcon name="chevronRight" :size="16"/></button>
+    </section>
+    <section v-else class="bz-home-tasks" aria-label="今日跟進">
+      <div class="bz-home-tasks-head"><div><span>今日跟進</span><h2>{{ tasks.length ? `${tasks.length} 件事，逐件做就得` : '今日暫時冇待辦' }}</h2></div><BzIcon name="calendar" :size="22" /></div>
+      <div v-if="visibleTasks.length" class="bz-home-task-list">
+        <button v-for="task in visibleTasks" :key="`${task.action}-${task.id}`" type="button" @click="openTask(task)">
+          <span class="bz-home-task-dot" :class="task.action" aria-hidden="true">{{ task.action === 'renewal' ? '↻' : task.action === 'trial' ? '✓' : '◷' }}</span>
+          <span class="bz-home-task-text"><strong>{{ task.name }}</strong><small>{{ task.label }} · {{ task.branch }} · {{ task.detail }}</small></span>
+          <BzIcon name="chevronRight" :size="17" />
+        </button>
+      </div>
+      <p v-else class="bz-home-tasks-empty">試堂結果同 7 日內到期嘅套票，會自動喺呢度提醒你。</p>
+      <button v-if="tasks.length > visibleTasks.length" class="bz-home-tasks-all" type="button" @click="store.view='clients'">去客戶管理 <BzIcon name="chevronRight" :size="15"/></button>
     </section>
 
     <section class="bz-management" aria-label="管理功能">

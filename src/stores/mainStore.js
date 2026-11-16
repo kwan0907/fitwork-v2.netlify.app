@@ -27,6 +27,7 @@ export const useMainStore = defineStore('main', () => {
   const quickActionClient = ref(null) // 🚀 用來暫存快捷鍵選中的客戶
   const pendingQuickEntry = ref(null)
   const pendingSearch = ref(null)
+  const pendingClientTask = ref(null)
 
   // 🚀 新增：控制分批載入與舊資料狀態
   const isFetchingMore = ref(false) 
@@ -236,7 +237,7 @@ export const useMainStore = defineStore('main', () => {
     view, session, clients, transactions, products, stock, stockExpiry, 
     promotions, settings, displayTxnCount, syncAll,
     deviceUsers, currentUser, setDeviceUsers, switchUser,
-    pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch,
+    pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch, pendingClientTask,
     isInitialLoading, isSyncing,
     isFetchingMore, hasMoreTxn, transactionsLoadError, loadMoreTransactions, loadAllTransactions, fetchTransactionsByDateRange
   }

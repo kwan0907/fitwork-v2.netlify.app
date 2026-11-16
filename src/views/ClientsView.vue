@@ -14,6 +14,16 @@ const clientSearch = ref('')
 const filterBranch = ref('')
 const filterStatus = ref('')
 function consumeNavigation() {
+  if (store.pendingClientTask) {
+    const task = store.pendingClientTask
+    store.pendingClientTask = null
+    const client = store.clients.find(row => String(row.id) === String(task.id))
+    if (client) {
+      selectedClientForAction.value = client
+      if (task.action === 'trial' || task.action === 'renewal') openQuickFlow(task.action)
+      else openActionModal(client)
+    }
+  }
   if (store.pendingQuickEntry?.kind === 'client') {
     store.pendingQuickEntry = null
     openAddModal()
@@ -27,6 +37,7 @@ function consumeNavigation() {
 onMounted(consumeNavigation)
 watch(() => store.pendingQuickEntry, consumeNavigation)
 watch(() => store.pendingSearch, consumeNavigation)
+watch(() => store.pendingClientTask, consumeNavigation)
 const filterMyGiftExpiring = ref(false) 
 const sortBy = ref('default') 
 const consumeMyGift = ref(false)

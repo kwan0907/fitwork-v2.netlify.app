@@ -82,6 +82,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .bz-quick-actions button span { white-space:nowrap; letter-spacing:-.025em; }
 .bz-quick-actions button.primary { border-color:#c47a55; background:linear-gradient(155deg,#d58c66,#bb6e4b); color:#fff; box-shadow:0 8px 16px rgba(167,91,55,.18); }
 .bz-quick-actions button:active,.bz-management button:active,.bz-metric:active { transform:scale(.98); }
+.bz-home-start,.bz-home-tasks { margin-top:21px; border:1px solid #eadbc9; border-radius:20px; background:#fffaf4; box-shadow:var(--bz-shadow); }
+.bz-home-start { display:grid; grid-template-columns:42px 1fr; gap:9px 12px; align-items:center; padding:17px; }
+.bz-home-start-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:14px; background:#f6e4d5; color:var(--p); font-size:25px; }
+.bz-home-start h2 { margin:0 0 4px; font-size:17px; }.bz-home-start p { margin:0; color:var(--t2); font-size:12px; line-height:1.5; }
+.bz-home-start > button { grid-column:2; display:flex; align-items:center; justify-content:center; gap:5px; width:max-content; min-height:39px; margin-top:3px; padding:0 14px; border:0; border-radius:11px; background:var(--p); color:#fff; font-size:13px; font-weight:800; }
+.bz-home-tasks { overflow:hidden; }.bz-home-tasks-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:15px 16px 11px; color:var(--p); }.bz-home-tasks-head span { font-size:11px; font-weight:800; letter-spacing:.07em; }.bz-home-tasks-head h2 { margin:3px 0 0; color:var(--t); font-size:17px; }
+.bz-home-task-list { padding:0 13px 7px; }.bz-home-task-list button { width:100%; min-height:60px; display:flex; align-items:center; gap:10px; padding:9px 3px; border:0; border-top:1px solid #f0e5da; background:none; color:var(--t); text-align:left; cursor:pointer; }
+.bz-home-task-dot { flex:none; display:grid; place-items:center; width:35px; height:35px; border-radius:12px; background:#f7e4d8; color:var(--p); font-size:20px; font-weight:800; }.bz-home-task-dot.renewal { background:#eceddf; color:var(--g); }.bz-home-task-dot.client { background:#f6eee0; color:#a57a49; }
+.bz-home-task-text { display:flex; flex:1; min-width:0; flex-direction:column; gap:3px; }.bz-home-task-text strong { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.bz-home-task-text small { color:var(--t3); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.bz-home-task-list button > svg { flex:none; color:var(--t3); }
+.bz-home-tasks-empty { margin:0; padding:0 16px 17px; color:var(--t3); font-size:12px; }.bz-home-tasks-all { display:flex; align-items:center; gap:2px; margin:0 14px 12px auto; border:0; background:none; color:var(--p); font-size:12px; font-weight:800; }
 .bz-management { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:23px; }
 .bz-management button { min-width:0; min-height:73px; border:0; border-radius:17px; display:flex; align-items:center; gap:10px; text-align:left; padding:12px; color:#a65e3b; cursor:pointer; }
 .bz-management button.clients { background:#f9ede5; }.bz-management button.stock { background:#f1f0e5; color:#6b7042; }.bz-management button.products { background:#f9eee5; color:#a76536; }.bz-management button.reports { background:#edeee8; color:#707a4d; }
