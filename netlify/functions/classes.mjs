@@ -23,39 +23,52 @@ function cookieHeader(jar) {
   return [...jar].map(([key, value]) => `${key}=${value}`).join('; ')
 }
 
-async function fetchSource(path, init = {}) {
-  return fetch(`${SOURCE}${path}`, { ...init, redirect: 'manual', signal: AbortSignal.timeout(12000) })
+async function fetchSource(path, stage, init = {}) {
+  const started = Date.now()
+  try {
+    const response = await fetch(`${SOURCE}${path}`, { ...init, redirect: 'manual', signal: AbortSignal.timeout(20000) })
+    console.info('bz-timetable-source', stage, response.status, `${Date.now() - started}ms`)
+    return response
+  } catch (error) {
+    console.warn('bz-timetable-source', stage, error?.name || 'fetch-error', `${Date.now() - started}ms`)
+    throw new Error(`課表網站連線逾時或中斷（${stage}）。`)
+  }
 }
 
 async function readTimetable(branch, date, account, password) {
   const jar = new Map()
-  const loginPage = await fetchSource('/login.asp')
+  const loginPage = await fetchSource('/login.asp', 'login-page')
   addCookies(jar, loginPage)
-  const login = await fetchSource('/loginChk.asp', {
+  const login = await fetchSource('/loginChk.asp', 'login-submit', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader(jar), referer: `${SOURCE}/login.asp` },
     body: new URLSearchParams({ UserID: account, password })
   })
   addCookies(jar, login)
   if (!isTimetableLoginAccepted(login.status, login.headers.get('location'), await login.text())) {
+    console.warn('bz-timetable-source', 'login-rejected', login.status)
     throw new Error('課表登入資料無效，請更新預覽版連線設定。')
   }
-  const result = await fetchSource('/Branch_inquiries.asp?', {
+  const result = await fetchSource('/Branch_inquiries.asp?', 'classes-query', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader(jar), referer: `${SOURCE}/Branch_inquiries.asp` },
     body: new URLSearchParams({ qCustID: BRANCH_IDS[branch], qDay: date.replaceAll('-', '/') })
   })
   addCookies(jar, result)
   if (result.status >= 300 && result.status < 400 && /\/login\.asp/i.test(result.headers.get('location') || '')) {
+    console.warn('bz-timetable-source', 'classes-redirect-login', result.status)
     throw new Error('課表登入資料無效，請更新預覽版連線設定。')
   }
   if (!result.ok) throw new Error('課表網站暫時無法回應。')
   const html = await result.text()
-  if (hasTimetableLoginError(html)) throw new Error('課表登入資料無效，請更新預覽版連線設定。')
+  if (hasTimetableLoginError(html)) {
+    console.warn('bz-timetable-source', 'classes-login-error', result.status)
+    throw new Error('課表登入資料無效，請更新預覽版連線設定。')
+  }
   return parseClassSchedule(html, date, branch)
 }
 
-export default async function handler(request) {
+export default async function handler(request, context) {
   if (request.method !== 'GET') return json({ error: '只支援讀取課表。' }, 405)
   const authorization = request.headers.get('authorization') || ''
   if (!/^Bearer\s+\S+$/.test(authorization)) return json({ error: '請先登入 BZ記錄器。' }, 401)
@@ -82,6 +95,7 @@ export default async function handler(request) {
   const fresh = url.searchParams.get('fresh') === '1'
   if (!fresh && cached && Date.now() - cached.at < 60 * 1000) return json({ branch, date, classes: cached.classes, updatedAt: cached.at })
   try {
+    console.info('bz-timetable-region', context?.server?.region || 'unknown')
     const classes = await readTimetable(branch, date, account, password)
     const updatedAt = Date.now()
     scheduleCache.set(key, { classes, at: updatedAt })
