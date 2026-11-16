@@ -9,6 +9,7 @@ export const useMainStore = defineStore('main', () => {
   const clients = ref([])
   const transactions = ref([])
   const products = ref([])
+  const monitorProfiles = ref([])
   const displayTxnCount = ref(50) 
 
   const stock = ref({}) 
@@ -61,6 +62,7 @@ export const useMainStore = defineStore('main', () => {
           clients.value = []
           transactions.value = []
           products.value = []
+          monitorProfiles.value = []
           stock.value = {}
           promotions.value = []
           nextTxnOffset = 0
@@ -235,7 +237,7 @@ export const useMainStore = defineStore('main', () => {
 
   // 👇 檔案最後唯一的一個 return
   return { 
-    view, session, clients, transactions, products, stock, stockExpiry, 
+    view, session, clients, transactions, products, monitorProfiles, stock, stockExpiry,
     promotions, settings, displayTxnCount, syncAll,
     deviceUsers, currentUser, setDeviceUsers, switchUser,
     pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch, pendingClientTask, pendingOpenPurchaseImport,

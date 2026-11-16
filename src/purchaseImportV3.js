@@ -357,7 +357,11 @@ export function installPurchaseImportV3(store) {
         const date = String(txn.created_at || '').slice(0, 10)
         return date < row.date && txn.type === 'income' && ['運動套票', '運動'].includes(txn.category)
       })
-      row.isNewCustomer = realPurchase && !priorDbPurchase && !seenFilePurchase.has(identity)
+      const earlierFilePurchase = seenFilePurchase.has(identity)
+      const existingActiveClient = row.matchedClient && row.matchedClient.status === 'active'
+      row.isNewCustomer = realPurchase && !priorDbPurchase && !earlierFilePurchase && !existingActiveClient
+      row.isRenewal = realPurchase && (priorDbPurchase || earlierFilePurchase)
+      row.purchaseTypeUnknown = realPurchase && !row.isNewCustomer && !row.isRenewal
       if (realPurchase) seenFilePurchase.add(identity)
 
       row.duplicate = 'none'
@@ -476,7 +480,7 @@ export function installPurchaseImportV3(store) {
         ? '<span class="purchase-import-badge warn">疑似重複</span>'
         : '<span class="purchase-import-badge ok">可匯入</span>'
     const clientBadge = row.matchedClient
-      ? (row.isNewCustomer ? '<span class="purchase-import-badge new">首次購買・當新客</span>' : '<span class="purchase-import-badge muted">已配對客戶</span>')
+      ? (row.isNewCustomer ? '<span class="purchase-import-badge new">首次購買・當新客</span>' : row.purchaseTypeUnknown ? '<span class="purchase-import-badge muted">首次記錄／舊客待核對</span>' : '<span class="purchase-import-badge muted">已配對客戶</span>')
       : '<span class="purchase-import-badge new">會建立新客戶</span>'
     const internBadge = isInternCoach(row.coach) ? '<span class="purchase-import-badge intern">實習教練・利潤30%</span>' : ''
     const payeeBadge = row.payee ? `<span class="purchase-import-badge ok">收款：${esc(row.payee)}</span>` : '<span class="purchase-import-badge warn">未識別收款人</span>'
@@ -610,7 +614,7 @@ export function installPurchaseImportV3(store) {
           own_email: authUser.email,
           user_id: authUser.id,
           is_new_client: Boolean(row.isNewCustomer),
-          is_renewal: !row.isNewCustomer,
+          is_renewal: Boolean(row.isRenewal),
           is_trial: pkg.category === '試堂' || pkg.package_key === 'trial',
           note: `[批量匯入] 售出 ${pkg.label}${newNote}${internNote}${duplicateNote}${sourceNote}`
         }

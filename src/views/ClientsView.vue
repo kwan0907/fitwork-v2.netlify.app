@@ -5,6 +5,7 @@ import { supabase, isReadOnlyPreview } from '../supabase'
 import { DEFAULT_MOVEMENT_PACKAGES, loadMovementPackages, calculateMovementPackage } from '../movementPackages'
 import { sampleClassDate, sampleClasses } from '../demoClassSchedule'
 import { sameCourse, findAvailableCourse } from '../classSchedule'
+import MonitorReconcile from '../components/MonitorReconcile.vue'
 
 const store = useMainStore()
 
@@ -1024,6 +1025,7 @@ async function handleImport(e) {
       <div><h2 class="page-title">客戶</h2><p class="subtitle">{{ filteredClients.length }} 位符合條件</p></div>
       <button class="btn-primary bz-client-add" type="button" @click="openAddModal">＋ 新客戶</button>
     </div>
+    <MonitorReconcile @select-client="openActionModal" />
     
     <div class="card search-box">
       <!-- 1. 搜尋列 (減少了上下 padding) -->
