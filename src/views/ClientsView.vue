@@ -186,13 +186,6 @@ function clearSelectedCourse() {
   newClient.value.remark = String(newClient.value.remark || '').replace(/\n?試堂課程：[^\n]*/g, '').trim()
 }
 
-watch([() => newClient.value.branch, scheduleDate], () => {
-  clearSelectedCourse()
-  if (showAddModal.value && scheduleOpened.value) loadClasses()
-})
-watch(() => newClient.value.trial_date, value => {
-  if (selectedCourse.value && value !== `${selectedCourse.value.date}T${selectedCourse.value.start}`) clearSelectedCourse()
-})
 function chooseTrialDay(offset) {
   clearSelectedCourse()
   const date = new Date()
@@ -216,6 +209,13 @@ const defaultNewClient = {
 }
 
 const newClient = ref({ ...defaultNewClient })
+watch([() => newClient.value.branch, scheduleDate], () => {
+  clearSelectedCourse()
+  if (showAddModal.value && scheduleOpened.value) loadClasses()
+})
+watch(() => newClient.value.trial_date, value => {
+  if (selectedCourse.value && value !== `${selectedCourse.value.date}T${selectedCourse.value.start}`) clearSelectedCourse()
+})
 // 🚀 新增：智能配對快捷輸入
 const smartInput = ref('')
 
