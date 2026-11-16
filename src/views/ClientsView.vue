@@ -104,10 +104,29 @@ const scheduleLoading = ref(false)
 const scheduleRows = ref([])
 const scheduleError = ref('')
 const scheduleSample = ref(false)
+const scheduleFromCache = ref(false)
+const scheduleCachedAt = ref(0)
 const selectedCourse = ref(null)
 const checkingCourse = ref(false)
 let scheduleRequest = 0
+let scheduleFetchInFlight = null
 const maxScheduleDate = (() => { const d = new Date(); d.setDate(d.getDate() + 13); return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d) })()
+
+function cachedScheduleKey(branch, date) { return `bz_schedule_v1:${branch}:${date}` }
+function readCachedSchedule(branch, date) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(cachedScheduleKey(branch, date)) || 'null')
+    if (cached?.at > Date.now() - 24 * 60 * 60 * 1000 && cached.at <= Date.now() &&
+      Array.isArray(cached.classes) && cached.classes.length <= 100) return cached
+  } catch { /* Ignore unavailable or invalid browser storage. */ }
+  return null
+}
+function rememberSchedule(branch, date, classes) {
+  try { localStorage.setItem(cachedScheduleKey(branch, date), JSON.stringify({ at: Date.now(), classes })) } catch { /* Browser storage can be disabled. */ }
+}
+function cachedScheduleTime(at) {
+  return new Intl.DateTimeFormat('zh-HK', { timeZone: 'Asia/Hong_Kong', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
+}
 
 async function loadClasses() {
   const requestId = ++scheduleRequest
@@ -117,17 +136,30 @@ async function loadClasses() {
   scheduleRows.value = []
   scheduleError.value = ''
   scheduleSample.value = false
+  scheduleFromCache.value = false
+  scheduleCachedAt.value = 0
   if (isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo')) {
     scheduleSample.value = true
     scheduleRows.value = date === sampleClassDate
       ? (sampleClasses[branch] || []).map(course => ({ ...course, date, branch })) : []
     return
   }
+  const cached = readCachedSchedule(branch, date)
+  if (cached) {
+    scheduleRows.value = cached.classes
+    scheduleFromCache.value = true
+    scheduleCachedAt.value = cached.at
+  }
   scheduleLoading.value = true
+  const flight = { branch, date, promise: fetchClasses(branch, date, Boolean(cached)) }
+  scheduleFetchInFlight = flight
   try {
-    const rows = await fetchClasses(branch, date)
+    const rows = await flight.promise
     if (requestId === scheduleRequest) {
       scheduleRows.value = rows
+      scheduleFromCache.value = false
+      scheduleCachedAt.value = 0
+      rememberSchedule(branch, date, rows)
       if (selectedCourse.value && selectedCourse.value.branch === branch && selectedCourse.value.date === date &&
         !findAvailableCourse(rows, selectedCourse.value)) {
         clearSelectedCourse()
@@ -138,6 +170,7 @@ async function loadClasses() {
     if (requestId === scheduleRequest) scheduleError.value = error.message || '暫時讀唔到課表，可手動輸入時間。'
   } finally {
     if (requestId === scheduleRequest) scheduleLoading.value = false
+    if (scheduleFetchInFlight === flight) scheduleFetchInFlight = null
   }
 }
 
@@ -160,8 +193,13 @@ async function selectClass(course) {
   scheduleError.value = ''
   try {
     if (!(isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo'))) {
-      const rows = await fetchClasses(course.branch, course.date, true)
+      const flight = scheduleFetchInFlight
+      const rows = await (flight?.branch === course.branch && flight?.date === course.date
+        ? flight.promise : fetchClasses(course.branch, course.date, true))
       scheduleRows.value = rows
+      scheduleFromCache.value = false
+      scheduleCachedAt.value = 0
+      rememberSchedule(course.branch, course.date, rows)
       if (!findAvailableCourse(rows, course)) throw new Error('呢堂嘅時間、教練或名額有變，請重新揀最新課堂。')
     }
   } catch (error) {
@@ -651,6 +689,8 @@ function openAddModal() {
     scheduleOpened.value = false
     scheduleRows.value = []
     scheduleError.value = ''
+    scheduleFromCache.value = false
+    scheduleCachedAt.value = 0
     selectedCourse.value = null
     showAddModal.value = true
 }
@@ -1190,10 +1230,11 @@ async function handleImport(e) {
               <div v-if="scheduleOpened" class="bz-class-picker-body">
                 <label for="class-schedule-date">課堂日期</label><input id="class-schedule-date" v-model="scheduleDate" type="date" class="modern-date" :min="todayStr" :max="maxScheduleDate">
                 <p v-if="scheduleSample" class="bz-class-note">呢啲係 {{ sampleClassDate }} 嘅示範課堂；示範模式唔會讀取即時課表。</p>
-                <p v-if="scheduleLoading || checkingCourse" class="bz-class-note" role="status">{{ checkingCourse ? '核對最新課堂中…' : '讀取課堂中…' }}</p>
-                <p v-else-if="scheduleError" class="bz-flow-error" role="alert">{{ scheduleError }}</p>
-                <p v-else-if="!scheduleRows.length" class="bz-class-note">當日暫時冇課堂；可以轉日期或手動輸入。</p>
-                <div v-else class="bz-class-list"><button v-for="(course,index) in scheduleRows" :key="index" type="button" :disabled="course.full || checkingCourse" :class="{active:selectedCourse && sameCourse(selectedCourse, course)}" @click="selectClass(course)"><b>{{ course.start }}–{{ course.end }}</b><span>{{ course.title }}<small>{{ course.coach }} · {{ newClient.branch }}</small></span><em>{{ course.full ? '額滿' : `${course.booked ?? '—'}/${course.capacity ?? '—'}` }}</em></button></div>
+                <p v-if="scheduleLoading || checkingCourse" class="bz-class-note" role="status">{{ checkingCourse ? '核對最新課堂中…' : scheduleFromCache ? '正更新最新課表…' : '讀取課堂中…' }}</p>
+                <p v-if="scheduleError" class="bz-flow-error" role="alert">{{ scheduleError }}</p>
+                <p v-if="scheduleFromCache && scheduleRows.length" class="bz-class-note">先顯示上次課表（{{ cachedScheduleTime(scheduleCachedAt) }}）；揀課時會即時核對。</p>
+                <p v-if="!scheduleRows.length && !scheduleLoading && !scheduleError" class="bz-class-note">當日暫時冇課堂；可以轉日期或手動輸入。</p>
+                <div v-if="scheduleRows.length" class="bz-class-list"><button v-for="(course,index) in scheduleRows" :key="index" type="button" :disabled="course.full || checkingCourse" :class="{active:selectedCourse && sameCourse(selectedCourse, course)}" @click="selectClass(course)"><b>{{ course.start }}–{{ course.end }}</b><span>{{ course.title }}<small>{{ course.coach }} · {{ newClient.branch }}</small></span><em>{{ course.full ? '額滿' : `${course.booked ?? '—'}/${course.capacity ?? '—'}` }}</em></button></div>
                 <p class="bz-class-note">{{ scheduleSample ? '示範課堂只供操作體驗，唔代表原站可報名時段。' : '揀課及儲存前會重新核對即時課表；實際報名由你喺課程網站自行處理。' }}</p>
               </div>
             </div>
