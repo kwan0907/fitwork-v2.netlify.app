@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase, isReadOnlyPreview } from '../supabase'
+import { downloadOwnedClientsBackup } from '../clientsBackup'
 import { MONITOR_BRANCHES, monitorBranchCode, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload } from '../monitorReconcile'
 
 const emit = defineEmits(['select-client'])
@@ -23,30 +24,11 @@ const counts = computed(() => ({
   review: rows.value.filter(row => row.kind === 'review').length
 }))
 const shown = computed(() => rows.value.filter(row => row.kind === category.value))
-const latest = computed(() => reports.value.map(report => report.profileUpdatedAt).filter(Boolean).sort().at(-1) || '')
-
-async function downloadClientSnapshot(user) {
-  const clients = []
-  let total = null
-  for (let start = 0; start < 100000; start += 500) {
-    const { data, count, error: readError } = await supabase.from('clients').select('*', { count: 'exact' })
-      .eq('owner_email', user.email).order('id').range(start, start + 499)
-    if (readError) throw readError
-    if (total === null) total = count
-    clients.push(...(data || []))
-    if ((data || []).length < 500) break
-  }
-  if (total !== clients.length) throw new Error('備份期間客戶數目有變，請重新嘗試。')
-  const data = { format: 'bz-clients-before-monitor-backfill-v1', exported_at: new Date().toISOString(), owner_email: user.email, count: clients.length, clients }
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `BZ客戶補全前備份-${new Date().toISOString().slice(0,10)}.json`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 60000)
-}
+const staleReports = computed(() => reports.value.filter(report => {
+  const updated = Date.parse(report.profileUpdatedAt || '')
+  return !Number.isFinite(updated) || Date.now() - updated > 6 * 60 * 60 * 1000
+}))
+const reportTimes = computed(() => reports.value.map(report => `${report.branch}：${displayTime(report.profileUpdatedAt)}`).join(' · '))
 
 async function readMonitor() {
   error.value = ''
@@ -92,6 +74,10 @@ async function readMonitor() {
 
 async function addMissing(row) {
   if (isReadOnlyPreview) return
+  if (staleReports.value.some(report => report.branch === row.branch)) {
+    error.value = '呢間分店嘅課卡資料已超過 6 小時，請先喺監察網站更新再讀取。'
+    return
+  }
   if (!confirm(`補全 ${row.name}（${row.phone}）到 BZ？\n只會新增一份客戶檔案；原有客戶、交易、點數及帳目不會改動。`)) return
   adding.value = row.key
   error.value = ''
@@ -100,7 +86,7 @@ async function addMissing(row) {
     if (userError || !user) throw new Error('登入已失效，請重新登入。')
     const payload = safeMissingClientPayload(row, user)
     if (!payload) throw new Error('呢筆來源資料唔夠完整，請先人工核對。')
-    await downloadClientSnapshot(user)
+    await downloadOwnedClientsBackup(user)
     const { data: current, error: readError } = await supabase.from('clients').select('id,name,phone,branch')
       .eq('owner_email', user.email)
     if (readError) throw readError
@@ -140,7 +126,8 @@ function displayTime(value) {
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="message" class="message" role="status">{{ message }}</p>
       <template v-if="reports.length">
-        <p class="source-note">來源：課程空位監察 · 點數最後更新 {{ displayTime(latest) }}。只涵蓋監察已匯入嘅 Cat &amp; Kwan 卡友；未列出唔代表對方唔係會員。跨卡點數可能經來源合併，請以原網站核對。</p>
+        <p class="source-note">來源：課程空位監察 · {{ reportTimes }}。只涵蓋監察已匯入嘅 Cat &amp; Kwan 卡友；未列出唔代表對方唔係會員。跨卡點數可能經來源合併，請以原網站核對。</p>
+        <p v-if="staleReports.length" class="freshness-note" role="status">{{ staleReports.map(report => report.branch).join('、') }} 嘅資料超過 6 小時或未有更新時間，點數及到期日可能已變。請先喺 <a href="https://class-seat-monitor.yimwingkwan0907.workers.dev/app" target="_blank" rel="noopener noreferrer">課程監察網站</a> 更新，再按「讀取及對照」；更新前暫停補全呢啲分店嘅客戶。</p>
         <div class="categories">
           <button type="button" :class="{selected:category==='review'}" @click="category='review'">待核對 {{ counts.review }}</button>
           <button type="button" :class="{selected:category==='missing'}" @click="category='missing'">BZ 疑似遺漏 {{ counts.missing }}</button>
@@ -152,7 +139,7 @@ function displayTime(value) {
           <div class="match-data"><span>電話 {{ row.phone || '未提供' }}</span><span>剩餘點數 <b>{{ row.remainingPoints ?? '未提供' }}</b></span><span>到期 {{ row.validUntil || '未提供' }}</span></div>
           <small>{{ row.reason }}<template v-if="row.firstClassAt"> · 最早上堂 {{ row.firstClassAt }}</template></small>
           <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button></div>
-          <div v-if="row.kind==='missing'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || Boolean(adding)" @click="addMissing(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : adding===row.key ? '補全中…' : '備份後補全此客戶' }}</button></div>
+          <div v-if="row.kind==='missing'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || Boolean(adding) || staleReports.some(report => report.branch === row.branch)" @click="addMissing(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : staleReports.some(report => report.branch === row.branch) ? '先更新來源資料' : adding===row.key ? '補全中…' : '備份後補全此客戶' }}</button></div>
         </div>
       </template>
     </div>
@@ -167,6 +154,7 @@ function displayTime(value) {
 .monitor-body{border-top:1px solid #eddfd2;padding:18px 20px 22px}.explain,.source-note{font-size:13px;line-height:1.6;color:#77685e;margin:0 0 14px}
 .inputs{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}.inputs label{display:grid;gap:6px;font-size:12px;font-weight:700}.inputs select,.inputs input{border:1px solid #e4d2c2;border-radius:11px;background:#fff;padding:11px;font:inherit;min-width:0;height:43px}.read-btn,.row-actions button{border:0;border-radius:11px;background:#b86e4a;color:#fff;font:inherit;font-weight:700;padding:11px 15px;min-height:43px;cursor:pointer}.read-btn:disabled,.row-actions button:disabled{opacity:.55;cursor:not-allowed}
 .error,.message{font-size:13px;padding:10px 12px;border-radius:10px;margin:13px 0 0}.error{background:#fff0ea;color:#a04429}.message{background:#eef3e6;color:#51663d}.source-note{margin:18px 0 10px}
+.freshness-note{font-size:13px;line-height:1.6;padding:11px 13px;border-radius:11px;margin:0 0 12px;background:#fff0e7;color:#904b32}.freshness-note a{color:inherit;font-weight:700;text-decoration:underline}
 .categories{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px}.categories button{white-space:nowrap;border:1px solid #e6d6c8;border-radius:100px;background:#fff;padding:8px 12px;color:#74594a;font:inherit;font-size:12px;font-weight:700;cursor:pointer}.categories .selected{background:#775c47;color:#fff;border-color:#775c47}
 .match-row{background:#fff;border:1px solid #ebddd0;border-radius:14px;padding:12px 14px;margin-top:9px}.match-head,.match-data{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.match-head strong{font-size:14px}.match-head span,.match-row small{font-size:12px;color:#8b7869}.match-data{justify-content:flex-start;margin:8px 0;font-size:12px;gap:8px 15px}.match-data b{color:#a95732}.match-row small{line-height:1.5}.row-actions{margin-top:10px}.row-actions button{min-height:34px;padding:7px 11px;font-size:12px}.empty{color:#8b7869;font-size:13px}
 @media(max-width:700px){.inputs{grid-template-columns:1fr 1fr}.read-btn{grid-column:1/-1}.monitor-body{padding:15px}.monitor-toggle{padding:16px}.monitor-toggle small{max-width:240px}}

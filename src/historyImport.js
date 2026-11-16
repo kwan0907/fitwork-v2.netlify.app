@@ -12,7 +12,7 @@ const headers = {
 }
 const normalize = value => String(value ?? '').trim().toLowerCase().replace(/\s+/g, '')
 
-function parseGrid(text) {
+export function parseGrid(text) {
   const source = String(text ?? '').replace(/^\uFEFF/, '')
   const delimiter = source.split(/\r?\n/, 1)[0].includes('\t') ? '\t' : ','
   const rows = []

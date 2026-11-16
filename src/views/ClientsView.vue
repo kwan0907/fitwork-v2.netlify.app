@@ -6,6 +6,8 @@ import { DEFAULT_MOVEMENT_PACKAGES, loadMovementPackages, calculateMovementPacka
 import { sampleClassDate, sampleClasses } from '../demoClassSchedule'
 import { sameCourse, findAvailableCourse } from '../classSchedule'
 import MonitorReconcile from '../components/MonitorReconcile.vue'
+import { parseClientCsv, classifyClientCsv } from '../clientCsvImport'
+import { downloadOwnedClientsBackup } from '../clientsBackup'
 
 const store = useMainStore()
 
@@ -929,93 +931,57 @@ function triggerFileInput() {
 }
 
 async function handleImport(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const file = e.target.files?.[0]
+  if (!file) return
+  let added = 0
+  try {
+    if (isReadOnlyPreview) throw new Error('預覽版只供核對，唔會匯入正式資料。')
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.email) throw new Error('請重新登入後再匯入。')
+    const parsed = parseClientCsv(await file.text())
+    if (parsed.rows.length + parsed.skipped.length > 5000) throw new Error('每次最多匯入 5,000 筆。')
 
-  const { data: authData } = await supabase.auth.getSession();
-  const currentUserEmail = authData?.session?.user?.email;
-
-  if (!currentUserEmail) {
-    alert('❌ 系統偵測不到登入狀態，請確認網路連線或重新登入。');
-    e.target.value = ''; 
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = async (evt) => {
-    try {
-      const content = evt.target.result;
-      const lines = content.split(/\r?\n/);
-      
-      const rows = lines.slice(1).filter(line => line.trim() !== '');
-      
-      let insertedCount = 0;
-      let updatedCount = 0;
-      const processedPhones = new Set(); // 🚀 護城河 1：防止同一個 CSV 檔案裡面有重複電話
-
-      // 💡 溫馨提示，等同事知道系統會做防重檢查
-      const isConfirmed = confirm(`準備匯入 ${rows.length} 筆資料。\n系統會自動檢查「電話號碼」：\n🔄 若已存在 ➡️ 更新資料\n✨ 若未存在 ➡️ 新增客戶\n\n是否繼續？`);
-      if (!isConfirmed) { e.target.value = ''; return; }
-
-      for (const line of rows) {
-        const row = line.split(',');
-        
-        if (!row[0]) continue; 
-
-        // 取得電話號碼並清理前後空白
-        const phoneNum = String(row[1] || '').trim();
-
-        // 🚀 如果檔案內已經處理過這個電話，直接跳過，慳返時間！
-        if (phoneNum && processedPhones.has(phoneNum)) {
-            continue;
-        }
-        if (phoneNum) processedPhones.add(phoneNum);
-
-        // 🚀 護城河 2：檢查現有系統中是否已經有這個電話
-        // 如果無電話號碼，就當作新客 (因為無法比對)
-        const existingClient = phoneNum 
-            ? store.clients.find(c => c.phone === phoneNum) 
-            : null;
-
-        // 準備好要寫入的資料包
-       const payload = {
-          name: String(row[0] || '').trim(),
-          phone: phoneNum,
-          branch: (row[2] || '觀塘').trim(),
-          status: String(row[3] || 'active').trim().toLowerCase(),
-          join_date: row[4] ? row[4].trim() : null,
-          source: (row[5] || '其他').trim(),
-          expiry_date: row[6] ? row[6].trim() : null,
-          remark: (row[7] || '').trim(),
-          own_email: currentUserEmail, // 🚀 修正：正確的欄位名稱
-          user_id: authData?.session?.user?.id // 🚀 修正：加入 user_id 確保符合安全規則
-        };
-        if (existingClient) {
-            // 🔄 撞電話：執行 Update (更新舊客資料)
-            const { error } = await supabase.from('clients').update(payload).eq('id', existingClient.id);
-            if (!error) updatedCount++;
-        } else {
-            // ✨ 唔撞電話：執行 Insert (新增客底)
-            const { error } = await supabase.from('clients').insert([payload]);
-            if (!error) insertedCount++;
-        }
+    const readClients = async () => {
+      const list = []
+      for (let start = 0; start < 100000; start += 500) {
+        const { data, error } = await supabase.from('clients').select('id,name,phone')
+          .eq('owner_email', user.email).order('id').range(start, start + 499)
+        if (error) throw error
+        list.push(...(data || []))
+        if ((data || []).length < 500) break
       }
-      
-      // 🚀 補上 await 等待畫面刷新，並顯示清晰的結果報告
-      await store.syncAll(); 
-      setTimeout(() => {
-        alert(`✅ 匯入完畢！\n\n✨ 成功新增：${insertedCount} 位新客\n🔄 成功更新：${updatedCount} 位舊客\n\n資料已歸屬至 (${currentUserEmail})。`);
-      }, 100);
-      
-    } catch (err) {
-      console.error('匯入出錯:', err);
-      alert('❌ 檔案讀取失敗，請確保使用正確的 CSV 格式。');
-    } finally {
-      e.target.value = ''; 
+      return list
     }
-  };
-  
-  reader.readAsText(file);
+    const firstRead = await readClients()
+    const firstReview = classifyClientCsv(parsed.rows, firstRead)
+    const excluded = [...parsed.skipped, ...firstReview.skipped]
+    if (!firstReview.candidates.length) {
+      alert(`冇可安全新增嘅客戶。${excluded.length} 筆需要核對或資料唔完整。`)
+      return
+    }
+    if (!confirm(`CSV 共 ${parsed.rows.length + parsed.skipped.length} 筆；可新增 ${firstReview.candidates.length} 筆，另有 ${excluded.length} 筆會跳過。\n\n只新增電話及姓名都唔重複嘅客戶；原有客戶、帳目同點數唔會被覆蓋。寫入前會下載客戶備份。確定繼續？`)) return
+
+    const backupCount = await downloadOwnedClientsBackup(user)
+    const fresh = await readClients()
+    if (fresh.length !== backupCount) throw new Error('備份後客戶數目有變，已停止匯入。')
+    const finalReview = classifyClientCsv(firstReview.candidates, fresh)
+    const errors = []
+    for (const row of finalReview.candidates) {
+      const { error } = await supabase.from('clients').insert([{
+        name: row.name, phone: row.phone, branch: row.branch, status: row.status,
+        join_date: row.join_date, expiry_date: row.expiry_date, source: row.source,
+        remark: row.remark, owner_email: user.email, own_email: user.email, user_id: user.id
+      }])
+      if (error) errors.push(`第 ${row.line} 行：${error.message}`)
+      else added++
+    }
+    await store.syncAll()
+    alert(`已新增 ${added} 位客戶；跳過 ${excluded.length + finalReview.skipped.length} 筆待核對資料。${errors.length ? `\n失敗 ${errors.length} 筆：${errors.slice(0, 3).join('；')}` : ''}`)
+  } catch (error) {
+    alert(`${error?.message || '匯入中斷。'}${added ? `\n已有 ${added} 位客戶新增成功，請重新整理後核對，勿直接重複匯入。` : ''}\n原有客戶未被覆蓋。`)
+  } finally {
+    e.target.value = ''
+  }
 }
 </script>
 
@@ -1061,7 +1027,7 @@ async function handleImport(e) {
         </div>
         <div class="v-line" style="margin: 0 4px;"></div>
         <button class="btn-outline" @click="downloadCSVTemplate">📥 下載匯入格式</button>
-        <button class="btn-outline" style="border-color:#4f46e2; color:#4f46e2; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
+        <button class="btn-outline" style="border-color:#b86e4a; color:#a75e3a; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
         <input type="file" id="csvFileInput" accept=".csv" style="display: none;" @change="handleImport">
       </div>
     </div>
