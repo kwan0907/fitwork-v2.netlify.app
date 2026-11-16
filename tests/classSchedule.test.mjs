@@ -24,6 +24,78 @@ test('schedule endpoint rejects unauthenticated requests before contacting sourc
   assert.equal((await edgeScheduleHandler(new Request('https://example.netlify.app/api/classes?branch=觀塘&date=2026-11-16'))).status, 401)
 })
 
+test('source rate limit is reported as a cooldown without repeating the login', async () => {
+  const originalFetch = globalThis.fetch
+  const originalNetlify = globalThis.Netlify
+  let sourceLogins = 0
+  globalThis.Netlify = { env: { get: () => 'test-only' } }
+  globalThis.fetch = async url => {
+    const path = new URL(url).pathname
+    if (path === '/auth/v1/user') return new Response('{}', { status: 200 })
+    if (path === '/login.asp') return new Response('', { status: 200 })
+    if (path === '/loginChk.asp') {
+      sourceLogins++
+      return new Response('', { status: 429 })
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  }
+  try {
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    const request = () => new Request(`https://example.netlify.app/api/classes?branch=觀塘&date=${date}`, { headers: { authorization: 'Bearer test-only' } })
+    const first = await scheduleHandler(request())
+    assert.equal(first.status, 502)
+    assert.match((await first.json()).error, /15 分鐘/)
+    const second = await scheduleHandler(request())
+    assert.equal(second.status, 502)
+    assert.equal(sourceLogins, 1)
+  } finally {
+    globalThis.fetch = originalFetch
+    globalThis.Netlify = originalNetlify
+  }
+})
+
+test('a preview deployment reuses its source session across edge isolates', async () => {
+  const originalFetch = globalThis.fetch
+  const originalNetlify = globalThis.Netlify
+  const saved = new Map()
+  const store = {
+    get: async key => saved.get(key) || null,
+    setJSON: async (key, value) => { saved.set(key, value) },
+    delete: async key => { saved.delete(key) }
+  }
+  let sourceLogins = 0
+  let sourceQueries = 0
+  globalThis.Netlify = { env: { get: () => 'test-only' } }
+  try {
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname
+      if (path === '/auth/v1/user') return new Response('{}', { status: 200 })
+      if (path === '/login.asp') return new Response('', { status: 200, headers: { 'set-cookie': 'ASPSESSIONID=test-session; Path=/' } })
+      if (path === '/loginChk.asp') {
+        sourceLogins++
+        return new Response('', { status: 302, headers: { location: '/Branch_inquiries.asp?CustID=XSH028' } })
+      }
+      if (path === '/Branch_inquiries.asp') {
+        sourceQueries++
+        return new Response(`<table class="table-striped"><tr><td>${date}<br>13:10-13:50</td><td>燃脂彈床<br>Cat</td><td>1 / 11</td></tr></table>`)
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    }
+    const request = () => new Request(`https://example.netlify.app/api/classes?branch=觀塘&date=${date}&fresh=1`, { headers: { authorization: 'Bearer test-only' } })
+    const firstHandler = (await import('../netlify/functions/classes.mjs?session-test-first')).default
+    const secondHandler = (await import('../netlify/functions/classes.mjs?session-test-second')).default
+    assert.equal((await (await firstHandler(request(), null, () => store)).json()).classes.length, 1)
+    assert.equal((await (await secondHandler(request(), null, () => store)).json()).classes.length, 1)
+    assert.equal(sourceLogins, 1)
+    assert.equal(sourceQueries, 2)
+    assert.ok(saved.has('session'))
+  } finally {
+    globalThis.fetch = originalFetch
+    globalThis.Netlify = originalNetlify
+  }
+})
+
 test('recognizes the timetable provider account error without exposing credentials', () => {
   assert.equal(hasTimetableLoginError("<script>Swal.fire({title:'無此帳號，請到該店申請帳號'})</script>"), true)
   assert.equal(hasTimetableLoginError('<form id="loginForm" action="loginChk.asp"></form>'), true)

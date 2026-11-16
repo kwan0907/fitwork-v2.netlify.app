@@ -5,6 +5,63 @@ const SUPABASE = 'https://ajnunehxtiofcphdyhqn.supabase.co'
 const PUBLISHABLE_KEY = 'sb_publishable_97JBmvmO_GHjxnxy7eZqUA_klkZJvSB'
 const BRANCH_IDS = { '觀塘': 'XSh028', '佐敦': 'XSh026', '中環': 'XSh046' }
 const scheduleCache = new Map()
+let sourceSession = null
+let loginInFlight = null
+let sourceCooldownUntil = 0
+const sourceSessionLifetime = 6 * 60 * 60 * 1000
+
+function sourceCooldownMessage() {
+  return '課表網站暫時限制登入，請約 15 分鐘後再試；可先手動揀時間。'
+}
+
+async function readStoredSession(store) {
+  if (!store) return null
+  try {
+    const saved = await store.get('session', { type: 'json', consistency: 'strong' })
+    if (!saved || Date.now() - saved.at >= sourceSessionLifetime || !Array.isArray(saved.cookies)) return null
+    return { jar: new Map(saved.cookies), at: saved.at }
+  } catch (error) {
+    console.warn('bz-timetable-session', 'read-failed', error?.name || 'error')
+    return null
+  }
+}
+
+async function storeSession(store, session) {
+  if (!store) return
+  try {
+    await store.setJSON('session', { cookies: [...session.jar], at: session.at })
+  } catch (error) {
+    console.warn('bz-timetable-session', 'write-failed', error?.name || 'error')
+  }
+}
+
+async function storeCooldown(store) {
+  if (!store || sourceCooldownUntil <= Date.now()) return
+  try {
+    await store.setJSON('cooldown', { until: sourceCooldownUntil })
+  } catch (error) {
+    console.warn('bz-timetable-session', 'cooldown-write-failed', error?.name || 'error')
+  }
+}
+
+async function readStoredCooldown(store) {
+  if (!store) return 0
+  try {
+    const saved = await store.get('cooldown', { type: 'json', consistency: 'strong' })
+    return Number(saved?.until) || 0
+  } catch (error) {
+    console.warn('bz-timetable-session', 'cooldown-read-failed', error?.name || 'error')
+    return 0
+  }
+}
+
+async function invalidateSession(store) {
+  sourceSession = null
+  if (!store) return
+  try { await store.delete('session') } catch (error) {
+    console.warn('bz-timetable-session', 'delete-failed', error?.name || 'error')
+  }
+}
 
 function json(value, status = 200) {
   return Response.json(value, { status, headers: { 'cache-control': 'private, no-store' } })
@@ -28,14 +85,19 @@ async function fetchSource(path, stage, init = {}) {
   try {
     const response = await fetch(`${SOURCE}${path}`, { ...init, redirect: 'manual', signal: AbortSignal.timeout(20000) })
     console.info('bz-timetable-source', stage, response.status, `${Date.now() - started}ms`)
+    if (response.status === 429) {
+      sourceCooldownUntil = Date.now() + 15 * 60 * 1000
+      throw new Error(sourceCooldownMessage())
+    }
     return response
   } catch (error) {
+    if (error?.message === sourceCooldownMessage()) throw error
     console.warn('bz-timetable-source', stage, error?.name || 'fetch-error', `${Date.now() - started}ms`)
     throw new Error(`課表網站連線逾時或中斷（${stage}）。`)
   }
 }
 
-async function readTimetable(branch, date, account, password) {
+async function loginToSource(account, password, store) {
   const jar = new Map()
   const loginPage = await fetchSource('/login.asp', 'login-page')
   addCookies(jar, loginPage)
@@ -49,26 +111,62 @@ async function readTimetable(branch, date, account, password) {
     console.warn('bz-timetable-source', 'login-rejected', login.status)
     throw new Error('課表登入資料無效，請更新預覽版連線設定。')
   }
-  const result = await fetchSource('/Branch_inquiries.asp?', 'classes-query', {
+  sourceSession = { jar, at: Date.now() }
+  await storeSession(store, sourceSession)
+  return sourceSession
+}
+
+async function getSourceSession(account, password, store) {
+  if (Date.now() < sourceCooldownUntil) throw new Error(sourceCooldownMessage())
+  if (sourceSession && Date.now() - sourceSession.at < sourceSessionLifetime) return sourceSession
+  const saved = await readStoredSession(store)
+  if (saved) {
+    sourceSession = saved
+    return saved
+  }
+  if (Date.now() < await readStoredCooldown(store)) throw new Error(sourceCooldownMessage())
+  if (!loginInFlight) loginInFlight = loginToSource(account, password, store)
+  try {
+    return await loginInFlight
+  } catch (error) {
+    await storeCooldown(store)
+    throw error
+  } finally {
+    loginInFlight = null
+  }
+}
+
+async function readTimetable(branch, date, account, password, store) {
+  const session = await getSourceSession(account, password, store)
+  const jar = new Map(session.jar)
+  let result
+  try { result = await fetchSource('/Branch_inquiries.asp?', 'classes-query', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader(jar), referer: `${SOURCE}/Branch_inquiries.asp` },
     body: new URLSearchParams({ qCustID: BRANCH_IDS[branch], qDay: date.replaceAll('-', '/') })
-  })
+  }) } catch (error) {
+    await storeCooldown(store)
+    throw error
+  }
   addCookies(jar, result)
   if (result.status >= 300 && result.status < 400 && /\/login\.asp/i.test(result.headers.get('location') || '')) {
+    await invalidateSession(store)
     console.warn('bz-timetable-source', 'classes-redirect-login', result.status)
-    throw new Error('課表登入資料無效，請更新預覽版連線設定。')
+    throw new Error('課表登入狀態已過期，請按「重新讀取」再試。')
   }
   if (!result.ok) throw new Error('課表網站暫時無法回應。')
   const html = await result.text()
   if (hasTimetableLoginError(html)) {
+    await invalidateSession(store)
     console.warn('bz-timetable-source', 'classes-login-error', result.status)
-    throw new Error('課表登入資料無效，請更新預覽版連線設定。')
+    throw new Error('課表登入狀態已過期，請按「重新讀取」再試。')
   }
+  session.jar = jar
+  await storeSession(store, session)
   return parseClassSchedule(html, date, branch)
 }
 
-export default async function handler(request, context) {
+export default async function handler(request, context, storeFactory) {
   if (request.method !== 'GET') return json({ error: '只支援讀取課表。' }, 405)
   const authorization = request.headers.get('authorization') || ''
   if (!/^Bearer\s+\S+$/.test(authorization)) return json({ error: '請先登入 BZ記錄器。' }, 401)
@@ -96,7 +194,7 @@ export default async function handler(request, context) {
   if (!fresh && cached && Date.now() - cached.at < 60 * 1000) return json({ branch, date, classes: cached.classes, updatedAt: cached.at })
   try {
     console.info('bz-timetable-region', context?.server?.region || 'unknown')
-    const classes = await readTimetable(branch, date, account, password)
+    const classes = await readTimetable(branch, date, account, password, storeFactory?.())
     const updatedAt = Date.now()
     scheduleCache.set(key, { classes, at: updatedAt })
     return json({ branch, date, classes, updatedAt })
