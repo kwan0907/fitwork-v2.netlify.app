@@ -92,6 +92,9 @@ async function loginWithLock(account, password, store) {
   if (!await acquireLoginLock(store)) return waitForLogin(store)
   try {
     return await loginToSource(account, password, store)
+  } catch (error) {
+    await storeCooldown(store)
+    throw error
   } finally {
     if (store) {
       try { await store.delete('login-lock') } catch (error) {
