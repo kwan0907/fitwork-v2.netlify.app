@@ -63,6 +63,44 @@ async function invalidateSession(store) {
   }
 }
 
+async function acquireLoginLock(store) {
+  if (!store) return true
+  try {
+    const lock = await store.getWithMetadata('login-lock', { type: 'json', consistency: 'strong' })
+    const value = { until: Date.now() + 60 * 1000 }
+    const result = lock
+      ? (Number(lock.data?.until) < Date.now() && await store.setJSON('login-lock', value, { onlyIfMatch: lock.etag }))
+      : await store.setJSON('login-lock', value, { onlyIfNew: true })
+    return Boolean(result?.modified)
+  } catch (error) {
+    console.warn('bz-timetable-session', 'lock-failed', error?.name || 'error')
+    return true
+  }
+}
+
+async function waitForLogin(store) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const session = await readStoredSession(store)
+    if (session) return session
+    if (Date.now() < await readStoredCooldown(store)) throw new Error(sourceCooldownMessage())
+  }
+  throw new Error('課表正在連線，請稍後按「重新讀取」。')
+}
+
+async function loginWithLock(account, password, store) {
+  if (!await acquireLoginLock(store)) return waitForLogin(store)
+  try {
+    return await loginToSource(account, password, store)
+  } finally {
+    if (store) {
+      try { await store.delete('login-lock') } catch (error) {
+        console.warn('bz-timetable-session', 'unlock-failed', error?.name || 'error')
+      }
+    }
+  }
+}
+
 function json(value, status = 200) {
   return Response.json(value, { status, headers: { 'cache-control': 'private, no-store' } })
 }
@@ -125,7 +163,7 @@ async function getSourceSession(account, password, store) {
     return saved
   }
   if (Date.now() < await readStoredCooldown(store)) throw new Error(sourceCooldownMessage())
-  if (!loginInFlight) loginInFlight = loginToSource(account, password, store)
+  if (!loginInFlight) loginInFlight = loginWithLock(account, password, store)
   try {
     return await loginInFlight
   } catch (error) {

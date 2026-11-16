@@ -60,7 +60,12 @@ test('a preview deployment reuses its source session across edge isolates', asyn
   const saved = new Map()
   const store = {
     get: async key => saved.get(key) || null,
-    setJSON: async (key, value) => { saved.set(key, value) },
+    getWithMetadata: async key => saved.has(key) ? { data: saved.get(key), etag: 'test-etag' } : null,
+    setJSON: async (key, value, options = {}) => {
+      if (options.onlyIfNew && saved.has(key)) return { modified: false }
+      saved.set(key, value)
+      return { modified: true }
+    },
     delete: async key => { saved.delete(key) }
   }
   let sourceLogins = 0
@@ -74,6 +79,7 @@ test('a preview deployment reuses its source session across edge isolates', asyn
       if (path === '/login.asp') return new Response('', { status: 200, headers: { 'set-cookie': 'ASPSESSIONID=test-session; Path=/' } })
       if (path === '/loginChk.asp') {
         sourceLogins++
+        await new Promise(resolve => setTimeout(resolve, 50))
         return new Response('', { status: 302, headers: { location: '/Branch_inquiries.asp?CustID=XSH028' } })
       }
       if (path === '/Branch_inquiries.asp') {
@@ -85,10 +91,16 @@ test('a preview deployment reuses its source session across edge isolates', asyn
     const request = () => new Request(`https://example.netlify.app/api/classes?branch=觀塘&date=${date}&fresh=1`, { headers: { authorization: 'Bearer test-only' } })
     const firstHandler = (await import('../netlify/functions/classes.mjs?session-test-first')).default
     const secondHandler = (await import('../netlify/functions/classes.mjs?session-test-second')).default
-    assert.equal((await (await firstHandler(request(), null, () => store)).json()).classes.length, 1)
-    assert.equal((await (await secondHandler(request(), null, () => store)).json()).classes.length, 1)
+    const [first, second] = await Promise.all([
+      firstHandler(request(), null, () => store),
+      secondHandler(request(), null, () => store)
+    ])
+    assert.equal((await first.json()).classes.length, 1)
+    assert.equal((await second.json()).classes.length, 1)
+    const thirdHandler = (await import('../netlify/functions/classes.mjs?session-test-third')).default
+    assert.equal((await (await thirdHandler(request(), null, () => store)).json()).classes.length, 1)
     assert.equal(sourceLogins, 1)
-    assert.equal(sourceQueries, 2)
+    assert.equal(sourceQueries, 3)
     assert.ok(saved.has('session'))
   } finally {
     globalThis.fetch = originalFetch
