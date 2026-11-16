@@ -16,6 +16,8 @@ const reports = ref([])
 const category = ref('review')
 const adding = ref('')
 const message = ref('')
+const attendanceBusy = ref(false)
+const attendanceMessage = ref('')
 
 const rows = computed(() => reconcileMonitorClients(normalizeMonitorRows(reports.value), store.clients))
 const counts = computed(() => ({
@@ -29,11 +31,72 @@ const staleReports = computed(() => reports.value.filter(report => {
   return !Number.isFinite(updated) || Date.now() - updated > 6 * 60 * 60 * 1000
 }))
 const reportTimes = computed(() => reports.value.map(report => `${report.branch}：${displayTime(report.profileUpdatedAt)}`).join(' · '))
+const attendanceLatest = computed(() => reports.value.map(report => report.attendanceUpdatedAt).filter(Boolean).sort().at(-1) || '')
+const attendanceStale = computed(() => {
+  const updated = Date.parse(attendanceLatest.value)
+  return !Number.isFinite(updated) || Date.now() - updated > 6 * 60 * 60 * 1000
+})
+
+async function fetchBranchReport(item, token, pinValue) {
+  const response = await fetch('/.netlify/functions/monitor-customers', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ branch: monitorBranchCode(item), pin: pinValue }),
+    cache: 'no-store'
+  })
+  const report = await response.json()
+  if (!response.ok) throw new Error(report.error || '讀取失敗')
+  return { ...report, branch: item }
+}
+
+async function autoRefreshAttendance(token, pinValue, branchNames, previousUpdate) {
+  const storageKey = 'bz-monitor-attendance-refresh-started-v1'
+  const lastStarted = Number(sessionStorage.getItem(storageKey) || 0)
+  if (Date.now() - lastStarted < 2 * 60 * 60 * 1000) {
+    attendanceMessage.value = '最近兩小時已啟動上堂同步；來源仍顯示舊時間，請稍後再讀取。'
+    return
+  }
+  attendanceBusy.value = true
+  attendanceMessage.value = '正在自動更新最近 7 日上堂及到訪；現有客戶資料可先查看。'
+  try {
+    const response = await fetch('/.netlify/functions/monitor-attendance', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pin: pinValue }),
+      cache: 'no-store'
+    })
+    const started = await response.json()
+    if (!response.ok || !started.started) throw new Error(started.error || '無法啟動上堂同步')
+    sessionStorage.setItem(storageKey, String(Date.now()))
+    for (let attempt = 0; attempt < 9; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10000))
+      const first = await fetchBranchReport(branchNames[0], token, pinValue)
+      const updated = Date.parse(first.attendanceUpdatedAt || '')
+      if (Number.isFinite(updated) && updated > previousUpdate) {
+        const refreshed = [first]
+        for (const item of branchNames.slice(1)) refreshed.push(await fetchBranchReport(item, token, pinValue))
+        reports.value = refreshed
+        store.monitorProfiles = normalizeMonitorRows(refreshed)
+        attendanceMessage.value = `最近 7 日上堂資料已更新：${displayTime(first.attendanceUpdatedAt)}。`
+        return
+      }
+    }
+    attendanceMessage.value = '背景同步已啟動，但來源報表仍顯示舊時間（快取最多約 30 分鐘）；稍後按「讀取及對照」核對。'
+  } catch (cause) {
+    sessionStorage.removeItem(storageKey)
+    attendanceMessage.value = `自動上堂同步未完成：${cause.message || '請稍後再試'}。`
+  } finally {
+    attendanceBusy.value = false
+  }
+}
 
 async function readMonitor() {
+  if (busy.value || attendanceBusy.value) return
   error.value = ''
   message.value = ''
+  attendanceMessage.value = ''
   if (!/^\d{6}$/.test(pin.value)) { error.value = '請輸入監察網站嘅 6 位管理 PIN。'; return }
+  const pinValue = pin.value
   busy.value = true
   reports.value = []
   store.monitorProfiles = []
@@ -44,15 +107,7 @@ async function readMonitor() {
     if (!session?.access_token) throw new Error('請先登入 BZ，再讀取監察客戶。')
     for (const item of branches) {
       try {
-        const response = await fetch('/.netlify/functions/monitor-customers', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({ branch: monitorBranchCode(item), pin: pin.value }),
-          cache: 'no-store'
-        })
-        const report = await response.json()
-        if (!response.ok) throw new Error(report.error || '讀取失敗')
-        reports.value.push({ ...report, branch: item })
+        reports.value.push(await fetchBranchReport(item, session.access_token, pinValue))
       } catch (cause) {
         failures.push(`${item}：${cause.message || '讀取失敗'}`)
         if (/PIN 不正確/.test(String(cause.message))) break
@@ -63,6 +118,10 @@ async function readMonitor() {
       store.monitorProfiles = normalizeMonitorRows(reports.value)
       category.value = counts.value.review ? 'review' : counts.value.missing ? 'missing' : 'matched'
       message.value = '已讀取監察資料；所有比對都只喺畫面進行，點數唔會寫入 BZ 帳目。'
+      if (attendanceStale.value) {
+        const previousUpdate = Date.parse(attendanceLatest.value || '') || 0
+        void autoRefreshAttendance(session.access_token, pinValue, reports.value.map(report => report.branch), previousUpdate)
+      }
     }
   } catch (cause) {
     error.value = cause.message || '讀取失敗'
@@ -117,16 +176,17 @@ function displayTime(value) {
       <span aria-hidden="true">{{ open ? '收起 ↑' : '開啟 →' }}</span>
     </button>
     <div v-if="open" class="monitor-body">
-      <p class="explain">直接只讀取課程空位監察嘅客戶報表。PIN 只用於今次查詢，唔會儲存；資料先配對，唔會自動合併。</p>
+      <p class="explain">讀取課程空位監察嘅客戶報表；如果上堂資料超過 6 小時，會自動啟動最近 7 日更新。PIN 只用於今次查詢同更新，唔會儲存；BZ 客戶先配對，唔會自動合併。</p>
       <div class="inputs">
         <label>分店<select v-model="branch"><option>全部三店</option><option v-for="item in MONITOR_BRANCHES" :key="item">{{ item }}</option></select></label>
         <label>監察網站管理 PIN<input v-model="pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="6 位數 PIN"></label>
-        <button type="button" class="read-btn" :disabled="busy" @click="readMonitor">{{ busy ? '讀取中…' : '讀取及對照' }}</button>
+        <button type="button" class="read-btn" :disabled="busy || attendanceBusy" @click="readMonitor">{{ busy ? '讀取中…' : attendanceBusy ? '上堂同步中…' : '讀取及對照' }}</button>
       </div>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="message" class="message" role="status">{{ message }}</p>
+      <p v-if="attendanceMessage" class="message" role="status">{{ attendanceMessage }}</p>
       <template v-if="reports.length">
-        <p class="source-note">來源：課程空位監察 · {{ reportTimes }}。只涵蓋監察已匯入嘅 Cat &amp; Kwan 卡友；未列出唔代表對方唔係會員。跨卡點數可能經來源合併，請以原網站核對。</p>
+        <p class="source-note">來源：課程空位監察 · 課卡 {{ reportTimes }} · 上堂 {{ displayTime(attendanceLatest) }}。只涵蓋監察已匯入嘅 Cat &amp; Kwan 卡友；未列出唔代表對方唔係會員。跨卡點數可能經來源合併，請以原網站核對。</p>
         <p v-if="staleReports.length" class="freshness-note" role="status">{{ staleReports.map(report => report.branch).join('、') }} 嘅資料超過 6 小時或未有更新時間，點數及到期日可能已變。請先喺 <a href="https://class-seat-monitor.yimwingkwan0907.workers.dev/app" target="_blank" rel="noopener noreferrer">課程監察網站</a> 更新，再按「讀取及對照」；更新前暫停補全呢啲分店嘅客戶。</p>
         <div class="categories">
           <button type="button" :class="{selected:category==='review'}" @click="category='review'">待核對 {{ counts.review }}</button>

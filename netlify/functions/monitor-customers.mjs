@@ -38,6 +38,7 @@ export default async function handler(request) {
       branch,
       source: report.source || '課程空位監察',
       profileUpdatedAt: report.profileUpdatedAt || null,
+      attendanceUpdatedAt: report.attendanceUpdatedAt || null,
       coverageStart: report.coverageStart || null,
       coverageEnd: report.coverageEnd || null,
       customers: report.customers.map(row => ({
