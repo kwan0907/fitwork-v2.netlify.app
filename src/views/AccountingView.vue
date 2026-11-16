@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
-import { supabase } from '../supabase'
+import { supabase, isReadOnlyPreview } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
+import { hkCalendarDate } from '../homeTasks'
 
 const store = useMainStore()
 
@@ -15,6 +16,7 @@ const getLocalYMD = () => {
     year: 'numeric', month: '2-digit', day: '2-digit' 
   }).format(new Date());
 }
+const transactionDay = t => hkCalendarDate(t?.created_at) || String(t?.created_at || '').slice(0, 10)
 
 // 🟢 1. 先宣告狀態變數 (非常重要，順序不能錯)
 const activeCategory = ref('全部')
@@ -76,7 +78,7 @@ const availableMonths = computed(() => {
   const months = new Set()
   store.transactions.forEach(t => {
     if (t?.created_at) {
-      months.add(String(t.created_at).substring(0, 7)) // 只取 'YYYY-MM'
+      months.add(transactionDay(t).slice(0, 7))
     }
   })
   return Array.from(months).sort((a, b) => b.localeCompare(a)) 
@@ -218,7 +220,7 @@ const groupedTxns = computed(() => {
 
 // 2. 🟢 根據選擇的月份過濾
   if (filterMonth.value !== 'all') {
-    filteredList = filteredList.filter(t => String(t?.created_at || '').startsWith(filterMonth.value))
+    filteredList = filteredList.filter(t => transactionDay(t).startsWith(filterMonth.value))
   }
 
   // 3. 🟢 根據關鍵字搜尋 (客戶名稱、備註、分類)
@@ -240,7 +242,7 @@ const groupedTxns = computed(() => {
   if (!t?.created_at) return
   
  // 🟢 極限粗暴法：直接斬件，唔經 Date 轉換，所見即所得
-  const dateStr = String(t.created_at).slice(0, 10);
+  const dateStr = transactionDay(t);
     
     const [yyyy, mm, dd] = dateStr.split('-')
     const displayDate = `${dd}/${mm}/${yyyy}`
@@ -414,18 +416,27 @@ async function saveTransaction() {
   delete updatePayload.historyTime
 
   let error
+  let insertedTxn = null
   if (editingTxn.value) {
     const res = await supabase.from('transactions').update(updatePayload).eq('id', editingTxn.value)
     error = res.error
   } else {
-    const res = await supabase.from('transactions').insert(updatePayload)
+    const res = expForm.value.backfill
+      ? await supabase.from('transactions').insert(updatePayload).select('*').single()
+      : await supabase.from('transactions').insert(updatePayload)
     error = res.error
+    insertedTxn = res.data || null
   }
 
   if (error) alert('儲存失敗: ' + error.message)
   else {
     showExpModal.value = false
     await store.syncAll()
+    if (insertedTxn?.id) {
+      store.transactions = [...store.transactions.filter(row => row.id !== insertedTxn.id), insertedTxn]
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      filterMonth.value = expForm.value.date.slice(0, 7)
+    }
     alert('✅ 紀錄已儲存')
   }
 }
@@ -799,7 +810,7 @@ function exportMovement() {
       
 <!-- 加上一個外層的 div 來把按鈕頂上來，避免被手機底部控制列擋住 -->
 <div style="padding-bottom: 80px;">
-  <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" @click="saveTransaction">✅ 儲存</button>
+  <button class="btn-primary" style="margin-top:30px; width:100%; padding:16px; font-size:16px;" :disabled="isReadOnlyPreview" @click="saveTransaction">{{ isReadOnlyPreview ? '預覽版只供查看' : '✅ 儲存' }}</button>
 </div>    </BaseModal>
 
     <!-- 💡 浮動回到最上層按鈕 -->
