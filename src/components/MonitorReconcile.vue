@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase, isReadOnlyPreview } from '../supabase'
 import { downloadOwnedClientsBackup } from '../clientsBackup'
-import { MONITOR_BRANCHES, monitorBranchCode, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload } from '../monitorReconcile'
+import { MONITOR_BRANCHES, monitorBranchCode, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload, historicalJoinDateCorrection, historicalClassDate, cleanName, cleanPhone } from '../monitorReconcile'
 
 const emit = defineEmits(['select-client'])
 const store = useMainStore()
@@ -15,6 +15,7 @@ const error = ref('')
 const reports = ref([])
 const category = ref('review')
 const adding = ref('')
+const correcting = ref('')
 const message = ref('')
 const attendanceBusy = ref(false)
 const attendanceMessage = ref('')
@@ -26,6 +27,7 @@ const counts = computed(() => ({
   review: rows.value.filter(row => row.kind === 'review').length
 }))
 const shown = computed(() => rows.value.filter(row => row.kind === category.value))
+const correctionCount = computed(() => new Set(rows.value.filter(row => historicalJoinDateCorrection(row)).map(row => row.client.id)).size)
 const staleReports = computed(() => reports.value.filter(report => {
   const updated = Date.parse(report.profileUpdatedAt || '')
   return !Number.isFinite(updated) || Date.now() - updated > 6 * 60 * 60 * 1000
@@ -137,7 +139,8 @@ async function addMissing(row) {
     error.value = '呢間分店嘅課卡資料已超過 6 小時，請先喺監察網站更新再讀取。'
     return
   }
-  if (!confirm(`補全 ${row.name}（${row.phone}）到 BZ？\n只會新增一份客戶檔案；原有客戶、交易、點數及帳目不會改動。`)) return
+  const historicalDate = historicalClassDate(row.firstClassAt)
+  if (!confirm(`補全 ${row.name}（${row.phone}）到 BZ？\n${historicalDate ? `加入日期會用最早上堂 ${historicalDate}。` : '未有最早上堂日期，加入日期會留空。'}\n只會新增一份客戶檔案；原有客戶、交易、點數及帳目不會改動。`)) return
   adding.value = row.key
   error.value = ''
   try {
@@ -154,11 +157,52 @@ async function addMissing(row) {
     const { data: created, error: insertError } = await supabase.from('clients').insert([payload]).select().single()
     if (insertError) throw insertError
     store.clients.unshift(created)
-    message.value = `已補全 ${created.name}。原始加入日期未知，冇將佢當作今日新客。`
+    message.value = `已補全 ${created.name}。${created.join_date ? `加入日期採用最早上堂 ${created.join_date}` : '加入日期未知，保持留空'}，冇將佢當作今日新客。`
   } catch (cause) {
     error.value = cause.message || '補全失敗'
   } finally {
     adding.value = ''
+  }
+}
+
+async function correctJoinDate(row) {
+  if (isReadOnlyPreview) return
+  const proposed = historicalJoinDateCorrection(row)
+  if (!proposed || correcting.value) return
+  if (!confirm(`將 ${row.name} 嘅 BZ 加入日期由 ${row.client.join_date || '未填'} 修正為最早上堂 ${proposed}？\n會先下載客戶備份；只修改呢位客戶嘅加入日期。`)) return
+  correcting.value = row.key
+  error.value = ''
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.email) throw new Error('登入已失效，請重新登入。')
+    await downloadOwnedClientsBackup(user)
+    const { data: current, error: readError } = await supabase.from('clients')
+      .select('id,name,phone,join_date,owner_email').eq('id', row.client.id).eq('owner_email', user.email).single()
+    if (readError || !current) throw new Error('搵唔到呢位客戶嘅最新檔案。')
+    if (cleanName(current.name) !== cleanName(row.name) || cleanPhone(current.phone) !== row.phone) {
+      throw new Error('客戶姓名或電話已改變，請重新讀取監察資料再核對。')
+    }
+    const latest = historicalJoinDateCorrection({ ...row, client: current })
+    if (!latest) {
+      message.value = 'BZ 加入日期已經係相同或更早，毋須修改。'
+      return
+    }
+    let update = supabase.from('clients').update({ join_date: latest }, { count: 'exact' })
+      .eq('id', current.id).eq('owner_email', user.email)
+    update = current.join_date ? update.eq('join_date', current.join_date) : update.is('join_date', null)
+    const { count, error: updateError } = await update
+    if (updateError) throw updateError
+    if (count !== 1) throw new Error('資料喺修正期間有變，冇覆蓋新版本；請重新讀取。')
+    const { data: saved, error: verifyError } = await supabase.from('clients')
+      .select('id,join_date').eq('id', current.id).eq('owner_email', user.email).single()
+    if (verifyError || saved?.join_date !== latest) throw new Error('日期已送出，但未能核實結果；請重新讀取客戶檔案。')
+    const local = store.clients.find(client => client.id === current.id)
+    if (local) local.join_date = latest
+    message.value = `已修正 ${row.name} 嘅加入日期為 ${latest}。交易、點數同其他客戶欄位冇改動。`
+  } catch (cause) {
+    error.value = cause.message || '修正日期失敗'
+  } finally {
+    correcting.value = ''
   }
 }
 
@@ -193,12 +237,13 @@ function displayTime(value) {
           <button type="button" :class="{selected:category==='missing'}" @click="category='missing'">BZ 疑似遺漏 {{ counts.missing }}</button>
           <button type="button" :class="{selected:category==='matched'}" @click="category='matched'">已配對 {{ counts.matched }}</button>
         </div>
+        <p v-if="correctionCount" class="date-note">有 {{ correctionCount }} 位已配對客戶，最早上堂日期早過 BZ 加入日期或 BZ 未填日期。可逐位核對及備份後修正；原本更早嘅日期會保留。</p>
         <p v-if="!shown.length" class="empty">呢一類暫時冇紀錄。</p>
         <div v-for="row in shown" :key="row.key" class="match-row">
           <div class="match-head"><strong>{{ row.name }}</strong><span>{{ row.branch }} · {{ row.memberId || '未有會員 ID' }}</span></div>
           <div class="match-data"><span>電話 {{ row.phone || '未提供' }}</span><span>剩餘點數 <b>{{ row.remainingPoints ?? '未提供' }}</b></span><span>到期 {{ row.validUntil || '未提供' }}</span></div>
           <small>{{ row.reason }}<template v-if="row.firstClassAt"> · 最早上堂 {{ row.firstClassAt }}</template></small>
-          <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button></div>
+          <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button><template v-if="historicalJoinDateCorrection(row)"><span class="date-change">加入日期 {{ row.client.join_date || '未填' }} → {{ historicalJoinDateCorrection(row) }}</span><button type="button" :disabled="isReadOnlyPreview || Boolean(correcting)" @click="correctJoinDate(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : correcting===row.key ? '修正中…' : '備份後修正日期' }}</button></template></div>
           <div v-if="row.kind==='missing'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || Boolean(adding) || staleReports.some(report => report.branch === row.branch)" @click="addMissing(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : staleReports.some(report => report.branch === row.branch) ? '先更新來源資料' : adding===row.key ? '補全中…' : '備份後補全此客戶' }}</button></div>
         </div>
       </template>
@@ -217,5 +262,6 @@ function displayTime(value) {
 .freshness-note{font-size:13px;line-height:1.6;padding:11px 13px;border-radius:11px;margin:0 0 12px;background:#fff0e7;color:#904b32}.freshness-note a{color:inherit;font-weight:700;text-decoration:underline}
 .categories{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px}.categories button{white-space:nowrap;border:1px solid #e6d6c8;border-radius:100px;background:#fff;padding:8px 12px;color:#74594a;font:inherit;font-size:12px;font-weight:700;cursor:pointer}.categories .selected{background:#775c47;color:#fff;border-color:#775c47}
 .match-row{background:#fff;border:1px solid #ebddd0;border-radius:14px;padding:12px 14px;margin-top:9px}.match-head,.match-data{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.match-head strong{font-size:14px}.match-head span,.match-row small{font-size:12px;color:#8b7869}.match-data{justify-content:flex-start;margin:8px 0;font-size:12px;gap:8px 15px}.match-data b{color:#a95732}.match-row small{line-height:1.5}.row-actions{margin-top:10px}.row-actions button{min-height:34px;padding:7px 11px;font-size:12px}.empty{color:#8b7869;font-size:13px}
+.date-note{font-size:13px;line-height:1.6;padding:11px 13px;border-radius:11px;margin:10px 0;background:#eef3e6;color:#51663d}.row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.date-change{font-size:12px;color:#705747;font-weight:700}
 @media(max-width:700px){.inputs{grid-template-columns:1fr 1fr}.read-btn{grid-column:1/-1}.monitor-body{padding:15px}.monitor-toggle{padding:16px}.monitor-toggle small{max-width:240px}}
 </style>

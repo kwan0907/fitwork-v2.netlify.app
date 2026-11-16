@@ -18,7 +18,22 @@ function cleanDate(value) {
   const match = String(value || '').match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
   if (!match) return null
   const date = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`
-  return Number.isNaN(Date.parse(`${date}T12:00:00Z`)) ? null : date
+  const parsed = new Date(`${date}T12:00:00Z`)
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date ? null : date
+}
+
+export function historicalClassDate(value) {
+  const date = cleanDate(value)
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  return date && date <= today ? date : null
+}
+
+export function historicalJoinDateCorrection(row) {
+  if (row?.kind !== 'matched' || !row.client?.id || !row.firstClassAt) return null
+  const firstClassAt = historicalClassDate(row.firstClassAt)
+  const current = cleanDate(row.client.join_date)
+  if (!firstClassAt) return null
+  return !current || firstClassAt < current ? firstClassAt : null
 }
 
 export function normalizeMonitorRows(reports) {
@@ -95,7 +110,8 @@ export function reconcileMonitorClients(sourceRows, bzClients) {
   })
 }
 
-// Only reviewed, uniquely identified records may be inserted. Historical dates are unknown here.
+// Only reviewed, uniquely identified records may be inserted. A verified first class supplies
+// a historical start date; otherwise leave it unknown rather than calling the person new today.
 export function safeMissingClientPayload(row, user) {
   if (row.kind !== 'missing' || !row.name || !cleanPhone(row.phone) || !monitorBranchCode(row.branch)) return null
   if (!user?.id || !user?.email) return null
@@ -105,9 +121,9 @@ export function safeMissingClientPayload(row, user) {
     branch: row.branch,
     status: 'active',
     source: '課程監察補全',
-    join_date: null,
+    join_date: historicalClassDate(row.firstClassAt),
     expiry_date: row.validUntil,
-    remark: `由課程空位監察補全｜會員 ID ${row.memberId || '未提供'}｜原始加入日期待核對`,
+    remark: `由課程空位監察補全｜會員 ID ${row.memberId || '未提供'}｜${historicalClassDate(row.firstClassAt) ? `最早上堂 ${historicalClassDate(row.firstClassAt)}，用作加入日期` : '原始加入日期待核對'}`,
     owner_email: user.email,
     own_email: user.email,
     user_id: user.id

@@ -34,6 +34,9 @@ const getOwnedPatchRpc = (urlString, method) => {
 
   const idFilter = url.searchParams.get('id') || ''
   if (!idFilter.startsWith('eq.')) return null
+  // A join-date compare-and-swap must retain its expected old value. The
+  // single-id RPC cannot enforce that filter, so leave these as PATCH.
+  if (url.searchParams.has('join_date')) return null
   const id = idFilter.slice(3)
   if (!id) return null
 

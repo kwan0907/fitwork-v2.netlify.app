@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cleanPhone, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload } from '../src/monitorReconcile.js'
+import { cleanPhone, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload, historicalJoinDateCorrection } from '../src/monitorReconcile.js'
 import { verifiedConversionDate, classifyPackageSale } from '../src/clientHistory.js'
 
 test('normalizes Hong Kong phone and source points without turning blanks into zero', () => {
@@ -45,6 +45,26 @@ test('missing client payload leaves original joining date unknown', () => {
   assert.equal(payload.join_date, null)
   assert.equal(payload.expiry_date, '2026-12-01')
   assert.equal(safeMissingClientPayload({ ...row, kind: 'review' }, { id: 'u1', email: 'owner@example.com' }), null)
+})
+
+test('first attended class becomes the historical join date for a uniquely missing client', () => {
+  const source = normalizeMonitorRows([{ branch: '觀塘', customers: [
+    { memberId: 'M1', name: '舊卡友', phone: '91234567', firstClassAt: '2025-11-18' }
+  ] }])
+  const [row] = reconcileMonitorClients(source, [])
+  const payload = safeMissingClientPayload(row, { id: 'u1', email: 'owner@example.com' })
+  assert.equal(payload.join_date, '2025-11-18')
+  assert.match(payload.remark, /最早上堂 2025-11-18/)
+  assert.equal(safeMissingClientPayload({ ...row, firstClassAt: '2025-02-31' }, { id: 'u1', email: 'owner@example.com' }).join_date, null)
+})
+
+test('matched clients only get an earlier, valid class-based join date', () => {
+  const row = { kind: 'matched', firstClassAt: '2025-11-18', client: { id: 'a', join_date: '2026-11-15' } }
+  assert.equal(historicalJoinDateCorrection(row), '2025-11-18')
+  assert.equal(historicalJoinDateCorrection({ ...row, client: { id: 'a', join_date: null } }), '2025-11-18')
+  assert.equal(historicalJoinDateCorrection({ ...row, client: { id: 'a', join_date: '2024-01-01' } }), null)
+  assert.equal(historicalJoinDateCorrection({ ...row, kind: 'review' }), null)
+  assert.equal(historicalJoinDateCorrection({ ...row, firstClassAt: '2025-11-32' }), null)
 })
 
 test('historical class before first recorded purchase prevents false new customer date', () => {
