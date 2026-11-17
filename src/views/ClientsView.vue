@@ -9,6 +9,7 @@ import MonitorReconcile from '../components/MonitorReconcile.vue'
 import { parseClientCsv, classifyClientCsv } from '../clientCsvImport'
 import { downloadOwnedClientsBackup } from '../clientsBackup'
 import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, changedClientFields, conflictingClientFields } from '../clientIntegrity'
+import { cleanPhone } from '../monitorReconcile'
 
 const store = useMainStore()
 
@@ -257,7 +258,7 @@ function chooseTrialTime(time) {
 
 const defaultNewClient = { 
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'prospect', 
-  is_vip: false, is_marathon: false, join_date: todayStr, 
+  is_vip: false, is_marathon: false, join_date: '',
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
   referred_by_id: null, vip_tier: '銅級(88折)', 
   trial_date: '', remark: '' 
@@ -709,7 +710,7 @@ function handleActionRetail() {
 }
 
 function openAddModal() {
-    newClient.value = { ...defaultNewClient, branch: savedBranch(), join_date: getLocalHKDate(), handled_by: store.currentUser || 'kwan' }
+    newClient.value = { ...defaultNewClient, branch: savedBranch(), handled_by: store.currentUser || 'kwan' }
     consumeMyGift.value = false 
     autoChargeTrial.value = false // 預設不勾選
     referrerSearch.value = ''
@@ -1093,7 +1094,7 @@ async function handleImport(e) {
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
             
-            <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn" @click.stop>💬 Wts</a>
+            <a v-if="cleanPhone(c.phone)" :href="'https://wa.me/852' + cleanPhone(c.phone)" target="_blank" rel="noopener noreferrer" class="wts-btn" @click.stop>💬 Wts</a>
 
             <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
               ⏰ {{ formatTrialDate(c.trial_date) }}
@@ -1277,7 +1278,7 @@ async function handleImport(e) {
             <div v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" class="f-item"><label>介紹人</label><input v-model="referrerSearch" class="modern-inp" placeholder="搜尋姓名或電話"><select v-model="newClient.referred_by_id" class="modern-select"><option :value="null">揀介紹人</option><option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option></select></div>
             <label v-if="newClient.referred_by_id" class="bz-check-row"><input v-model="consumeMyGift" type="checkbox">消耗介紹人 1 張 MyGift（尚餘 {{ getMyGiftStats(store.clients.find(c => c.id === newClient.referred_by_id)).available }} 張）</label>
             <label v-if="newClient.status==='prospect'" class="bz-check-row"><input v-model="autoChargeTrial" type="checkbox">同時記錄 $98 試堂收入</label>
-            <div class="grid-2"><div class="f-item"><label>加入日期</label><input v-model="newClient.join_date" type="date" class="modern-date"></div><div class="f-item"><label>套票到期日</label><input v-model="newClient.expiry_date" type="date" class="modern-date"></div></div>
+            <div class="grid-2"><div class="f-item"><label>首次上堂／加入日期 <span>唔知可留空，避免舊客當新客</span></label><input v-model="newClient.join_date" type="date" class="modern-date"></div><div class="f-item"><label>套票到期日</label><input v-model="newClient.expiry_date" type="date" class="modern-date"></div></div>
             <div class="f-item"><label>備註</label><textarea v-model="newClient.remark" class="modern-inp" rows="3" placeholder="客戶要求、習慣等"></textarea></div>
             <div class="bz-client-extras"><label><input v-model="newClient.is_marathon" type="checkbox">馬拉松</label><label><input v-model="newClient.is_vip" type="checkbox">VIP</label></div>
             <div v-if="newClient.is_vip" class="f-item"><label>VIP 等級</label><select v-model="newClient.vip_tier" class="modern-select"><option value="銅級(88折)">銅級 (88折)</option><option value="銀級(75折)">銀級 (75折)</option><option value="金級(65折)">金級 (65折)</option><option value="直接58折">直接58折</option><option value="領班(半折)">領班(半折)</option></select></div>
