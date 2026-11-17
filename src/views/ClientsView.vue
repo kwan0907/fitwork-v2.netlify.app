@@ -8,6 +8,7 @@ import { sameCourse, findAvailableCourse } from '../classSchedule'
 import MonitorReconcile from '../components/MonitorReconcile.vue'
 import { parseClientCsv, classifyClientCsv } from '../clientCsvImport'
 import { downloadOwnedClientsBackup } from '../clientsBackup'
+import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, changedClientFields, conflictingClientFields } from '../clientIntegrity'
 
 const store = useMainStore()
 
@@ -318,6 +319,8 @@ function handleSmartPaste() {
   smartInput.value = ''
 }
 const editingClient = ref({})
+const originalEditingClient = ref({})
+const updatingClient = ref(false)
 
 const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
@@ -542,6 +545,7 @@ const quickPackage = ref('pkg_10')
 const quickDate = ref('')
 const quickStaff = ref('')
 const quickSaving = ref(false)
+const addingClient = ref(false)
 const quickError = ref('')
 const quickSaveLocked = ref(false)
 const quickPackageRows = ref([])
@@ -612,16 +616,25 @@ async function saveQuickFlow() {
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user?.email) throw new Error('登入已失效，請重新登入。')
+    const { data: latest, error: latestError } = await supabase.from('clients')
+      .select('id,name,branch,status,remark,pkg_count,expiry_date,join_date,trial_date')
+      .eq('id', client.id).eq('owner_email', user.email).single()
+    if (latestError || !latest) throw new Error('未能核對最新客戶資料，請重新載入。')
+    if (['pkg_count', 'expiry_date', 'join_date', 'status', 'remark'].some(field =>
+      (latest[field] ?? null) !== (client[field] ?? null))) {
+      throw new Error('客戶資料已喺其他地方更新，請先重新載入，再記錄試堂或續卡。')
+    }
     if (quickNeedsPackage.value) {
       const pkg = quickPackages.value[quickPackage.value]
-      const now = new Date()
-      const stamp = `${quickDate.value}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}+08:00`
+      const hkTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date())
+      const stamp = `${quickDate.value}T${hkTime}+08:00`
       const row = {
         type: 'income', category: pkg.category, amount: pkg.amount, cost: pkg.cost,
         profit: pkg.profit, branch: client.branch || '觀塘',
         client_id: client.id, client_name: client.name,
+        ...quickSaleFlags(quickFlow.value, quickOutcome.value),
         staff: quickStaff.value.trim(), handled_by: quickStaff.value.trim(),
-        created_at: stamp, own_email: user.email,
+        created_at: stamp, owner_email: user.email, own_email: user.email,
         note: `售出 ${pkg.label}${opened ? '（試堂開卡）' : '（續卡）'}${opened && quickApplyTrialDiscount.value ? '（扣已付試堂$98）' : ''}`
       }
       const { error: txnError } = await supabase.from('transactions').insert(row)
@@ -638,12 +651,14 @@ async function saveQuickFlow() {
     if (quickNeedsPackage.value) {
       patch.status = 'active'
       if (quickTotals.value.incrementCount) patch.pkg_count = (Number(client.pkg_count) || 0) + 1
-      patch.join_date = !client.join_date || quickDate.value < client.join_date ? quickDate.value : client.join_date
+      const firstJoinDate = firstOpeningJoinDate(client, quickFlow.value, quickOutcome.value, quickDate.value)
+      if (firstJoinDate) patch.join_date = firstJoinDate
       const base = client.expiry_date && client.expiry_date > quickDate.value ? client.expiry_date : quickDate.value
       if (quickTotals.value.expiryYears) patch.expiry_date = addYear(base)
     }
-    const { error: clientError } = await supabase.from('clients').update(patch).eq('id', client.id)
-    if (clientError) throw clientError
+    const { data: savedClient, error: clientError } = await supabase.from('clients')
+      .update(patch).eq('id', client.id).eq('owner_email', user.email).select('id').single()
+    if (clientError || !savedClient) throw new Error(clientError?.message || '未能確認客戶更新結果。')
     clientSaved = true
 
     if (quickFlow.value === 'trial' && ['no_open_normal', 'no_open_mygift'].includes(quickOutcome.value)) {
@@ -711,152 +726,184 @@ function openAddModal() {
     showAddModal.value = true
 }
 
+async function readOwnedClientIndex(ownerEmail) {
+  const rows = []
+  let expected = null
+  for (let start = 0; start < 100000; start += 500) {
+    const { data, error, count } = await supabase.from('clients')
+      .select('id,name,phone', { count: 'exact' }).eq('owner_email', ownerEmail)
+      .order('id').range(start, start + 499)
+    if (error) throw new Error(`未能核對現有客戶：${error.message}`)
+    if (expected === null) expected = count
+    rows.push(...(data || []))
+    if ((data || []).length < 500) {
+      if (expected !== rows.length) throw new Error('核對期間客戶資料有變，請重新按儲存。')
+      return rows
+    }
+  }
+  throw new Error('客戶資料太多，未能完整檢查重複。')
+}
+
 async function handleAddClient() {
+  if (addingClient.value) return
   if (!newClient.value.name) return alert('請填寫姓名')
   if (isReadOnlyPreview) return alert('預覽版只供查看，新增客戶要喺正式版操作。')
-  if (selectedCourse.value) {
-    checkingCourse.value = true
-    try {
-      const rows = await fetchClasses(selectedCourse.value.branch, selectedCourse.value.date, true)
-      if (!findAvailableCourse(rows, selectedCourse.value)) {
-        scheduleRows.value = rows
-        clearSelectedCourse()
-        scheduleError.value = '課堂剛剛改咗或已額滿，請重新揀；客戶資料未有儲存。'
-        return
-      }
-    } catch (error) {
-      scheduleError.value = `未能核對最新課堂，客戶資料未有儲存：${error.message}`
+  addingClient.value = true
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user?.id || !user?.email) throw new Error('登入已失效，請重新登入。')
+
+    const existing = await readOwnedClientIndex(user.email)
+    const conflict = findPotentialDuplicateClient(newClient.value, existing)
+    if (conflict?.kind === 'exact') {
+      clientSearch.value = conflict.client.name
+      filterStatus.value = ''
+      filterBranch.value = ''
+      filterMyGiftExpiring.value = false
+      showAddModal.value = false
+      alert('已有同姓名、同電話嘅客戶；已幫你喺客戶列表搜尋，請打開原有檔案補記。')
       return
-    } finally {
-      checkingCourse.value = false
     }
-  }
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
-  
-  const dataToInsert = { 
-    ...newClient.value, 
-    own_email: user.email,
-    user_id: user.id 
-  }
-  
-  if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
-      dataToInsert.referred_by_id = null
-  }
-  
-  if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
-  if (!dataToInsert.join_date) dataToInsert.join_date = null
-  
-  dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
+    if (conflict && !confirm(`已有${conflict.kind === 'shared_phone' ? '同電話' : '同姓名'}客戶「${conflict.client.name}」。請先核對係咪同一人；確定係另一位先按「確定」新增。`)) return
 
-  const { error } = await supabase.from('clients').insert([dataToInsert])
-  if (error) return alert('新增失敗: ' + error.message)
-  try { localStorage.setItem('bz_last_branch', dataToInsert.branch) } catch { /* optional preference */ }
-  
-  const now = new Date();
-  const hkYMD = getLocalHKDate();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-
-  if (consumeMyGift.value && dataToInsert.referred_by_id) {
-    const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id);
-    if (referrer) {
-     const dummyTxn = {
-        type: 'expense', amount: 52, cost: 52, profit: -52,
-        note: `推薦新客: ${dataToInsert.name}`,
-        client_name: referrer.name,
-        category: 'MyGift消耗',
-        handled_by: store.currentUser || '系統自動',
-        own_email: user.email,
-        created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00` // 👈 加上香港時區尾巴
-      };
-      await supabase.from('transactions').insert(dummyTxn);
+    if (selectedCourse.value) {
+      checkingCourse.value = true
+      try {
+        const rows = await fetchClasses(selectedCourse.value.branch, selectedCourse.value.date, true)
+        if (!findAvailableCourse(rows, selectedCourse.value)) {
+          scheduleRows.value = rows
+          clearSelectedCourse()
+          scheduleError.value = '課堂剛剛改咗或已額滿，請重新揀；客戶資料未有儲存。'
+          return
+        }
+      } catch (error) {
+        scheduleError.value = `未能核對最新課堂，客戶資料未有儲存：${error.message}`
+        return
+      } finally {
+        checkingCourse.value = false
+      }
     }
-  } 
-  
-  // 🚀 自動收取試堂費邏輯
-  if (autoChargeTrial.value) {
-    const trialIncomeTxn = {
-      type: 'income', 
-      amount: 98, 
-      cost: 52, 
-      profit: 46, // $98 - $52 = $46
-      note: `預約試堂收費: ${dataToInsert.name}`,
-      client_name: dataToInsert.name,
-      category: '試堂',
-      handled_by: dataToInsert.handled_by || store.currentUser || '系統',
+
+    const dataToInsert = {
+      ...newClient.value,
+      owner_email: user.email,
       own_email: user.email,
-      created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00`
-    };
-    await supabase.from('transactions').insert(trialIncomeTxn);
-  }
-
-  await store.syncAll(); // 🚀 補丁 1：強制等待資料庫最新數據下載完成
-  showAddModal.value = false; 
-  
-  // 🚀 補丁 2：延遲 0.1 秒彈出，讓 Vue 有時間把新客戶畫到畫面上！
-  setTimeout(() => {
-    if (autoChargeTrial.value) {
-       alert('✅ 新增成功！\n💰 已自動寫入 $98 試堂費紀錄。') 
-    } else {
-       alert('✅ 新增成功') 
+      user_id: user.id
     }
-  }, 100);
+    if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') dataToInsert.referred_by_id = null
+    if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
+    if (!dataToInsert.join_date) dataToInsert.join_date = null
+    dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
+
+    const { data: created, error: createError } = await supabase.from('clients').insert([dataToInsert]).select('id').single()
+    if (createError || !created?.id) throw new Error(createError?.message || '未能核實新增客戶結果，請先搜尋客戶列表。')
+    try { localStorage.setItem('bz_last_branch', dataToInsert.branch) } catch { /* optional preference */ }
+
+    const hkYMD = getLocalHKDate()
+    const hkTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date())
+    const createdAt = `${hkYMD}T${hkTime}+08:00`
+    const warnings = []
+
+    if (consumeMyGift.value && dataToInsert.referred_by_id) {
+      const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id)
+      if (!referrer) warnings.push('介紹人資料未找到，MyGift 消耗未記錄')
+      else {
+        const row = {
+          type: 'expense', amount: 52, cost: 52, profit: -52,
+          note: `推薦新客: ${dataToInsert.name}`, client_id: referrer.id, client_name: referrer.name,
+          category: 'MyGift消耗', handled_by: store.currentUser || '系統自動',
+          owner_email: user.email, own_email: user.email, created_at: createdAt
+        }
+        try {
+          const { error } = await supabase.from('transactions').insert(row)
+          if (error) warnings.push(`MyGift 消耗未記錄：${error.message}`)
+        } catch (error) { warnings.push(`MyGift 消耗未能核實：${error.message}`) }
+      }
+    }
+
+    if (autoChargeTrial.value) {
+      const row = {
+        type: 'income', amount: 98, cost: 52, profit: 46,
+        note: `預約試堂收費: ${dataToInsert.name}`, client_id: created.id, client_name: dataToInsert.name,
+        category: '試堂', handled_by: dataToInsert.handled_by || store.currentUser || '系統',
+        owner_email: user.email, own_email: user.email, created_at: createdAt
+      }
+      try {
+        const { error } = await supabase.from('transactions').insert(row)
+        if (error) warnings.push(`$98 試堂收入未記錄：${error.message}`)
+      } catch (error) { warnings.push(`$98 試堂收入未能核實：${error.message}`) }
+    }
+
+    await store.syncAll()
+    showAddModal.value = false
+    const message = warnings.length
+      ? `客戶已新增，但${warnings.join('；')}。請到帳目核對並補記；唔好再新增同一位客戶。`
+      : autoChargeTrial.value ? '✅ 客戶同 $98 試堂收入已記錄。' : '✅ 客戶已新增。'
+    setTimeout(() => alert(message), 100)
+  } catch (error) {
+    alert(`未能完成新增：${error.message}。如網絡中斷，請先搜尋客戶列表，避免重複新增。`)
+  } finally {
+    addingClient.value = false
+  }
 }
 
 async function handleUpdateClient() {
+  if (updatingClient.value) return
   if (!editingClient.value.name) return alert('請填寫姓名')
-  
-  const dataToUpdate = { ...editingClient.value }
-  
-  if (dataToUpdate.source !== '朋友介紹' && dataToUpdate.source !== '廣告+朋友介紹') {
-      dataToUpdate.referred_by_id = null
-  }
-  
-  if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
-  if (!dataToUpdate.join_date) dataToUpdate.join_date = null
-
-  dataToUpdate.trial_date = dataToUpdate.trial_date ? dataToUpdate.trial_date.slice(0, 16) : null
-
-  const trialResultChanged = editingTrialResult.value !== editingOriginalTrialResult.value
-  if (trialResultChanged) {
-    dataToUpdate.remark = replaceTrialResultMarker(dataToUpdate.remark, editingTrialResult.value)
-    if (editingTrialResult.value === 'no_show') dataToUpdate.status = 'absent'
-    else if (editingTrialResult.value === 'no_open_normal' || editingTrialResult.value === 'no_open_mygift') dataToUpdate.status = 'prospect'
-    else if (editingTrialResult.value === 'opened_small' || editingTrialResult.value === 'opened_big') dataToUpdate.status = 'active'
-  }
-
-  // 🚀 智能引擎：偵測如果將客戶改為「缺席」，自動將其 98 蚊試堂費的成本改為 0
-  if (dataToUpdate.status === 'absent') {
-    const targetTxn = store.transactions.find(t => 
-      t.client_name === dataToUpdate.name && 
-      t.category === '試堂' && 
-      t.amount === 98
-    )
-
-    if (targetTxn && targetTxn.cost > 0) {
-      await supabase.from('transactions').update({
-        cost: 0,
-        profit: 98 // 利潤全收
-      }).eq('id', targetTxn.id)
-      console.log('✅ 已自動將缺席客人的試堂成本改為 0')
-    }
-  }
-
-  const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
-  
-  if (error) alert('更新失敗: ' + error.message)
-  else {
+  if (isReadOnlyPreview) return alert('預覽版只供查看，未能修改正式資料。')
+  updatingClient.value = true
+  let clientSaved = false
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user?.email) throw new Error('登入已失效，請重新登入。')
+    const draft = { ...editingClient.value }
+    if (draft.source !== '朋友介紹' && draft.source !== '廣告+朋友介紹') draft.referred_by_id = null
+    draft.expiry_date = draft.expiry_date || null
+    draft.join_date = draft.join_date || null
+    draft.trial_date = draft.trial_date ? draft.trial_date.slice(0, 16) : null
+    const trialResultChanged = editingTrialResult.value !== editingOriginalTrialResult.value
     if (trialResultChanged) {
-      await syncTrialProfitForClient(dataToUpdate, editingTrialResult.value)
+      draft.remark = replaceTrialResultMarker(draft.remark, editingTrialResult.value)
+      if (editingTrialResult.value === 'no_show') draft.status = 'absent'
+      else if (['no_open_normal', 'no_open_mygift'].includes(editingTrialResult.value)) draft.status = 'prospect'
+      else if (['opened_small', 'opened_big'].includes(editingTrialResult.value)) draft.status = 'active'
     }
-    await store.syncAll(); // 🚀 等待同步
-    showEditModal.value = false; 
-    setTimeout(() => {
-      alert(dataToUpdate.status === 'absent' ? '✅ 修改已儲存\n(已自動將試堂費成本設為 0)' : '✅ 修改已儲存') 
-    }, 100);
+    const patch = changedClientFields(originalEditingClient.value, draft)
+    if (!Object.keys(patch).length) { showEditModal.value = false; return }
+
+    const { data: latest, error: readError } = await supabase.from('clients')
+      .select('*').eq('id', draft.id).eq('owner_email', user.email).single()
+    if (readError || !latest) throw new Error('未能核對最新客戶資料，請重新載入。')
+    const normalizedLatest = { ...latest, trial_date: latest.trial_date ? toLocalDatetimeString(latest.trial_date) : null }
+    const conflicts = conflictingClientFields(originalEditingClient.value, normalizedLatest, patch)
+    if (conflicts.length) throw new Error('其他裝置已修改呢位客戶嘅同一欄位；請重新載入後再編輯，避免蓋過新資料。')
+
+    const { data: saved, error: saveError } = await supabase.from('clients')
+      .update(patch).eq('id', draft.id).eq('owner_email', user.email).select('id').single()
+    if (saveError || !saved) throw new Error(saveError?.message || '更新未能確認，請重新載入。')
+    clientSaved = true
+
+    if (trialResultChanged && ['no_open_normal', 'no_open_mygift'].includes(editingTrialResult.value)) {
+      await syncTrialProfitForClient(draft, editingTrialResult.value)
+    }
+    if (draft.status === 'absent' && originalEditingClient.value.status !== 'absent') {
+      const targetTxn = store.transactions.find(t =>
+        (t.client_id === draft.id || (!t.client_id && t.client_name === originalEditingClient.value.name)) &&
+        t.category === '試堂' && Number(t.amount) === 98 && Number(t.cost) > 0)
+      if (targetTxn) {
+        const { error: txnError } = await supabase.from('transactions')
+          .update({ cost: 0, profit: 98 }).eq('id', targetTxn.id).eq('owner_email', user.email)
+        if (txnError) throw txnError
+      }
+    }
+    await store.syncAll()
+    showEditModal.value = false
+    setTimeout(() => alert('✅ 修改已儲存'), 100)
+  } catch (error) {
+    if (clientSaved) await store.syncAll()
+    alert(`${clientSaved ? '客戶資料已更新，但相關帳目未完成' : '更新失敗'}：${error.message}。${clientSaved ? '請先核對帳目，唔好重複儲存。' : ''}`)
+  } finally {
+    updatingClient.value = false
   }
 }
 
@@ -880,6 +927,7 @@ function openEditModal(client) {
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
+  originalEditingClient.value = { ...editingClient.value }
   referrerSearch.value = ''
   editingTrialResult.value = getTrialResultValue(editingClient.value)
   editingOriginalTrialResult.value = editingTrialResult.value
@@ -1188,7 +1236,7 @@ async function handleImport(e) {
 
         <div class="sticky-action-row">
           <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
-          <button class="btn-confirm" @click="handleUpdateClient">確認修改</button>
+          <button class="btn-confirm" :disabled="isReadOnlyPreview || updatingClient" @click="handleUpdateClient">{{ isReadOnlyPreview ? '預覽版只供查看' : updatingClient ? '儲存中…' : '確認修改' }}</button>
         </div>
 
       </div>
@@ -1236,7 +1284,7 @@ async function handleImport(e) {
             <details class="bz-smart-paste"><summary>由訊息快速貼入資料</summary><div class="bz-smart-row"><input v-model="smartInput" class="modern-inp" placeholder="姓名 電話 日期"><button type="button" @click="handleSmartPaste">配對</button></div></details>
           </details>
         </div>
-        <div class="sticky-action-row"><button type="button" class="btn-confirm" :disabled="isReadOnlyPreview || checkingCourse" @click="handleAddClient">{{ isReadOnlyPreview ? '預覽版只供查看' : checkingCourse ? '核對課堂中…' : '儲存客戶' }}</button></div>
+        <div class="sticky-action-row"><button type="button" class="btn-confirm" :disabled="isReadOnlyPreview || checkingCourse || addingClient" @click="handleAddClient">{{ isReadOnlyPreview ? '預覽版只供查看' : checkingCourse ? '核對課堂中…' : addingClient ? '儲存中…' : '儲存客戶' }}</button></div>
       </div>
     </div>
 
