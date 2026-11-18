@@ -1,0 +1,109 @@
+const hkFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit'
+})
+
+export function hkDay(value) {
+  if (!value) return ''
+  const raw = String(value).trim()
+  // Historical backfills without an offset are Hong Kong wall-clock dates.
+  if (/^\d{4}-\d{2}-\d{2}(?:$|[T ])/.test(raw) && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return raw.slice(0, 10)
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? '' : hkFormatter.format(date)
+}
+
+export function reportPeriod(kind, now = new Date(), customStart = '', customEnd = '') {
+  const today = hkFormatter.format(now)
+  const month = today.slice(0, 7)
+  if (kind === 'today') return { start: today, end: today, label: '今日' }
+  if (kind === 'week') {
+    const day = new Date(`${today}T00:00:00Z`)
+    day.setUTCDate(day.getUTCDate() - 6)
+    return { start: day.toISOString().slice(0, 10), end: today, label: '最近 7 日' }
+  }
+  if (kind === 'last_month') {
+    const first = new Date(`${month}-01T00:00:00Z`)
+    first.setUTCDate(0)
+    return { start: first.toISOString().slice(0, 7) + '-01', end: first.toISOString().slice(0, 10), label: '上月' }
+  }
+  if (kind === 'custom') return { start: customStart, end: customEnd, label: '自訂日期' }
+  if (kind === 'all') return { start: '', end: '', label: '全部紀錄' }
+  const firstNext = new Date(`${month}-01T00:00:00Z`)
+  firstNext.setUTCMonth(firstNext.getUTCMonth() + 1)
+  firstNext.setUTCDate(0)
+  return { start: `${month}-01`, end: firstNext.toISOString().slice(0, 10), label: '本月' }
+}
+
+const money = value => Number.isFinite(Number(value)) && value !== null && value !== '' ? Number(value) : null
+const round = value => Math.round((value + Number.EPSILON) * 100) / 100
+const excludedExpense = new Set(['產品採購', '支付30%'])
+export const inPeriod = (value, period) => {
+  const day = hkDay(value)
+  return Boolean(day) && (!period.start || day >= period.start) && (!period.end || day <= period.end)
+}
+
+export function calculateReport(transactions, period, branch = '全部分店') {
+  const unique = new Map()
+  for (const transaction of transactions || []) unique.set(String(transaction.id), transaction)
+  const rows = [...unique.values()]
+    .filter(t => inPeriod(t.created_at, period) && (branch === '全部分店' || t.branch === branch))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+  let income = 0, cashExpense = 0, operatingExpense = 0, recordedGross = 0
+  let missingProfit = 0, missingCost = 0, incomeCount = 0, expenseCount = 0
+  const packages = { new: 0, renewal: 0, unknown: 0 }
+  const categories = new Map()
+  const details = rows.map(t => {
+    const amount = money(t.amount)
+    const category = t.category || '未分類'
+    const kind = t.type === 'income' ? 'income' : t.type === 'expense' ? 'expense' : 'other'
+    const bucketKey = `${kind}:${category}`
+    if (!categories.has(bucketKey)) categories.set(bucketKey, { kind, category, count: 0, amount: 0 })
+    const bucket = categories.get(bucketKey)
+    bucket.count++
+    bucket.amount += amount ?? 0
+    let profit = null
+    if (kind === 'income') {
+      incomeCount++
+      income += amount ?? 0
+      const savedProfit = money(t.profit)
+      const savedCost = money(t.cost)
+      profit = savedProfit ?? (amount !== null && savedCost !== null ? amount - savedCost : null)
+      if (profit === null) missingProfit++
+      else recordedGross += profit
+      if (savedCost === null && amount !== null && amount > 0) missingCost++
+      if (category === '運動套票' || category === '運動') {
+        if (t.is_renewal === true) packages.renewal++
+        else if (t.is_new_client === true) packages.new++
+        else packages.unknown++
+      }
+    } else if (kind === 'expense') {
+      expenseCount++
+      cashExpense += amount ?? 0
+      if (!excludedExpense.has(category)) operatingExpense += amount ?? 0
+    }
+    return { ...t, day: hkDay(t.created_at), kind, amount, profit, excluded: kind === 'expense' && excludedExpense.has(category) }
+  })
+  return {
+    rows: details, categories: [...categories.values()].map(x => ({ ...x, amount: round(x.amount) })),
+    income: round(income), cashExpense: round(cashExpense), operatingExpense: round(operatingExpense),
+    recordedGross: round(recordedGross), net: missingProfit ? null : round(recordedGross - operatingExpense),
+    partialNet: round(recordedGross - operatingExpense), missingProfit, missingCost, incomeCount, expenseCount,
+    excludedExpense: round(cashExpense - operatingExpense), packages
+  }
+}
+
+export function calculateTrialFunnel(clients, period, branch = '全部分店') {
+  const rows = (clients || []).filter(c =>
+    inPeriod(c.trial_date, period) && (branch === '全部分店' || c.branch === branch)
+  )
+  let attended = 0, opened = 0, noShow = 0, pending = 0
+  for (const client of rows) {
+    const results = [...String(client.remark || '').matchAll(/\[TRIAL_RESULT\]\|([^|\n]+)\|([^|\n]+)/g)]
+    const outcome = results.at(-1)?.[2] || ''
+    if (outcome.startsWith('opened_')) { attended++; opened++ }
+    else if (outcome.startsWith('no_open')) attended++
+    else if (outcome === 'no_show') noShow++
+    else pending++
+  }
+  return { booked: rows.length, attended, opened, noShow, pending,
+    conversion: attended ? round(opened / attended * 100) : null }
+}
