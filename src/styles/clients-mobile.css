@@ -146,6 +146,7 @@
 
 @media (max-width:600px) {
   #app-main .header-section { margin-bottom:12px !important; }
+  #app-main .main-fab { display:none !important; }
   #app-main .header-section .page-title {
     margin-bottom:2px !important;
     font-size:23px !important;
