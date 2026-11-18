@@ -13,8 +13,8 @@ import './styles/initial-loading.css'
 import './styles/purchase-import.css'
 import './styles/purchase-import-v2.css'
 import './styles/client-modal-mobile-fix.css'
+import './styles/bz-redesign.css'
 import { useMainStore } from './stores/mainStore'
-import { installQuickActions } from './quickActions'
 import { installInitialLoading } from './initialLoading'
 import { installPurchaseImportV3 } from './purchaseImportV3'
 import { installSubmitGuard } from './submitGuard'
@@ -38,7 +38,6 @@ app.use(pinia)
 app.mount('#app')
 
 const store = useMainStore(pinia)
-installQuickActions(store)
 installInitialLoading(store)
 installPurchaseImportV3(store)
 installSubmitGuard()

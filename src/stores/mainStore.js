@@ -4,11 +4,12 @@ import { supabase } from '../supabase'
 
 export const useMainStore = defineStore('main', () => {
   // --- 狀態定義 (State) ---
-  const view = ref('dashboard')
+  const view = ref('home')
   const session = ref(null)
   const clients = ref([])
   const transactions = ref([])
   const products = ref([])
+  const monitorProfiles = ref([])
   const displayTxnCount = ref(50) 
 
   const stock = ref({}) 
@@ -25,10 +26,17 @@ export const useMainStore = defineStore('main', () => {
   // 🚀 用來暫存「再來一套」的複刻訂單資料，作為頁面間的溝通橋樑
   const pendingRepeatOrder = ref(null)
   const quickActionClient = ref(null) // 🚀 用來暫存快捷鍵選中的客戶
+  const pendingQuickEntry = ref(null)
+  const pendingSearch = ref(null)
+  const pendingClientTask = ref(null)
+  const pendingOpenPurchaseImport = ref(false)
 
   // 🚀 新增：控制分批載入與舊資料狀態
   const isFetchingMore = ref(false) 
   const hasMoreTxn = ref(true) 
+  const transactionsLoadError = ref('')
+  let nextTxnOffset = 0
+  let loadedOwnerEmail = ''
 
   // --- 同步資料邏輯 (Actions) ---
   async function syncAll() {
@@ -50,11 +58,23 @@ export const useMainStore = defineStore('main', () => {
           return
         }
 
+        if (loadedOwnerEmail && loadedOwnerEmail !== userEmail) {
+          clients.value = []
+          transactions.value = []
+          products.value = []
+          monitorProfiles.value = []
+          stock.value = {}
+          promotions.value = []
+          nextTxnOffset = 0
+          isInitialLoading.value = true
+        }
+        loadedOwnerEmail = userEmail
+
         // 💡 2. 先抓啟動畫面最重要的資料：客戶 + 最近交易。
         // 這兩組完成後即可解除首次 Skeleton，產品 / 庫存 / 宣傳繼續在後段同步。
         const [c, t] = await Promise.all([
           supabase.from('clients').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }),
-          supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).limit(500)
+          supabase.from('transactions').select('*').eq('owner_email', userEmail).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(500)
         ])
 
         // 1. 處理客戶資料
@@ -65,6 +85,8 @@ export const useMainStore = defineStore('main', () => {
         if (t.error) console.error('❌ 交易抓取失敗:', t.error)
         else {
           transactions.value = t.data || []
+          nextTxnOffset = transactions.value.length
+          transactionsLoadError.value = ''
           // 🚀 如果剛好抓到 500 筆，代表可能還有舊帳未顯示
           hasMoreTxn.value = (t.data?.length === 500)
         }
@@ -153,24 +175,41 @@ export const useMainStore = defineStore('main', () => {
 
   // 🚀 新增 1：載入更舊交易紀錄 (給記帳頁面無限載入用)
   async function loadMoreTransactions() {
-    if (isFetchingMore.value || !hasMoreTxn.value) return
+    if (isFetchingMore.value || !hasMoreTxn.value) return false
     isFetchingMore.value = true
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user?.email) return
-      const currentLen = transactions.value.length
+      if (!session?.user?.email) return false
       const { data, error } = await supabase.from('transactions')
         .select('*').eq('owner_email', session.user.email)
         .order('created_at', { ascending: false })
-        .range(currentLen, currentLen + 499)
+        .order('id', { ascending: false })
+        .range(nextTxnOffset, nextTxnOffset + 499)
 
       if (error) throw error
       if (data) {
-        transactions.value = [...transactions.value, ...data]
+        nextTxnOffset += data.length
+        const rows = new Map(transactions.value.map(row => [row.id, row]))
+        data.forEach(row => rows.set(row.id, row))
+        transactions.value = [...rows.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         if (data.length < 500) hasMoreTxn.value = false
+        transactionsLoadError.value = ''
       }
-    } catch (err) { console.error('載入舊資料失敗:', err) }
+      return true
+    } catch (err) {
+      transactionsLoadError.value = err?.message || '載入舊紀錄失敗'
+      console.error('載入舊資料失敗:', err)
+      return false
+    }
     finally { isFetchingMore.value = false }
+  }
+
+  async function loadAllTransactions() {
+    let pages = 0
+    while (hasMoreTxn.value && pages < 100) {
+      if (!(await loadMoreTransactions())) break
+      pages += 1
+    }
   }
 
   // 🚀 新增 2：智能按需抓取 (給 Dashboard 自訂區間查舊帳用)
@@ -198,11 +237,11 @@ export const useMainStore = defineStore('main', () => {
 
   // 👇 檔案最後唯一的一個 return
   return { 
-    view, session, clients, transactions, products, stock, stockExpiry, 
+    view, session, clients, transactions, products, monitorProfiles, stock, stockExpiry,
     promotions, settings, displayTxnCount, syncAll,
     deviceUsers, currentUser, setDeviceUsers, switchUser,
-    pendingRepeatOrder, quickActionClient,
+    pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch, pendingClientTask, pendingOpenPurchaseImport,
     isInitialLoading, isSyncing,
-    isFetchingMore, hasMoreTxn, loadMoreTransactions, fetchTransactionsByDateRange
+    isFetchingMore, hasMoreTxn, transactionsLoadError, loadMoreTransactions, loadAllTransactions, fetchTransactionsByDateRange
   }
 })

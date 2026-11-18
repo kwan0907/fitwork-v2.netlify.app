@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 
@@ -20,10 +20,19 @@ const getLocalHKTimestamp = () => {
   return `${hkDate}T${timeString}+08:00`;
 }
 const searchProduct = ref('')
+function consumeSearch() {
+  if (store.pendingSearch?.kind === 'product') {
+    searchProduct.value = store.pendingSearch.query || ''
+    store.pendingSearch = null
+  }
+}
+onMounted(consumeSearch)
+watch(() => store.pendingSearch, consumeSearch)
 const selectedBranch = ref('觀塘')
 
 // 🌟 分類狀態
 const selectedCategory = ref('全部')
+const lowStockOnly = ref(false)
 const categories = ['全部', '內在營養', '外在保養']
 
 // 🌟 自訂排序 (Shake/蛋白素 -> 佳能 -> 蘆薈汁 -> 茶)
@@ -65,6 +74,8 @@ if (selectedCategory.value === '內在營養') {
       (p.id?.toLowerCase().includes(q))
     )
   }
+
+  if (lowStockOnly.value) list = list.filter(p => p.current_qty <= 5)
 
   return list
 })
@@ -321,10 +332,13 @@ async function confirmAction() {
       </div>
       <div class="tags-row" style="margin-top:12px;">
         <button v-for="cat in categories" :key="cat" class="cat-btn" :class="{active: selectedCategory === cat}" @click="selectedCategory = cat">{{ cat }}</button>
+        <button class="cat-btn" :class="{active: lowStockOnly}" @click="lowStockOnly = !lowStockOnly">低存量 ≤ 5</button>
       </div>
+      <p class="bz-inventory-count">顯示 {{ displayInventory.length }} 項產品 · {{ selectedBranch }}</p>
     </div>
 
     <div class="inventory-list">
+      <p v-if="!displayInventory.length" class="bz-empty">冇符合條件嘅產品，試吓其他搜尋字眼或分店。</p>
       <div v-for="item in displayInventory" :key="item.id" class="inv-item">
         
         <div class="inv-top-row">

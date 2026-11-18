@@ -1,21 +1,28 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useMainStore } from './stores/mainStore'
-import { supabase } from './supabase'
+import { supabase, isReadOnlyPreview } from './supabase'
+import { makeDemoPreviewData } from './demoPreview'
+import { getRememberLogin, setRememberLogin } from './authStorage'
 
 // 視圖組件引入
 import DashboardView from './views/DashboardView.vue'
+import HomeView from './views/HomeView.vue'
+import MoreView from './views/MoreView.vue'
+import GlobalSearch from './components/GlobalSearch.vue'
+import BzIcon from './components/BzIcon.vue'
 import PromoView from './views/PromoView.vue'
 import HerbalifePromo from './views/HerbalifePromo.vue' 
 import ClientsView from './views/ClientsView.vue'
 import AccountingView from './views/AccountingView.vue'
 import InventoryView from './views/InventoryView.vue'
+import ProductsView from './views/ProductsView.vue'
+import HistoryBackfillView from './views/HistoryBackfillView.vue'
 import MovementView from './views/MovementView.vue'
 import RetailView from './views/RetailView.vue'
 import SettingsView from './views/SettingsView.vue'
 
 // 公用組件引入
-import BaseModal from './components/BaseModal.vue'
 
 const store = useMainStore()
 
@@ -25,36 +32,73 @@ const email = ref('')
 const password = ref('')
 const isLoggingIn = ref(false)
 const isRegistering = ref(false)
-const rememberMe = ref(false)
+const isDemoMode = ref(false)
+const loginError = ref('')
+const authMessage = ref('')
+const rememberLogin = ref(getRememberLogin())
+const showPassword = ref(false)
+const isResettingPassword = ref(false)
+const newPassword = ref('')
+const showNewPassword = ref(false)
 
 // 💡 驗證碼專用狀態
 const isVerifying = ref(false)
 const verificationCode = ref('')
 
 const tempName = ref('')
-const showUpdateModal = ref(false)
+const searchOpen = ref(false)
+const quickOpen = ref(false)
+
+function enterDemoPreview() {
+  if (!isReadOnlyPreview && !import.meta.env.DEV) return
+  if (isReadOnlyPreview && !new URLSearchParams(window.location.search).has('demo')) {
+    window.location.search = '?demo=1'
+    return
+  }
+  const demo = makeDemoPreviewData()
+  isDemoMode.value = true
+  session.value = { user: { id: 'local-demo-preview' } }
+  store.currentUser = '示範預覽'
+  store.view = 'home'
+  store.clients = demo.clients
+  store.products = demo.products
+  store.transactions = demo.transactions
+  store.stock = demo.stock
+  store.stockExpiry = demo.stockExpiry
+  store.promotions = demo.promotions
+  store.isInitialLoading = false
+  store.isSyncing = false
+  store.hasMoreTxn = false
+}
 
 onMounted(() => {
+  const params = new URLSearchParams(window.location.search)
+  if ((isReadOnlyPreview && params.has('demo')) || (import.meta.env.DEV && params.has('bz-preview'))) {
+    enterDemoPreview()
+    return
+  }
   supabase.auth.getSession().then(({ data }) => {
+    if (isDemoMode.value) return
     session.value = data.session
-    if (session.value) {
-      store.syncAll()
+    if (session.value && params.has('password-reset')) isResettingPassword.value = true
+    if (session.value && !isResettingPassword.value) {
+      store.syncAll().then(() => store.loadAllTransactions())
     }
   })
 
   supabase.auth.onAuthStateChange((_event, _session) => {
+    if (isDemoMode.value) return
     session.value = _session
-    if (_session) {
-      store.syncAll()
+    if (_event === 'PASSWORD_RECOVERY' || (_session && params.has('password-reset'))) isResettingPassword.value = true
+    if (_session && _event === 'SIGNED_IN' && !isResettingPassword.value) {
+      store.syncAll().then(() => store.loadAllTransactions())
     }
   })
+})
 
-  const hasSeen = localStorage.getItem('hasSeenUpdate_v2')
-  if (!hasSeen) {
-    setTimeout(() => {
-      showUpdateModal.value = true
-    }, 500)
-  }
+watch(() => store.view, () => {
+  quickOpen.value = false
+  contentRef.value?.scrollTo({ top: 0 })
 })
 
 function saveName() {
@@ -62,40 +106,54 @@ function saveName() {
   store.setDeviceUsers(tempName.value.trim())
 }
 
-function closeUpdateModal() {
-  localStorage.setItem('hasSeenUpdate_v2', 'true')
-  showUpdateModal.value = false
+function go(view) { store.view = view; quickOpen.value = false }
+function quick(kind, type) {
+  quickOpen.value = false
+  if (kind === 'transaction') {
+    store.pendingQuickEntry = { kind, type }
+    go('accounting')
+  } else if (kind === 'client') {
+    store.pendingQuickEntry = { kind }
+    go('clients')
+  } else go(kind)
 }
 
 // 💡 智能升級：攔截「Email未驗證」錯誤，自動引導輸入驗證碼
 async function handleAuth() {
-  if (!email.value || !password.value) {
+  const loginEmail = email.value.trim()
+  if (!loginEmail || !password.value) {
     return alert('請完整輸入帳號與密碼')
   }
-  
+  loginError.value = ''
+  authMessage.value = ''
   isLoggingIn.value = true
+  setRememberLogin(rememberLogin.value)
   let authError = null
 
   if (isRegistering.value) {
     const result = await supabase.auth.signUp({
-      email: email.value,
+      email: loginEmail,
       password: password.value,
     })
     authError = result.error
     if (!authError) {
-      alert('系統已發送驗證碼到您的信箱！請輸入信件中的 6 位數驗證碼。')
-      isVerifying.value = true 
+      if (result.data?.session) {
+        authMessage.value = '帳戶已建立，登入成功。'
+      } else {
+        authMessage.value = '已送出驗證電郵。請按信內連結，或輸入 6 位驗證碼；驗證後返嚟登入。'
+        isVerifying.value = true
+      }
     }
   } else {
     const result = await supabase.auth.signInWithPassword({
-      email: email.value,
+      email: loginEmail,
       password: password.value,
     })
     authError = result.error
     
     // 💡 關鍵防呆：如果登入失敗是因為「信箱未驗證」，自動幫他打開驗證碼格子！
     if (authError && authError.message.includes('Email not confirmed')) {
-      alert('您的信箱尚未驗證！請檢查您的信箱，並輸入 6 位數驗證碼。')
+      authMessage.value = '電郵尚未驗證。請按信內連結，或輸入 6 位驗證碼。'
       isVerifying.value = true
       authError = null // 清除錯誤，因為我們已經幫他切換畫面了
     }
@@ -104,7 +162,9 @@ async function handleAuth() {
   isLoggingIn.value = false
 
   if (authError) {
-    alert((isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message)
+    loginError.value = authError.code === 'invalid_credentials'
+      ? `電郵或密碼唔正確，請核對原有帳戶資料。${isReadOnlyPreview ? '你亦可以先用下方示範資料體驗新版。' : ''}`
+      : (isRegistering.value ? '註冊失敗：' : '登入失敗：') + authError.message
   } else if (!isVerifying.value) {
     // 只有在真的登入成功且不需要驗證時，才清空密碼
     email.value = ''
@@ -126,9 +186,9 @@ async function handleVerify() {
   isLoggingIn.value = false
 
   if (error) {
-    alert('驗證失敗：' + error.message + ' (請確認驗證碼是否正確或已過期)')
+    loginError.value = '驗證失敗：' + error.message
   } else {
-    alert('✅ 驗證成功！系統將為您自動登入。')
+    authMessage.value = '電郵驗證成功，登入中。'
     isVerifying.value = false
     isRegistering.value = false
     verificationCode.value = ''
@@ -138,20 +198,47 @@ async function handleVerify() {
 }
 
 async function handleForgotPassword() {
-  if (!email.value) return alert('請先輸入您的 Email 帳號')
-  const { error } = await supabase.auth.resetPasswordForEmail(email.value)
+  if (!email.value.trim()) { loginError.value = '請先輸入 Email 帳號。'; return }
+  loginError.value = ''
+  authMessage.value = ''
+  isLoggingIn.value = true
+  const redirectTo = `${window.location.origin}${window.location.pathname}?password-reset=1`
+  const { error } = await supabase.auth.resetPasswordForEmail(email.value.trim(), { redirectTo })
+  isLoggingIn.value = false
   if (error) {
-    alert('發送重設密碼信件失敗: ' + error.message)
+    loginError.value = '發送重設密碼電郵失敗：' + error.message
   } else {
-    alert('已發送重設密碼信件，請檢查您的信箱！')
+    authMessage.value = '重設密碼電郵已送出。請按信內連結，再喺呢度設定新密碼。'
   }
 }
 
+async function handleResetPassword() {
+  if (newPassword.value.length < 6) { loginError.value = '新密碼最少要 6 個字元。'; return }
+  if (!session.value) { loginError.value = '重設連結未完成驗證，請重新按電郵內連結。'; return }
+  isLoggingIn.value = true
+  loginError.value = ''
+  const { error } = await supabase.auth.updateUser({ password: newPassword.value })
+  isLoggingIn.value = false
+  if (error) { loginError.value = '更新密碼失敗：' + error.message; return }
+  newPassword.value = ''
+  isResettingPassword.value = false
+  window.history.replaceState({}, '', window.location.pathname)
+  await store.syncAll()
+  await store.loadAllTransactions()
+}
+
+function returnToLogin() {
+  isResettingPassword.value = false
+  window.history.replaceState({}, '', window.location.pathname)
+}
+
 async function handleLogout() {
+  if (isDemoMode.value) {
+    window.location.href = window.location.pathname
+    return
+  }
   if(confirm('確定要登出系統嗎？')) {
     await supabase.auth.signOut()
-    localStorage.clear()
-    sessionStorage.clear()
     window.location.reload()
   }
 }
@@ -180,13 +267,26 @@ const scrollToTop = () => {
 </script>
 
 <template>
-  <div v-if="!session" class="login-screen">
+  <div v-if="!session || isResettingPassword" class="login-screen">
     <div class="login-card">
-      <div class="login-logo">💪</div>
-      <h1 class="login-title">FITWORK PRO</h1>
-      <p class="login-subtitle">旗艦版店務管理系統</p>
+      <div class="login-logo">BZ</div>
+      <h1 class="login-title">BZ記錄器</h1>
+      <p class="login-subtitle">生意、客戶、庫存，一個地方記好。</p>
+      <p v-if="isReadOnlyPreview" class="bz-preview-login-banner">呢個係只讀預覽。可以註冊／登入帳戶體驗；客戶、交易同庫存只供查看，儲存操作已停用。</p>
 
-      <div v-if="isVerifying">
+      <div v-if="isResettingPassword">
+        <h2 class="bz-auth-heading">設定新密碼</h2>
+        <p class="bz-auth-help">重設連結驗證後，輸入新密碼就完成。</p>
+        <div class="form-group"><label for="reset-password">新密碼</label>
+          <div class="bz-password-field"><input id="reset-password" v-model="newPassword" :type="showNewPassword ? 'text' : 'password'" autocomplete="new-password" class="inp" placeholder="最少 6 個字元" @keyup.enter="handleResetPassword"><button type="button" :aria-label="showNewPassword ? '隱藏新密碼' : '顯示新密碼'" :aria-pressed="showNewPassword" @click="showNewPassword=!showNewPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.7"/><path v-if="showNewPassword" d="M3 21 21 3"/></svg></button></div>
+        </div>
+        <button type="button" class="btn-primary login-btn" :disabled="isLoggingIn || !session" @click="handleResetPassword">{{ isLoggingIn ? '更新中…' : '更新密碼' }}</button>
+        <p v-if="!session" class="bz-auth-help">請先按重設電郵內嘅連結完成驗證。</p>
+        <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
+        <button v-if="!session" type="button" class="bz-auth-link" @click="returnToLogin">返回登入</button>
+      </div>
+
+      <div v-else-if="isVerifying">
         
         <div class="form-group">
           <label>請確認您的 Email 帳號</label>
@@ -210,6 +310,8 @@ const scrollToTop = () => {
         <button class="btn-primary login-btn" @click="handleVerify" :disabled="isLoggingIn">
           {{ isLoggingIn ? '驗證中...' : '確認並登入' }}
         </button>
+        <p v-if="authMessage" class="bz-auth-message" role="status">{{ authMessage }}</p>
+        <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
 
         <div class="auth-switch">
           <span @click="isVerifying = false; isRegistering = false; verificationCode = ''">取消並返回登入</span>
@@ -219,32 +321,34 @@ const scrollToTop = () => {
       <div v-else>
         <div class="form-group">
           <label>Email 帳號</label>
-          <input v-model="email" type="email" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
+          <input v-model="email" type="email" autocomplete="username" class="inp" placeholder="you@example.com" @keyup.enter="handleAuth">
         </div>
 
         <div class="form-group">
-          <label>密碼</label>
-          <input v-model="password" type="password" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth">
+          <label for="login-password">密碼</label>
+          <div class="bz-password-field"><input id="login-password" v-model="password" :type="showPassword ? 'text' : 'password'" :autocomplete="isRegistering ? 'new-password' : 'current-password'" class="inp" placeholder="輸入您的密碼 (最少6碼)" @keyup.enter="handleAuth"><button type="button" :aria-label="showPassword ? '隱藏密碼' : '顯示密碼'" :aria-pressed="showPassword" @click="showPassword=!showPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.7"/><path v-if="showPassword" d="M3 21 21 3"/></svg></button></div>
         </div>
 
         <div class="login-options">
-          <label class="remember-me">
-            <input type="checkbox" v-model="rememberMe"> 記住我
-          </label>
-          <button v-if="!isRegistering" class="forgot-btn" @click="handleForgotPassword">忘記密碼？</button>
+          <label class="remember-me"><input v-model="rememberLogin" type="checkbox">記住密碼</label>
+          <button v-if="!isRegistering" type="button" class="forgot-btn" :disabled="isLoggingIn" @click="handleForgotPassword">忘記密碼？</button>
         </div>
+        <p class="bz-auth-help">記住登入狀態；密碼由裝置嘅密碼管理器儲存。</p>
 
         <button class="btn-primary login-btn" @click="handleAuth" :disabled="isLoggingIn">
           {{ isLoggingIn ? '處理中...' : (isRegistering ? '註冊帳號' : '安全登入') }}
         </button>
+        <p v-if="loginError" class="bz-login-error" role="alert">{{ loginError }}</p>
+        <p v-if="authMessage" class="bz-auth-message" role="status">{{ authMessage }}</p>
+        <button v-if="isReadOnlyPreview" type="button" class="bz-demo-button" @click="enterDemoPreview">免登入體驗新版（示範資料）</button>
 
         <div class="auth-switch">
           {{ isRegistering ? '已經有帳號了？' : '還沒有帳號？' }}
-          <span @click="isRegistering = !isRegistering">{{ isRegistering ? '返回登入' : '立即註冊' }}</span>
+          <button type="button" class="bz-auth-link" @click="isRegistering = !isRegistering; loginError = ''; authMessage = ''">{{ isRegistering ? '返回登入' : '立即註冊' }}</button>
         </div>
 
         <div class="auth-switch" style="margin-top: 15px; border-top: 1px dashed #e2e8f0; padding-top: 15px;" v-if="!isRegistering">
-          <span @click="isVerifying = true; isRegistering = false">👉 已經有 6 碼驗證碼？點此輸入</span>
+          <button type="button" class="bz-auth-link" @click="isVerifying = true; isRegistering = false">已有 6 位驗證碼？輸入驗證碼</button>
         </div>
 
       </div>
@@ -256,7 +360,7 @@ const scrollToTop = () => {
     <div v-if="!store.currentUser" class="welcome-overlay">
       <div class="welcome-modal">
         <div class="w-icon">👋</div>
-        <h2 class="w-title">歡迎來到 FITWORK PRO</h2>
+        <h2 class="w-title">歡迎來到 BZ記錄器</h2>
         <p class="w-desc">請輸入你們的稱呼（若有兩人請用逗號隔開）：</p>
         
         <input v-model="tempName" placeholder="例如：Kwan, Cat" class="w-inp" @keyup.enter="saveName">
@@ -264,65 +368,56 @@ const scrollToTop = () => {
       </div>
     </div>
 
-    <div class="header">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-size:24px;">💪</span>
-        <span style="font-weight:900; font-size:18px; color:var(--p); letter-spacing:-1px;">FITWORK PRO</span>
+    <header v-if="store.view !== 'home'" class="header bz-header">
+      <button type="button" class="bz-brand" @click="go('home')"><span>BZ</span><span><b>BZ記錄器</b><small>{{ store.currentUser || '工作台' }}</small></span></button>
+      <div class="bz-header-actions">
+        <button v-if="store.deviceUsers?.length > 1" class="bz-user-switch" type="button" @click="store.switchUser()">{{ store.currentUser }} ⇄</button>
+        <button class="bz-header-icon" type="button" aria-label="搜尋資料" @click="searchOpen=true">⌕</button>
+        <button v-if="!isDemoMode" class="bz-header-icon" type="button" :aria-label="store.isSyncing ? '同步中' : '重新同步'" @click="store.syncAll()">{{ store.isSyncing ? '◌' : '↻' }}</button>
+        <button class="bz-header-icon" type="button" aria-label="更多工具" @click="go('more')">⋯</button>
       </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        
-        <button v-if="store.deviceUsers && store.deviceUsers.length > 1" class="user-switch-btn" @click="store.switchUser()">
-          🔄 {{ store.currentUser }}
-        </button>
-        <button v-else-if="store.currentUser" class="icon-btn" style="width:auto; padding:0 10px; font-size:12px;">👤 {{ store.currentUser }}</button>
+    </header>
 
-        <button class="icon-btn" @click="store.syncAll()"><span>↻</span></button>
-        <button class="icon-btn" @click="store.view='settings'"><span style="font-size:16px;">⚙️</span></button>
-        <button class="icon-btn" @click="handleLogout"><span style="font-size:14px;">🚪</span></button>
-      </div>
-    </div>
-
+    <div v-if="isReadOnlyPreview" class="bz-preview-banner" role="status">{{ isDemoMode ? '示範資料預覽：只供查看，唔會連接你嘅正式資料。' : '預覽模式：只供查看，儲存操作已停用。' }} <button v-if="isDemoMode" type="button" @click="handleLogout">返回登入</button></div>
     <div class="content" ref="contentRef" @scroll="checkScroll">
-      <DashboardView v-if="store.view === 'dashboard'" />
+      <HomeView v-if="store.view === 'home'" @search="searchOpen=true" />
+      <MoreView v-else-if="store.view === 'more'" />
+      <DashboardView v-else-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
       <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
       <ClientsView v-else-if="store.view === 'clients'" />
       <MovementView v-else-if="store.view === 'movement'" />
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
+      <ProductsView v-else-if="store.view === 'products'" />
+      <HistoryBackfillView v-else-if="store.view === 'history'" />
       <AccountingView v-else-if="store.view === 'accounting'" />
       <SettingsView v-else-if="store.view === 'settings'" />
     </div>
 
-    <div class="nav">
-      <div class="nav-item" :class="{active: store.view==='dashboard'}" @click="store.view='dashboard'"><span>📊</span><span>總覽</span></div>
-      <div class="nav-item" :class="{active: store.view==='promo'}" @click="store.view='promo'"><span>📢</span><span>宣傳</span></div>
-      <div class="nav-item" :class="{active: store.view==='herbalife'}" @click="store.view='herbalife'"><span>🏆</span><span>獎賞</span></div>
-      <div class="nav-item" :class="{active: store.view==='clients'}" @click="store.view='clients'"><span>👥</span><span>客戶</span></div>
-      <div class="nav-item" :class="{active: store.view==='movement'}" @click="store.view='movement'"><span>🏋️</span><span>運動</span></div>
-      <div class="nav-item" :class="{active: store.view==='retail'}" @click="store.view='retail'"><span>🛒</span><span>零售</span></div>
-      <div class="nav-item" :class="{active: store.view==='inventory'}" @click="store.view='inventory'"><span>📦</span><span>庫存</span></div>
-      <div class="nav-item" :class="{active: store.view==='accounting'}" @click="store.view='accounting'"><span>📝</span><span>記帳</span></div>
+    <nav class="nav bz-nav" aria-label="主要導覽">
+      <button type="button" class="nav-item" :class="{active: store.view==='home'}" @click="go('home')"><BzIcon name="home"/><span>首頁</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='clients'}" @click="go('clients')"><BzIcon name="users"/><span>客戶</span></button>
+      <button type="button" class="nav-item" :class="{active: ['inventory','products'].includes(store.view)}" @click="go('inventory')"><BzIcon name="box"/><span>庫存</span></button>
+      <button type="button" class="nav-item" :class="{active: store.view==='dashboard'}" @click="go('dashboard')"><BzIcon name="chart"/><span>報表</span></button>
+      <button type="button" class="nav-item" :class="{active: ['more','promo','herbalife','movement','retail','settings','accounting','history'].includes(store.view)}" @click="go('more')"><BzIcon name="more"/><span>更多</span></button>
+    </nav>
+    <button v-if="store.view !== 'home'" type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
+    <div v-if="quickOpen" class="bz-quick-backdrop" @click.self="quickOpen=false">
+      <section class="bz-quick-sheet" role="dialog" aria-modal="true" aria-label="快速新增">
+        <div class="bz-quick-head"><div><small>最常用嘅操作</small><h2>快速新增</h2></div><button type="button" @click="quickOpen=false">關閉</button></div>
+        <div class="bz-quick-grid">
+          <button type="button" @click="quick('retail')"><span>＋</span><b>新增交易</b><small>產品結帳</small></button>
+          <button type="button" @click="quick('retail')"><span>▣</span><b>出貨／銷售</b><small>記錄銷售同扣庫存</small></button>
+          <button type="button" @click="quick('inventory')"><span>▤</span><b>入貨／補貨</b><small>新增庫存</small></button>
+          <button type="button" @click="quick('transaction','expense')"><span>−</span><b>支出記錄</b><small>新增一筆支出</small></button>
+          <button type="button" @click="quick('client')"><span>♙</span><b>新增客戶</b><small>登記資料</small></button>
+          <button type="button" @click="quick('history')"><span>↶</span><b>補舊紀錄</b><small>單筆或 Excel</small></button>
+        </div>
+      </section>
     </div>
+    <GlobalSearch :open="searchOpen" @close="searchOpen=false" />
   </div>
-
-  <BaseModal :show="showUpdateModal" title="🚀 系統更新通知" @close="closeUpdateModal">
-    <div style="padding: 10px 0; font-size: 16px; line-height: 1.6;">
-      <p>大家好！我們的系統已經進行了全新升級：</p>
-      <ul style="margin-top: 12px; padding-left: 20px; color: var(--t);">
-        <li>✅ <strong>全面升級多帳號隱私防護層</strong></li>
-        <li>✅ 智能防呆：自動攔截未驗證帳號並引導驗證</li>
-        <li>✅ 新增手動輸入驗證碼安全通道</li>
-        <li>✅ 大幅提升頁面滾動與拖曳流暢度</li>
-      </ul>
-      <p style="margin-top: 20px; color: #888; font-size: 13px; text-align: center;">
-        (此訊息僅顯示一次)
-      </p>
-    </div>
-    <button style="width: 100%; padding: 15px; margin-top: 15px; background: #4f46e2; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer;" @click="closeUpdateModal">
-      我知道了，開始使用！
-    </button>
-    </BaseModal>
 
   <!-- 🟢 將按鈕搬出 Modal，放喺最外層，咁先會全域顯示！ -->
   <Transition name="fab-fade">

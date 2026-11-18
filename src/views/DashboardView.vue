@@ -2,12 +2,19 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
+import { verifiedConversionDate, classifyPackageSale } from '../clientHistory'
+import { reconcileMonitorClients, cleanName } from '../monitorReconcile'
 
 import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 const store = useMainStore()
+const monitorByClientId = computed(() => new Map(
+  reconcileMonitorClients(store.monitorProfiles, store.clients)
+    .filter(row => row.kind === 'matched' && row.client?.id)
+    .map(row => [String(row.client.id), row])
+))
 
 
 const TRIAL_RESULT_MARK='[TRIAL_RESULT]'
@@ -32,9 +39,10 @@ const clientTransactionMatch=(t,c)=>{
   if(t?.client_id&&c?.id) return String(t.client_id)===String(c.id)
   const cn=normaliseClientName(c?.name)
   if(!cn)return false
+  if(store.clients.filter(x=>normaliseClientName(x?.name)===cn).length!==1)return false
   const tn=normaliseClientName(t?.client_name)
   if(tn&&tn===cn)return true
-  return String(t?.note||'').toLowerCase().includes(String(c?.name||'').trim().toLowerCase())
+  return false
 }
 const firstPackageTxnDate=(client)=>{
   const tx=store.transactions
@@ -43,13 +51,9 @@ const firstPackageTxnDate=(client)=>{
   return tx?.created_at||null
 }
 const conversionDateForClient=(client)=>{
-  const opened=trialResultEntries(client).find(x=>String(x.outcome).startsWith('opened_'))
-  if(opened?.at)return opened.at
   const firstPkg=firstPackageTxnDate(client)
-  if(firstPkg)return firstPkg
-  // 舊資料相容：以前未有 TRIAL_RESULT / client_id 時仍沿用正式會員加入日期。
-  if(String(client?.status||'').toLowerCase()==='active'&&client?.join_date)return client.join_date
-  return null
+  const firstClass=monitorByClientId.value.get(String(client.id))?.firstClassAt || null
+  return verifiedConversionDate(client, firstPkg, firstClass)
 }
 
 // 📊 報表專用狀態
@@ -142,14 +146,21 @@ const monthlyReport = computed(() => {
         if (t.category === '試堂') {
           pType = '👀 試堂'
         } else if (t.category === '運動套票' || t.category === '運動') {
-          const order = txnPurchaseOrder[t.id]
-          if (order === 1) {
+          const saleType = classifyPackageSale(t)
+          const txnNameMatches = t.client_id ? [] : store.clients.filter(c => cleanName(c.name) === cleanName(cName))
+          const txnClient = t.client_id ? store.clients.find(c => String(c.id) === String(t.client_id))
+            : txnNameMatches.length === 1 ? txnNameMatches[0] : null
+          const monitorFirstClass = txnClient ? monitorByClientId.value.get(String(txnClient.id))?.firstClassAt : null
+          const historicalMember = monitorFirstClass && monitorFirstClass < String(t.created_at).slice(0,10)
+          if (saleType === 'new' && !historicalMember) {
              pType = '🆕 新開'
              newSalesCount++
           }
-          else if (order > 1) {
+          else if (saleType === 'renewal' || historicalMember) {
              pType = '🔄 續卡'
              renewSalesCount++
+          } else {
+             pType = '待核對'
           }
         }
 
@@ -748,8 +759,8 @@ const trendChartData = computed(() => {
   return {
     labels,
     datasets: [
-      { label: '營業額', borderColor: '#4f46e2', backgroundColor: 'rgba(79, 70, 226, 0.15)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#4f46e2' },
-      { label: '利潤', borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#10b981' }
+      { label: '營業額', borderColor: '#b57452', backgroundColor: 'rgba(181, 116, 82, 0.16)', data: revData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#b57452' },
+      { label: '利潤', borderColor: '#737b50', backgroundColor: 'rgba(115, 123, 80, 0.15)', data: profData, fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#737b50' }
     ]
   }
 })
@@ -785,7 +796,7 @@ const vAutoMarquee = {
       const containerWidth = el.getBoundingClientRect().width;
 
       // 3. 判斷：文字實際寬度大於容器寬度 (容許 2px 誤差防呆) 才啟動跑馬燈
-      if (textLength > 8){
+      if (contentWidth > containerWidth + 2) {
         el.classList.add('is-overflowing'); // 加上漸層遮罩
         content.style.paddingRight = '30px'; // 頭尾間距
         const clone = content.cloneNode(true);
@@ -1328,7 +1339,7 @@ onMounted(() => {
         <!-- 💡 修正後的頂部標題區 -->
         <div class="r-header" style="flex-direction: column; align-items: flex-start; gap: 5px;">
           <div style="width: 100%;">
-            <h1 class="r-title" style="font-size: 22px; white-space: nowrap;">BZ PRO 營運報告</h1>
+            <h1 class="r-title" style="font-size: 22px; white-space: nowrap;">BZ記錄器 營運報告</h1>
             <p class="r-subtitle">
               結算區間：{{ monthlyReport.startMonth }}{{ monthlyReport.startMonth !== monthlyReport.endMonth ? ' 至 ' + monthlyReport.endMonth : '' }} | 
               產出日期：{{ new Date().toLocaleDateString() }}
@@ -1418,7 +1429,7 @@ onMounted(() => {
           </tbody>
         </table>
 
-        <div class="r-footer">此報表由 FITWORK PRO 系統自動結算產生。</div>
+        <div class="r-footer">此報表由 BZ記錄器自動結算產生。</div>
       </div>
     </div>
   </div>

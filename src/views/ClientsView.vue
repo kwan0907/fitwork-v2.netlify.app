@@ -1,7 +1,15 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
-import { supabase } from '../supabase' 
+import { supabase, isReadOnlyPreview } from '../supabase'
+import { DEFAULT_MOVEMENT_PACKAGES, loadMovementPackages, calculateMovementPackage } from '../movementPackages'
+import { sampleClassDate, sampleClasses } from '../demoClassSchedule'
+import { sameCourse, findAvailableCourse } from '../classSchedule'
+import MonitorReconcile from '../components/MonitorReconcile.vue'
+import { parseClientCsv, classifyClientCsv } from '../clientCsvImport'
+import { downloadOwnedClientsBackup } from '../clientsBackup'
+import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, changedClientFields, conflictingClientFields } from '../clientIntegrity'
+import { cleanPhone } from '../monitorReconcile'
 
 const store = useMainStore()
 
@@ -9,7 +17,32 @@ const showAddModal = ref(false)
 const showEditModal = ref(false)
 const clientSearch = ref('') 
 const filterBranch = ref('')
-const filterStatus = ref('active')
+const filterStatus = ref('')
+function consumeNavigation() {
+  if (store.pendingClientTask) {
+    const task = store.pendingClientTask
+    store.pendingClientTask = null
+    const client = store.clients.find(row => String(row.id) === String(task.id))
+    if (client) {
+      selectedClientForAction.value = client
+      if (task.action === 'trial' || task.action === 'renewal') openQuickFlow(task.action)
+      else openActionModal(client)
+    }
+  }
+  if (store.pendingQuickEntry?.kind === 'client') {
+    store.pendingQuickEntry = null
+    openAddModal()
+  }
+  if (store.pendingSearch?.kind === 'client') {
+    clientSearch.value = store.pendingSearch.query || ''
+    filterStatus.value = ''
+    store.pendingSearch = null
+  }
+}
+onMounted(consumeNavigation)
+watch(() => store.pendingQuickEntry, consumeNavigation)
+watch(() => store.pendingSearch, consumeNavigation)
+watch(() => store.pendingClientTask, consumeNavigation)
 const filterMyGiftExpiring = ref(false) 
 const sortBy = ref('default') 
 const consumeMyGift = ref(false)
@@ -37,7 +70,7 @@ async function syncTrialProfitForClient(client, outcome) {
   if (!['no_open_normal', 'no_open_mygift'].includes(outcome)) return
   const { data: { session } } = await supabase.auth.getSession()
   const ownerEmail = session?.user?.email
-  if (!ownerEmail) return
+  if (!ownerEmail) throw new Error('登入已失效，未能記錄試堂帳目。')
 
   const profit = outcome === 'no_open_mygift' ? MYGIFT_TRIAL_PROFIT : NORMAL_TRIAL_PROFIT
   const tag = '[TRIAL_PROFIT:' + String(client?.id || 'unknown') + ':' + String(client?.trial_date || '').slice(0,16) + ']'
@@ -46,7 +79,8 @@ async function syncTrialProfitForClient(client, outcome) {
 
   if (existing) {
     const { error } = await supabase.from('transactions').update({ profit, note, client_name: client?.name || '', branch: client?.branch || '' }).eq('id', existing.id)
-    if (!error) Object.assign(existing, { profit, note, client_name: client?.name || '', branch: client?.branch || '' })
+    if (error) throw error
+    Object.assign(existing, { profit, note, client_name: client?.name || '', branch: client?.branch || '' })
     return
   }
 
@@ -63,7 +97,8 @@ async function syncTrialProfitForClient(client, outcome) {
     created_at: client?.trial_date || new Date().toISOString()
   }
   const { data, error } = await supabase.from('transactions').insert(row).select().single()
-  if (!error && data) store.transactions.unshift(data)
+  if (error) throw error
+  if (data) store.transactions.unshift(data)
 }
 
 const getLocalHKDate = () => {
@@ -73,16 +108,170 @@ const getLocalHKDate = () => {
   }).format(new Date());
 }
 const todayStr = getLocalHKDate()
+const branches = ['觀塘', '中環', '佐敦']
+const savedBranch = () => {
+  try { return branches.includes(localStorage.getItem('bz_last_branch')) ? localStorage.getItem('bz_last_branch') : '觀塘' } catch { return '觀塘' }
+}
+const showMoreNewClient = ref(false)
+const trialTimes = ['10:00', '14:00', '18:00']
+const scheduleDate = ref(todayStr)
+const scheduleOpened = ref(false)
+const scheduleLoading = ref(false)
+const scheduleRows = ref([])
+const scheduleError = ref('')
+const scheduleSample = ref(false)
+const scheduleFromCache = ref(false)
+const scheduleCachedAt = ref(0)
+const selectedCourse = ref(null)
+const checkingCourse = ref(false)
+let scheduleRequest = 0
+let scheduleFetchInFlight = null
+const maxScheduleDate = (() => { const d = new Date(); d.setDate(d.getDate() + 13); return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d) })()
+
+function cachedScheduleKey(branch, date) { return `bz_schedule_v1:${branch}:${date}` }
+function readCachedSchedule(branch, date) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(cachedScheduleKey(branch, date)) || 'null')
+    if (cached?.at > Date.now() - 24 * 60 * 60 * 1000 && cached.at <= Date.now() &&
+      Array.isArray(cached.classes) && cached.classes.length <= 100) return cached
+  } catch { /* Ignore unavailable or invalid browser storage. */ }
+  return null
+}
+function rememberSchedule(branch, date, classes) {
+  try { localStorage.setItem(cachedScheduleKey(branch, date), JSON.stringify({ at: Date.now(), classes })) } catch { /* Browser storage can be disabled. */ }
+}
+function cachedScheduleTime(at) {
+  return new Intl.DateTimeFormat('zh-HK', { timeZone: 'Asia/Hong_Kong', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(at)
+}
+
+async function loadClasses() {
+  const requestId = ++scheduleRequest
+  const branch = newClient.value.branch
+  const date = scheduleDate.value
+  scheduleOpened.value = true
+  scheduleRows.value = []
+  scheduleError.value = ''
+  scheduleSample.value = false
+  scheduleFromCache.value = false
+  scheduleCachedAt.value = 0
+  if (isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo')) {
+    scheduleSample.value = true
+    scheduleRows.value = date === sampleClassDate
+      ? (sampleClasses[branch] || []).map(course => ({ ...course, date, branch })) : []
+    return
+  }
+  const cached = readCachedSchedule(branch, date)
+  if (cached) {
+    scheduleRows.value = cached.classes
+    scheduleFromCache.value = true
+    scheduleCachedAt.value = cached.at
+  }
+  scheduleLoading.value = true
+  const flight = { branch, date, promise: fetchClasses(branch, date, Boolean(cached)) }
+  scheduleFetchInFlight = flight
+  try {
+    const rows = await flight.promise
+    if (requestId === scheduleRequest) {
+      scheduleRows.value = rows
+      scheduleFromCache.value = false
+      scheduleCachedAt.value = 0
+      rememberSchedule(branch, date, rows)
+      if (selectedCourse.value && selectedCourse.value.branch === branch && selectedCourse.value.date === date &&
+        !findAvailableCourse(rows, selectedCourse.value)) {
+        clearSelectedCourse()
+        scheduleError.value = '已揀課堂有變或額滿，請重新揀最新時段。'
+      }
+    }
+  } catch (error) {
+    if (requestId === scheduleRequest) scheduleError.value = error.message || '暫時讀唔到課表，可手動輸入時間。'
+  } finally {
+    if (requestId === scheduleRequest) scheduleLoading.value = false
+    if (scheduleFetchInFlight === flight) scheduleFetchInFlight = null
+  }
+}
+
+async function fetchClasses(branch, date, fresh = false) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error('請先登入帳戶。')
+  const params = new URLSearchParams({ branch, date })
+  if (fresh) params.set('fresh', '1')
+  const response = await fetch(`/api/classes?${params}`, {
+    headers: { authorization: `Bearer ${session.access_token}` }, cache: 'no-store'
+  })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload.error || '暫時讀唔到課表。')
+  return payload.classes || []
+}
+
+async function selectClass(course) {
+  if (course.full) return
+  checkingCourse.value = true
+  scheduleError.value = ''
+  try {
+    if (!(isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo'))) {
+      const flight = scheduleFetchInFlight
+      const rows = await (flight?.branch === course.branch && flight?.date === course.date
+        ? flight.promise : fetchClasses(course.branch, course.date, true))
+      scheduleRows.value = rows
+      scheduleFromCache.value = false
+      scheduleCachedAt.value = 0
+      rememberSchedule(course.branch, course.date, rows)
+      if (!findAvailableCourse(rows, course)) throw new Error('呢堂嘅時間、教練或名額有變，請重新揀最新課堂。')
+    }
+  } catch (error) {
+    scheduleError.value = error.message || '無法核對最新課堂，請再試。'
+    return
+  } finally {
+    checkingCourse.value = false
+  }
+  if (scheduleDate.value !== course.date || newClient.value.branch !== course.branch) {
+    scheduleError.value = '分店或日期已改，請重新揀最新課堂。'
+    return
+  }
+  newClient.value.trial_date = `${course.date}T${course.start}`
+  selectedCourse.value = { ...course }
+  const note = `試堂課程：${course.title}（${course.start}-${course.end}，教練 ${course.coach || '未列明'}）`
+  newClient.value.remark = [String(newClient.value.remark || '').replace(/\n?試堂課程：[^\n]*/g, '').trim(), note].filter(Boolean).join('\n')
+}
+
+function clearSelectedCourse(clearTime = true) {
+  if (!selectedCourse.value) return
+  const oldTime = `${selectedCourse.value.date}T${selectedCourse.value.start}`
+  selectedCourse.value = null
+  newClient.value.remark = String(newClient.value.remark || '').replace(/\n?試堂課程：[^\n]*/g, '').trim()
+  if (clearTime && newClient.value.trial_date === oldTime) newClient.value.trial_date = ''
+}
+
+function chooseTrialDay(offset) {
+  clearSelectedCourse(false)
+  const date = new Date()
+  date.setDate(date.getDate() + offset)
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+  const time = newClient.value.trial_date?.slice(11, 16) || '10:00'
+  newClient.value.trial_date = `${day}T${time}`
+  scheduleDate.value = day
+}
+function chooseTrialTime(time) {
+  clearSelectedCourse(false)
+  newClient.value.trial_date = `${newClient.value.trial_date?.slice(0, 10) || todayStr}T${time}`
+}
 
 const defaultNewClient = { 
   name: '', phone: '', branch: '觀塘', source: '廣告', status: 'prospect', 
-  is_vip: false, is_marathon: false, join_date: todayStr, 
+  is_vip: false, is_marathon: false, join_date: '',
   package_count: 0, expiry_date: '', handled_by: '', payment_received: 0,
   referred_by_id: null, vip_tier: '銅級(88折)', 
   trial_date: '', remark: '' 
 }
 
 const newClient = ref({ ...defaultNewClient })
+watch([() => newClient.value.branch, scheduleDate], () => {
+  clearSelectedCourse()
+  if (showAddModal.value && scheduleOpened.value) loadClasses()
+})
+watch(() => newClient.value.trial_date, value => {
+  if (selectedCourse.value && value !== `${selectedCourse.value.date}T${selectedCourse.value.start}`) clearSelectedCourse(false)
+})
 // 🚀 新增：智能配對快捷輸入
 const smartInput = ref('')
 
@@ -131,6 +320,8 @@ function handleSmartPaste() {
   smartInput.value = ''
 }
 const editingClient = ref({})
+const originalEditingClient = ref({})
+const updatingClient = ref(false)
 
 const allClientsOptions = computed(() => {
     return store.clients.map(c => ({ id: c.id, name: c.name, phone: c.phone }))
@@ -298,9 +489,10 @@ const filteredClients = computed(() => {
   const q = rawQ.replace(/\s+/g, '') // 🚀 搜尋字串去除空格
   if (q) {
     list = list.filter(c => {
-      const nameMatch = c?.name && c?.name.toLowerCase().includes(q);
+      const nameMatch = c?.name && c?.name.toLowerCase().replace(/\s+/g, '').includes(q);
       const phoneStr = c?.phone ? String(c?.phone).replace(/\s+/g, '') : ''; // 🚀 資料庫號碼去除空格
-      return nameMatch || phoneStr.includes(q);
+      const staffMatch = String(c?.handled_by || '').toLowerCase().replace(/\s+/g, '').includes(q)
+      return nameMatch || phoneStr.includes(q) || staffMatch;
     })
   }
   
@@ -347,6 +539,153 @@ const filteredClients = computed(() => {
 
 const showActionModal = ref(false)
 const selectedClientForAction = ref(null)
+const quickFlow = ref('')
+const quickClient = ref(null)
+const quickOutcome = ref('')
+const quickPackage = ref('pkg_10')
+const quickDate = ref('')
+const quickStaff = ref('')
+const quickSaving = ref(false)
+const addingClient = ref(false)
+const quickError = ref('')
+const quickSaveLocked = ref(false)
+const quickPackageRows = ref([])
+const quickApplyTrialDiscount = ref(false)
+const quickPackages = computed(() => Object.fromEntries(quickPackageRows.value
+  .filter(pkg => ['pkg_10', 'pkg_35'].includes(pkg.package_key) && pkg.is_active)
+  .map(pkg => {
+    const calc = calculateMovementPackage(pkg, {
+      isNewCustomer: quickFlow.value === 'trial' && quickOutcome.value.startsWith('opened_') && quickApplyTrialDiscount.value
+    })
+    return [pkg.package_key, {
+      label: pkg.label, amount: calc.amount, cost: calc.cost, profit: calc.profit,
+      category: pkg.category, expiryYears: pkg.expiry_years, incrementCount: pkg.increment_pkg_count
+    }]
+  })))
+const quickNeedsPackage = computed(() => quickFlow.value === 'renewal' || quickOutcome.value.startsWith('opened_'))
+const quickTotals = computed(() => {
+  return quickPackages.value[quickPackage.value] || { label: '未有可用套票', amount: 0, cost: 0, profit: 0 }
+})
+
+async function openQuickFlow(kind) {
+  quickClient.value = selectedClientForAction.value
+  quickFlow.value = kind
+  quickOutcome.value = kind === 'trial' ? getTrialResultValue(quickClient.value) : ''
+  quickPackage.value = quickOutcome.value === 'opened_big' ? 'pkg_35' : 'pkg_10'
+  quickDate.value = getLocalHKDate()
+  quickStaff.value = store.currentUser || store.settings?.payees?.[0] || '系統'
+  quickApplyTrialDiscount.value = kind === 'trial' && store.transactions.some(t =>
+    String(t.client_id) === String(quickClient.value?.id) && t.category === '試堂' && Number(t.amount) === 98)
+  quickError.value = ''
+  quickSaveLocked.value = false
+  showActionModal.value = false
+  try {
+    const rows = isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo')
+      ? DEFAULT_MOVEMENT_PACKAGES : await loadMovementPackages({ ensureDefaults: false })
+    quickPackageRows.value = rows.length ? rows : DEFAULT_MOVEMENT_PACKAGES
+  } catch (error) {
+    quickPackageRows.value = []
+    quickError.value = '未能讀取最新套票設定：' + error.message
+  }
+}
+
+function chooseQuickOutcome(outcome) {
+  quickOutcome.value = outcome
+  if (outcome === 'opened_small') quickPackage.value = 'pkg_10'
+  if (outcome === 'opened_big') quickPackage.value = 'pkg_35'
+}
+
+function addYear(dateText) {
+  const [year, month, day] = dateText.split('-').map(Number)
+  const d = new Date(year + 1, month - 1, day)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+async function saveQuickFlow() {
+  if (quickSaving.value || quickSaveLocked.value || !quickClient.value) return
+  if (isReadOnlyPreview) { quickError.value = '預覽版只供查看，儲存操作要喺正式版進行。'; return }
+  if (quickFlow.value === 'trial' && !quickOutcome.value) { quickError.value = '請先揀試堂結果。'; return }
+  if (quickNeedsPackage.value && !quickStaff.value.trim()) { quickError.value = '請填寫處理人。'; return }
+  if (quickNeedsPackage.value && !quickPackages.value[quickPackage.value]) { quickError.value = '呢款套票未啟用或未能讀取，請先到設定核對。'; return }
+  if (quickNeedsPackage.value && !/^\d{4}-\d{2}-\d{2}$/.test(quickDate.value)) { quickError.value = '請揀有效日期。'; return }
+  quickSaving.value = true
+  quickError.value = ''
+  const client = quickClient.value
+  const opened = quickFlow.value === 'trial' && quickOutcome.value.startsWith('opened_')
+  let transactionSaved = false
+  let clientSaved = false
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.email) throw new Error('登入已失效，請重新登入。')
+    const { data: latest, error: latestError } = await supabase.from('clients')
+      .select('id,name,branch,status,remark,pkg_count,expiry_date,join_date,trial_date')
+      .eq('id', client.id).eq('owner_email', user.email).single()
+    if (latestError || !latest) throw new Error('未能核對最新客戶資料，請重新載入。')
+    if (['pkg_count', 'expiry_date', 'join_date', 'status', 'remark'].some(field =>
+      (latest[field] ?? null) !== (client[field] ?? null))) {
+      throw new Error('客戶資料已喺其他地方更新，請先重新載入，再記錄試堂或續卡。')
+    }
+    if (quickNeedsPackage.value) {
+      const pkg = quickPackages.value[quickPackage.value]
+      const hkTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date())
+      const stamp = `${quickDate.value}T${hkTime}+08:00`
+      const row = {
+        type: 'income', category: pkg.category, amount: pkg.amount, cost: pkg.cost,
+        profit: pkg.profit, branch: client.branch || '觀塘',
+        client_id: client.id, client_name: client.name,
+        ...quickSaleFlags(quickFlow.value, quickOutcome.value),
+        staff: quickStaff.value.trim(), handled_by: quickStaff.value.trim(),
+        created_at: stamp, owner_email: user.email, own_email: user.email,
+        note: `售出 ${pkg.label}${opened ? '（試堂開卡）' : '（續卡）'}${opened && quickApplyTrialDiscount.value ? '（扣已付試堂$98）' : ''}`
+      }
+      const { error: txnError } = await supabase.from('transactions').insert(row)
+      if (txnError) throw txnError
+      transactionSaved = true
+    }
+
+    const patch = {}
+    if (quickFlow.value === 'trial') {
+      patch.remark = replaceTrialResultMarker(client.remark, quickOutcome.value)
+      patch.status = quickOutcome.value === 'no_show' ? 'absent' :
+        quickOutcome.value.startsWith('opened_') ? 'active' : 'prospect'
+    }
+    if (quickNeedsPackage.value) {
+      patch.status = 'active'
+      if (quickTotals.value.incrementCount) patch.pkg_count = (Number(client.pkg_count) || 0) + 1
+      const firstJoinDate = firstOpeningJoinDate(client, quickFlow.value, quickOutcome.value, quickDate.value)
+      if (firstJoinDate) patch.join_date = firstJoinDate
+      const base = client.expiry_date && client.expiry_date > quickDate.value ? client.expiry_date : quickDate.value
+      if (quickTotals.value.expiryYears) patch.expiry_date = addYear(base)
+    }
+    const { data: savedClient, error: clientError } = await supabase.from('clients')
+      .update(patch).eq('id', client.id).eq('owner_email', user.email).select('id').single()
+    if (clientError || !savedClient) throw new Error(clientError?.message || '未能確認客戶更新結果。')
+    clientSaved = true
+
+    if (quickFlow.value === 'trial' && ['no_open_normal', 'no_open_mygift'].includes(quickOutcome.value)) {
+      await syncTrialProfitForClient({ ...client, ...patch }, quickOutcome.value)
+    }
+    if (quickFlow.value === 'trial' && quickOutcome.value === 'no_show') {
+      const trialTxn = store.transactions.find(t => t.client_name === client.name && t.category === '試堂' && t.amount === 98 && Number(t.cost) > 0)
+      if (trialTxn) {
+        const { error: trialError } = await supabase.from('transactions').update({ cost: 0, profit: 98 }).eq('id', trialTxn.id)
+        if (trialError) throw trialError
+      }
+    }
+    await store.syncAll()
+    quickFlow.value = ''
+    alert(opened ? '試堂結果同開卡收入已記錄。' : transactionSaved ? '續卡收入同客戶有效期已更新。' : '試堂結果已記錄。')
+  } catch (error) {
+    quickError.value = transactionSaved && !clientSaved
+      ? `收入已寫入，但客戶資料未能同步：${error.message}。請勿再次按儲存，以免重複入帳；可到「修改客戶資料」修正。`
+      : clientSaved ? `客戶結果已儲存，但相關帳目更新未完成：${error.message}。請勿再按儲存，避免重複記錄。`
+        : `未能儲存：${error.message}`
+    if (transactionSaved || clientSaved) await store.syncAll()
+    if (transactionSaved || clientSaved) quickSaveLocked.value = true
+  } finally {
+    quickSaving.value = false
+  }
+}
 
 function openActionModal(client) {
   selectedClientForAction.value = client
@@ -371,141 +710,201 @@ function handleActionRetail() {
 }
 
 function openAddModal() {
-    newClient.value = { ...defaultNewClient, handled_by: store.currentUser || 'kwan' }
+    newClient.value = { ...defaultNewClient, branch: savedBranch(), handled_by: store.currentUser || 'kwan' }
     consumeMyGift.value = false 
     autoChargeTrial.value = false // 預設不勾選
     referrerSearch.value = ''
     activeTab.value = 'basic' // 🚀 新增：每次打開都預設回到「基本資料」分頁
+    showMoreNewClient.value = false
+    smartInput.value = ''
+    scheduleDate.value = getLocalHKDate()
+    scheduleOpened.value = false
+    scheduleRows.value = []
+    scheduleError.value = ''
+    scheduleFromCache.value = false
+    scheduleCachedAt.value = 0
+    selectedCourse.value = null
     showAddModal.value = true
 }
 
+async function readOwnedClientIndex(ownerEmail) {
+  const rows = []
+  let expected = null
+  for (let start = 0; start < 100000; start += 500) {
+    const { data, error, count } = await supabase.from('clients')
+      .select('id,name,phone', { count: 'exact' }).eq('owner_email', ownerEmail)
+      .order('id').range(start, start + 499)
+    if (error) throw new Error(`未能核對現有客戶：${error.message}`)
+    if (expected === null) expected = count
+    rows.push(...(data || []))
+    if ((data || []).length < 500) {
+      if (expected !== rows.length) throw new Error('核對期間客戶資料有變，請重新按儲存。')
+      return rows
+    }
+  }
+  throw new Error('客戶資料太多，未能完整檢查重複。')
+}
+
 async function handleAddClient() {
+  if (addingClient.value) return
   if (!newClient.value.name) return alert('請填寫姓名')
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
-  
-  const dataToInsert = { 
-    ...newClient.value, 
-    own_email: user.email,
-    user_id: user.id 
-  }
-  
-  if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') {
-      dataToInsert.referred_by_id = null
-  }
-  
-  if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
-  if (!dataToInsert.join_date) dataToInsert.join_date = null
-  
-  dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
+  if (isReadOnlyPreview) return alert('預覽版只供查看，新增客戶要喺正式版操作。')
+  addingClient.value = true
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user?.id || !user?.email) throw new Error('登入已失效，請重新登入。')
 
-  const { error } = await supabase.from('clients').insert([dataToInsert])
-  if (error) return alert('新增失敗: ' + error.message)
-  
-  const now = new Date();
-  const hkYMD = getLocalHKDate();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-
-  if (consumeMyGift.value && dataToInsert.referred_by_id) {
-    const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id);
-    if (referrer) {
-     const dummyTxn = {
-        type: 'expense', amount: 52, cost: 52, profit: -52,
-        note: `推薦新客: ${dataToInsert.name}`,
-        client_name: referrer.name,
-        category: 'MyGift消耗',
-        handled_by: store.currentUser || '系統自動',
-        own_email: user.email,
-        created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00` // 👈 加上香港時區尾巴
-      };
-      await supabase.from('transactions').insert(dummyTxn);
+    const existing = await readOwnedClientIndex(user.email)
+    const conflict = findPotentialDuplicateClient(newClient.value, existing)
+    if (conflict?.kind === 'exact') {
+      clientSearch.value = conflict.client.name
+      filterStatus.value = ''
+      filterBranch.value = ''
+      filterMyGiftExpiring.value = false
+      showAddModal.value = false
+      alert('已有同姓名、同電話嘅客戶；已幫你喺客戶列表搜尋，請打開原有檔案補記。')
+      return
     }
-  } 
-  
-  // 🚀 自動收取試堂費邏輯
-  if (autoChargeTrial.value) {
-    const trialIncomeTxn = {
-      type: 'income', 
-      amount: 98, 
-      cost: 52, 
-      profit: 46, // $98 - $52 = $46
-      note: `預約試堂收費: ${dataToInsert.name}`,
-      client_name: dataToInsert.name,
-      category: '試堂',
-      handled_by: dataToInsert.handled_by || store.currentUser || '系統',
+    if (conflict && !confirm(`已有${conflict.kind === 'shared_phone' ? '同電話' : '同姓名'}客戶「${conflict.client.name}」。請先核對係咪同一人；確定係另一位先按「確定」新增。`)) return
+
+    if (selectedCourse.value) {
+      checkingCourse.value = true
+      try {
+        const rows = await fetchClasses(selectedCourse.value.branch, selectedCourse.value.date, true)
+        if (!findAvailableCourse(rows, selectedCourse.value)) {
+          scheduleRows.value = rows
+          clearSelectedCourse()
+          scheduleError.value = '課堂剛剛改咗或已額滿，請重新揀；客戶資料未有儲存。'
+          return
+        }
+      } catch (error) {
+        scheduleError.value = `未能核對最新課堂，客戶資料未有儲存：${error.message}`
+        return
+      } finally {
+        checkingCourse.value = false
+      }
+    }
+
+    const dataToInsert = {
+      ...newClient.value,
+      owner_email: user.email,
       own_email: user.email,
-      created_at: `${hkYMD}T${hh}:${mm}:${ss}+08:00`
-    };
-    await supabase.from('transactions').insert(trialIncomeTxn);
-  }
-
-  await store.syncAll(); // 🚀 補丁 1：強制等待資料庫最新數據下載完成
-  showAddModal.value = false; 
-  
-  // 🚀 補丁 2：延遲 0.1 秒彈出，讓 Vue 有時間把新客戶畫到畫面上！
-  setTimeout(() => {
-    if (autoChargeTrial.value) {
-       alert('✅ 新增成功！\n💰 已自動寫入 $98 試堂費紀錄。') 
-    } else {
-       alert('✅ 新增成功') 
+      user_id: user.id
     }
-  }, 100);
+    if (dataToInsert.source !== '朋友介紹' && dataToInsert.source !== '廣告+朋友介紹') dataToInsert.referred_by_id = null
+    if (!dataToInsert.expiry_date) dataToInsert.expiry_date = null
+    if (!dataToInsert.join_date) dataToInsert.join_date = null
+    dataToInsert.trial_date = dataToInsert.trial_date ? dataToInsert.trial_date.slice(0, 16) : null
+
+    const { data: created, error: createError } = await supabase.from('clients').insert([dataToInsert]).select('id').single()
+    if (createError || !created?.id) throw new Error(createError?.message || '未能核實新增客戶結果，請先搜尋客戶列表。')
+    try { localStorage.setItem('bz_last_branch', dataToInsert.branch) } catch { /* optional preference */ }
+
+    const hkYMD = getLocalHKDate()
+    const hkTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date())
+    const createdAt = `${hkYMD}T${hkTime}+08:00`
+    const warnings = []
+
+    if (consumeMyGift.value && dataToInsert.referred_by_id) {
+      const referrer = store.clients.find(c => c.id === dataToInsert.referred_by_id)
+      if (!referrer) warnings.push('介紹人資料未找到，MyGift 消耗未記錄')
+      else {
+        const row = {
+          type: 'expense', amount: 52, cost: 52, profit: -52,
+          note: `推薦新客: ${dataToInsert.name}`, client_id: referrer.id, client_name: referrer.name,
+          category: 'MyGift消耗', handled_by: store.currentUser || '系統自動',
+          owner_email: user.email, own_email: user.email, created_at: createdAt
+        }
+        try {
+          const { error } = await supabase.from('transactions').insert(row)
+          if (error) warnings.push(`MyGift 消耗未記錄：${error.message}`)
+        } catch (error) { warnings.push(`MyGift 消耗未能核實：${error.message}`) }
+      }
+    }
+
+    if (autoChargeTrial.value) {
+      const row = {
+        type: 'income', amount: 98, cost: 52, profit: 46,
+        note: `預約試堂收費: ${dataToInsert.name}`, client_id: created.id, client_name: dataToInsert.name,
+        category: '試堂', handled_by: dataToInsert.handled_by || store.currentUser || '系統',
+        owner_email: user.email, own_email: user.email, created_at: createdAt
+      }
+      try {
+        const { error } = await supabase.from('transactions').insert(row)
+        if (error) warnings.push(`$98 試堂收入未記錄：${error.message}`)
+      } catch (error) { warnings.push(`$98 試堂收入未能核實：${error.message}`) }
+    }
+
+    await store.syncAll()
+    showAddModal.value = false
+    const message = warnings.length
+      ? `客戶已新增，但${warnings.join('；')}。請到帳目核對並補記；唔好再新增同一位客戶。`
+      : autoChargeTrial.value ? '✅ 客戶同 $98 試堂收入已記錄。' : '✅ 客戶已新增。'
+    setTimeout(() => alert(message), 100)
+  } catch (error) {
+    alert(`未能完成新增：${error.message}。如網絡中斷，請先搜尋客戶列表，避免重複新增。`)
+  } finally {
+    addingClient.value = false
+  }
 }
 
 async function handleUpdateClient() {
+  if (updatingClient.value) return
   if (!editingClient.value.name) return alert('請填寫姓名')
-  
-  const dataToUpdate = { ...editingClient.value }
-  
-  if (dataToUpdate.source !== '朋友介紹' && dataToUpdate.source !== '廣告+朋友介紹') {
-      dataToUpdate.referred_by_id = null
-  }
-  
-  if (!dataToUpdate.expiry_date) dataToUpdate.expiry_date = null
-  if (!dataToUpdate.join_date) dataToUpdate.join_date = null
-
-  dataToUpdate.trial_date = dataToUpdate.trial_date ? dataToUpdate.trial_date.slice(0, 16) : null
-
-  const trialResultChanged = editingTrialResult.value !== editingOriginalTrialResult.value
-  if (trialResultChanged) {
-    dataToUpdate.remark = replaceTrialResultMarker(dataToUpdate.remark, editingTrialResult.value)
-    if (editingTrialResult.value === 'no_show') dataToUpdate.status = 'absent'
-    else if (editingTrialResult.value === 'no_open_normal' || editingTrialResult.value === 'no_open_mygift') dataToUpdate.status = 'prospect'
-    else if (editingTrialResult.value === 'opened_small' || editingTrialResult.value === 'opened_big') dataToUpdate.status = 'active'
-  }
-
-  // 🚀 智能引擎：偵測如果將客戶改為「缺席」，自動將其 98 蚊試堂費的成本改為 0
-  if (dataToUpdate.status === 'absent') {
-    const targetTxn = store.transactions.find(t => 
-      t.client_name === dataToUpdate.name && 
-      t.category === '試堂' && 
-      t.amount === 98
-    )
-
-    if (targetTxn && targetTxn.cost > 0) {
-      await supabase.from('transactions').update({
-        cost: 0,
-        profit: 98 // 利潤全收
-      }).eq('id', targetTxn.id)
-      console.log('✅ 已自動將缺席客人的試堂成本改為 0')
-    }
-  }
-
-  const { error } = await supabase.from('clients').update(dataToUpdate).eq('id', dataToUpdate.id)
-  
-  if (error) alert('更新失敗: ' + error.message)
-  else {
+  if (isReadOnlyPreview) return alert('預覽版只供查看，未能修改正式資料。')
+  updatingClient.value = true
+  let clientSaved = false
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user?.email) throw new Error('登入已失效，請重新登入。')
+    const draft = { ...editingClient.value }
+    if (draft.source !== '朋友介紹' && draft.source !== '廣告+朋友介紹') draft.referred_by_id = null
+    draft.expiry_date = draft.expiry_date || null
+    draft.join_date = draft.join_date || null
+    draft.trial_date = draft.trial_date ? draft.trial_date.slice(0, 16) : null
+    const trialResultChanged = editingTrialResult.value !== editingOriginalTrialResult.value
     if (trialResultChanged) {
-      await syncTrialProfitForClient(dataToUpdate, editingTrialResult.value)
+      draft.remark = replaceTrialResultMarker(draft.remark, editingTrialResult.value)
+      if (editingTrialResult.value === 'no_show') draft.status = 'absent'
+      else if (['no_open_normal', 'no_open_mygift'].includes(editingTrialResult.value)) draft.status = 'prospect'
+      else if (['opened_small', 'opened_big'].includes(editingTrialResult.value)) draft.status = 'active'
     }
-    await store.syncAll(); // 🚀 等待同步
-    showEditModal.value = false; 
-    setTimeout(() => {
-      alert(dataToUpdate.status === 'absent' ? '✅ 修改已儲存\n(已自動將試堂費成本設為 0)' : '✅ 修改已儲存') 
-    }, 100);
+    const patch = changedClientFields(originalEditingClient.value, draft)
+    if (!Object.keys(patch).length) { showEditModal.value = false; return }
+
+    const { data: latest, error: readError } = await supabase.from('clients')
+      .select('*').eq('id', draft.id).eq('owner_email', user.email).single()
+    if (readError || !latest) throw new Error('未能核對最新客戶資料，請重新載入。')
+    const normalizedLatest = { ...latest, trial_date: latest.trial_date ? toLocalDatetimeString(latest.trial_date) : null }
+    const conflicts = conflictingClientFields(originalEditingClient.value, normalizedLatest, patch)
+    if (conflicts.length) throw new Error('其他裝置已修改呢位客戶嘅同一欄位；請重新載入後再編輯，避免蓋過新資料。')
+
+    const { data: saved, error: saveError } = await supabase.from('clients')
+      .update(patch).eq('id', draft.id).eq('owner_email', user.email).select('id').single()
+    if (saveError || !saved) throw new Error(saveError?.message || '更新未能確認，請重新載入。')
+    clientSaved = true
+
+    if (trialResultChanged && ['no_open_normal', 'no_open_mygift'].includes(editingTrialResult.value)) {
+      await syncTrialProfitForClient(draft, editingTrialResult.value)
+    }
+    if (draft.status === 'absent' && originalEditingClient.value.status !== 'absent') {
+      const targetTxn = store.transactions.find(t =>
+        (t.client_id === draft.id || (!t.client_id && t.client_name === originalEditingClient.value.name)) &&
+        t.category === '試堂' && Number(t.amount) === 98 && Number(t.cost) > 0)
+      if (targetTxn) {
+        const { error: txnError } = await supabase.from('transactions')
+          .update({ cost: 0, profit: 98 }).eq('id', targetTxn.id).eq('owner_email', user.email)
+        if (txnError) throw txnError
+      }
+    }
+    await store.syncAll()
+    showEditModal.value = false
+    setTimeout(() => alert('✅ 修改已儲存'), 100)
+  } catch (error) {
+    if (clientSaved) await store.syncAll()
+    alert(`${clientSaved ? '客戶資料已更新，但相關帳目未完成' : '更新失敗'}：${error.message}。${clientSaved ? '請先核對帳目，唔好重複儲存。' : ''}`)
+  } finally {
+    updatingClient.value = false
   }
 }
 
@@ -529,6 +928,7 @@ function openEditModal(client) {
   if (editingClient.value.trial_date) {
     editingClient.value.trial_date = toLocalDatetimeString(editingClient.value.trial_date)
   }
+  originalEditingClient.value = { ...editingClient.value }
   referrerSearch.value = ''
   editingTrialResult.value = getTrialResultValue(editingClient.value)
   editingOriginalTrialResult.value = editingTrialResult.value
@@ -580,102 +980,67 @@ function triggerFileInput() {
 }
 
 async function handleImport(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const file = e.target.files?.[0]
+  if (!file) return
+  let added = 0
+  try {
+    if (isReadOnlyPreview) throw new Error('預覽版只供核對，唔會匯入正式資料。')
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.email) throw new Error('請重新登入後再匯入。')
+    const parsed = parseClientCsv(await file.text())
+    if (parsed.rows.length + parsed.skipped.length > 5000) throw new Error('每次最多匯入 5,000 筆。')
 
-  const { data: authData } = await supabase.auth.getSession();
-  const currentUserEmail = authData?.session?.user?.email;
-
-  if (!currentUserEmail) {
-    alert('❌ 系統偵測不到登入狀態，請確認網路連線或重新登入。');
-    e.target.value = ''; 
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = async (evt) => {
-    try {
-      const content = evt.target.result;
-      const lines = content.split(/\r?\n/);
-      
-      const rows = lines.slice(1).filter(line => line.trim() !== '');
-      
-      let insertedCount = 0;
-      let updatedCount = 0;
-      const processedPhones = new Set(); // 🚀 護城河 1：防止同一個 CSV 檔案裡面有重複電話
-
-      // 💡 溫馨提示，等同事知道系統會做防重檢查
-      const isConfirmed = confirm(`準備匯入 ${rows.length} 筆資料。\n系統會自動檢查「電話號碼」：\n🔄 若已存在 ➡️ 更新資料\n✨ 若未存在 ➡️ 新增客戶\n\n是否繼續？`);
-      if (!isConfirmed) { e.target.value = ''; return; }
-
-      for (const line of rows) {
-        const row = line.split(',');
-        
-        if (!row[0]) continue; 
-
-        // 取得電話號碼並清理前後空白
-        const phoneNum = String(row[1] || '').trim();
-
-        // 🚀 如果檔案內已經處理過這個電話，直接跳過，慳返時間！
-        if (phoneNum && processedPhones.has(phoneNum)) {
-            continue;
-        }
-        if (phoneNum) processedPhones.add(phoneNum);
-
-        // 🚀 護城河 2：檢查現有系統中是否已經有這個電話
-        // 如果無電話號碼，就當作新客 (因為無法比對)
-        const existingClient = phoneNum 
-            ? store.clients.find(c => c.phone === phoneNum) 
-            : null;
-
-        // 準備好要寫入的資料包
-       const payload = {
-          name: String(row[0] || '').trim(),
-          phone: phoneNum,
-          branch: (row[2] || '觀塘').trim(),
-          status: String(row[3] || 'active').trim().toLowerCase(),
-          join_date: row[4] ? row[4].trim() : null,
-          source: (row[5] || '其他').trim(),
-          expiry_date: row[6] ? row[6].trim() : null,
-          remark: (row[7] || '').trim(),
-          own_email: currentUserEmail, // 🚀 修正：正確的欄位名稱
-          user_id: authData?.session?.user?.id // 🚀 修正：加入 user_id 確保符合安全規則
-        };
-        if (existingClient) {
-            // 🔄 撞電話：執行 Update (更新舊客資料)
-            const { error } = await supabase.from('clients').update(payload).eq('id', existingClient.id);
-            if (!error) updatedCount++;
-        } else {
-            // ✨ 唔撞電話：執行 Insert (新增客底)
-            const { error } = await supabase.from('clients').insert([payload]);
-            if (!error) insertedCount++;
-        }
+    const readClients = async () => {
+      const list = []
+      for (let start = 0; start < 100000; start += 500) {
+        const { data, error } = await supabase.from('clients').select('id,name,phone')
+          .eq('owner_email', user.email).order('id').range(start, start + 499)
+        if (error) throw error
+        list.push(...(data || []))
+        if ((data || []).length < 500) break
       }
-      
-      // 🚀 補上 await 等待畫面刷新，並顯示清晰的結果報告
-      await store.syncAll(); 
-      setTimeout(() => {
-        alert(`✅ 匯入完畢！\n\n✨ 成功新增：${insertedCount} 位新客\n🔄 成功更新：${updatedCount} 位舊客\n\n資料已歸屬至 (${currentUserEmail})。`);
-      }, 100);
-      
-    } catch (err) {
-      console.error('匯入出錯:', err);
-      alert('❌ 檔案讀取失敗，請確保使用正確的 CSV 格式。');
-    } finally {
-      e.target.value = ''; 
+      return list
     }
-  };
-  
-  reader.readAsText(file);
+    const firstRead = await readClients()
+    const firstReview = classifyClientCsv(parsed.rows, firstRead)
+    const excluded = [...parsed.skipped, ...firstReview.skipped]
+    if (!firstReview.candidates.length) {
+      alert(`冇可安全新增嘅客戶。${excluded.length} 筆需要核對或資料唔完整。`)
+      return
+    }
+    if (!confirm(`CSV 共 ${parsed.rows.length + parsed.skipped.length} 筆；可新增 ${firstReview.candidates.length} 筆，另有 ${excluded.length} 筆會跳過。\n\n只新增電話及姓名都唔重複嘅客戶；原有客戶、帳目同點數唔會被覆蓋。寫入前會下載客戶備份。確定繼續？`)) return
+
+    const backupCount = await downloadOwnedClientsBackup(user)
+    const fresh = await readClients()
+    if (fresh.length !== backupCount) throw new Error('備份後客戶數目有變，已停止匯入。')
+    const finalReview = classifyClientCsv(firstReview.candidates, fresh)
+    const errors = []
+    for (const row of finalReview.candidates) {
+      const { error } = await supabase.from('clients').insert([{
+        name: row.name, phone: row.phone, branch: row.branch, status: row.status,
+        join_date: row.join_date, expiry_date: row.expiry_date, source: row.source,
+        remark: row.remark, owner_email: user.email, own_email: user.email, user_id: user.id
+      }])
+      if (error) errors.push(`第 ${row.line} 行：${error.message}`)
+      else added++
+    }
+    await store.syncAll()
+    alert(`已新增 ${added} 位客戶；跳過 ${excluded.length + finalReview.skipped.length} 筆待核對資料。${errors.length ? `\n失敗 ${errors.length} 筆：${errors.slice(0, 3).join('；')}` : ''}`)
+  } catch (error) {
+    alert(`${error?.message || '匯入中斷。'}${added ? `\n已有 ${added} 位客戶新增成功，請重新整理後核對，勿直接重複匯入。` : ''}\n原有客戶未被覆蓋。`)
+  } finally {
+    e.target.value = ''
+  }
 }
 </script>
 
 <template>
   <div class="page">
     <div class="header-section">
-      <h2 class="page-title">FITWORK PRO 管理端</h2>
-      <p class="subtitle">數據即時同步中 ⚡️</p>
+      <div><h2 class="page-title">客戶</h2><p class="subtitle">{{ filteredClients.length }} 位符合條件</p></div>
+      <button class="btn-primary bz-client-add" type="button" @click="openAddModal">＋ 新客戶</button>
     </div>
+    <MonitorReconcile @select-client="openActionModal" />
     
     <div class="card search-box">
       <!-- 1. 搜尋列 (減少了上下 padding) -->
@@ -683,6 +1048,7 @@ async function handleImport(e) {
 
       <!-- 2. 客戶狀態過濾 (移除分店，減輕滑動負擔) -->
       <div class="filter-row">
+        <button class="f-btn" :class="{active: filterStatus===''}" @click="filterStatus=''">全部</button>
         <button class="f-btn" :class="{active: filterStatus==='active'}" @click="filterStatus='active'">⭐️ 正式會員</button>
         <button class="f-btn" :class="{active: filterStatus==='prospect'}" @click="filterStatus='prospect'">👀 試堂/預約</button>
         <button class="f-btn" :class="{active: filterStatus==='absent'}" @click="filterStatus='absent'">⚠️ 缺席/需補堂</button>
@@ -710,12 +1076,13 @@ async function handleImport(e) {
         </div>
         <div class="v-line" style="margin: 0 4px;"></div>
         <button class="btn-outline" @click="downloadCSVTemplate">📥 下載匯入格式</button>
-        <button class="btn-outline" style="border-color:#4f46e2; color:#4f46e2; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
+        <button class="btn-outline" style="border-color:#b86e4a; color:#a75e3a; font-weight:900;" @click="triggerFileInput">📤 批量匯入客戶</button>
         <input type="file" id="csvFileInput" accept=".csv" style="display: none;" @change="handleImport">
       </div>
     </div>
 
     <div class="list-container">
+      <p v-if="!filteredClients.length" class="bz-empty">冇符合條件嘅客戶，試吓清除搜尋或更改篩選。</p>
       <div v-for="c in filteredClients" :key="c.id" class="client-card" @click="openActionModal(c)">
         <div class="c-avatar">{{ (c.name || '?').charAt(0) }}</div>
         <div class="c-main">
@@ -727,7 +1094,7 @@ async function handleImport(e) {
           <div class="c-meta">
             {{ c.phone || '無電話' }} · {{ c.branch }}
             
-            <a v-if="c.phone" :href="'https://wa.me/852' + c.phone" target="_blank" class="wts-btn" @click.stop>💬 Wts</a>
+            <a v-if="cleanPhone(c.phone)" :href="'https://wa.me/852' + cleanPhone(c.phone)" target="_blank" rel="noopener noreferrer" class="wts-btn" @click.stop>💬 Wts</a>
 
             <span v-if="c.status === 'prospect' && c.trial_date" class="trial-time-tag">
               ⏰ {{ formatTrialDate(c.trial_date) }}
@@ -870,126 +1237,83 @@ async function handleImport(e) {
 
         <div class="sticky-action-row">
           <button class="btn-del" @click="handleDeleteClient">🗑️ 刪除</button>
-          <button class="btn-confirm" @click="handleUpdateClient">確認修改</button>
+          <button class="btn-confirm" :disabled="isReadOnlyPreview || updatingClient" @click="handleUpdateClient">{{ isReadOnlyPreview ? '預覽版只供查看' : updatingClient ? '儲存中…' : '確認修改' }}</button>
         </div>
 
       </div>
     </div>
-   <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-      <div class="center-modal scrollable-modal" style="padding-bottom: 0;">
-        <div class="m-header">➕ 登記新客戶 <button class="close-x" @click="showAddModal=false">✕</button></div>
-        
-        <div class="tab-nav">
-          <button class="tab-btn" :class="{active: activeTab === 'basic'}" @click="activeTab = 'basic'">👤 基本</button>
-          <button class="tab-btn" :class="{active: activeTab === 'source'}" @click="activeTab = 'source'">📅 來源/預約</button>
-          <button class="tab-btn" :class="{active: activeTab === 'advanced'}" @click="activeTab = 'advanced'">💎 進階設定</button>
-        </div>
-
-        <div class="toggle-group sticky-toggle">
-          <button class="t-btn" :class="{active: newClient.status === 'active'}" @click="newClient.status = 'active'">正式會員</button>
-          <button class="t-btn" :class="{active: newClient.status === 'prospect'}" @click="newClient.status = 'prospect'">試堂預約</button>
-        </div>
-
-        <div class="tab-content-area">
-          <div v-show="activeTab === 'basic'" class="tab-pane">
-            <div class="f-item" style="background: #eef2ff; padding: 15px; border-radius: 12px; border: 1px dashed #6366f1; margin-bottom: 15px;">
-              <label style="color: #4f46e2; font-size: 13px;">🪄 智能快捷貼上 (自動辨識姓名、電話、日期)</label>
-              <div style="display: flex; gap: 8px;">
-                <input v-model="smartInput" class="modern-inp" placeholder="例如: 陳大文 9876 5432 2026-06-25" @keyup.enter.prevent="handleSmartPaste">
-                <button class="btn-now" style="background: #4f46e2; color: white;" @click="handleSmartPaste">配對</button>
+   <div v-if="showAddModal" class="modal-overlay bz-client-overlay" @click.self="showAddModal = false">
+      <div class="center-modal bz-client-form">
+        <div class="m-header"><span>新增客戶<small>先記低，其他資料可以稍後補</small></span><button class="close-x" type="button" aria-label="關閉" @click="showAddModal=false">✕</button></div>
+        <div class="bz-client-form-body">
+          <div class="bz-client-status" role="group" aria-label="客戶類型">
+            <button type="button" :class="{active:newClient.status==='prospect'}" @click="newClient.status='prospect'">準備試堂</button>
+            <button type="button" :class="{active:newClient.status==='active'}" @click="newClient.status='active'">已是會員</button>
+          </div>
+          <div class="f-item"><label for="new-client-name">姓名 <b>必填</b></label><input id="new-client-name" v-model.trim="newClient.name" class="modern-inp" autocomplete="name" placeholder="點稱呼佢？"></div>
+          <div class="f-item"><label for="new-client-phone">電話 <span>方便之後搵返</span></label><input id="new-client-phone" v-model.trim="newClient.phone" type="tel" inputmode="tel" autocomplete="tel" class="modern-inp" placeholder="例如 9876 5432"></div>
+          <div class="f-item"><label>分店 <span>預設上次選擇</span></label><div class="bz-branch-choices" role="group" aria-label="分店"><button v-for="branch in branches" :key="branch" type="button" :class="{active:newClient.branch===branch}" @click="newClient.branch=branch">{{ branch }}</button></div></div>
+          <div v-if="newClient.status==='prospect'" class="bz-trial-booking">
+            <div class="bz-section-head"><strong>試堂時間</strong><span>未約好可以留空，之後再補</span></div>
+            <div class="bz-class-picker">
+              <div class="bz-class-picker-head"><strong>由課程時間表揀</strong><button type="button" @click="loadClasses">{{ scheduleOpened ? '重新讀取' : '查看課堂' }}</button></div>
+              <div v-if="scheduleOpened" class="bz-class-picker-body">
+                <label for="class-schedule-date">課堂日期</label><input id="class-schedule-date" v-model="scheduleDate" type="date" class="modern-date" :min="todayStr" :max="maxScheduleDate">
+                <p v-if="scheduleSample" class="bz-class-note">呢啲係 {{ sampleClassDate }} 嘅示範課堂；示範模式唔會讀取即時課表。</p>
+                <p v-if="scheduleLoading || checkingCourse" class="bz-class-note" role="status">{{ checkingCourse ? '核對最新課堂中…' : scheduleFromCache ? '正更新最新課表…' : '讀取課堂中…' }}</p>
+                <p v-if="scheduleError" class="bz-flow-error" role="alert">{{ scheduleError }}</p>
+                <p v-if="scheduleFromCache && scheduleRows.length" class="bz-class-note">先顯示上次課表（{{ cachedScheduleTime(scheduleCachedAt) }}）；揀課時會即時核對。</p>
+                <p v-if="!scheduleRows.length && !scheduleLoading && !scheduleError" class="bz-class-note">當日暫時冇課堂；可以轉日期或手動輸入。</p>
+                <div v-if="scheduleRows.length" class="bz-class-list"><button v-for="(course,index) in scheduleRows" :key="index" type="button" :disabled="course.full || checkingCourse" :class="{active:selectedCourse && sameCourse(selectedCourse, course)}" @click="selectClass(course)"><b>{{ course.start }}–{{ course.end }}</b><span>{{ course.title }}<small>{{ course.coach }} · {{ newClient.branch }}</small></span><em>{{ course.full ? '額滿' : `${course.booked ?? '—'}/${course.capacity ?? '—'}` }}</em></button></div>
+                <p class="bz-class-note">{{ scheduleSample ? '示範課堂只供操作體驗，唔代表原站可報名時段。' : '揀課及儲存前會重新核對即時課表；實際報名由你喺課程網站自行處理。' }}</p>
               </div>
             </div>
-            <div class="f-item"><label>姓名</label><input v-model="newClient.name" class="modern-inp" placeholder="請輸入姓名"></div>
-            <div class="f-item"><label>電話</label><input v-model="newClient.phone" type="tel" inputmode="tel" class="modern-inp" placeholder="請輸入電話"></div>
-            <div class="f-item">
-                <label>分店</label>
-                <select v-model="newClient.branch" class="modern-select">
-                    <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
-                </select>
-            </div>
+            <div class="bz-manual-label">或者手動揀時間</div>
+            <div class="bz-date-choices"><button type="button" @click="chooseTrialDay(0)">今日</button><button type="button" @click="chooseTrialDay(1)">聽日</button><button type="button" @click="chooseTrialDay(2)">後日</button></div>
+            <div class="bz-date-choices bz-time-choices"><button v-for="time in trialTimes" :key="time" type="button" @click="chooseTrialTime(time)">{{ time }}</button></div>
+            <input v-model="newClient.trial_date" type="datetime-local" class="modern-date" aria-label="試堂日期及時間">
           </div>
-
-          <div v-show="activeTab === 'source'" class="tab-pane">
-            <div class="f-item">
-                <label>認識來源</label>
-                <select v-model="newClient.source" class="modern-select">
-                    <option value="廣告">廣告</option><option value="廣告+朋友介紹">廣告 + 朋友介紹</option>
-                    <option value="傳單">傳單</option><option value="朋友介紹">朋友介紹</option>
-                    <option value="IG">IG</option><option value="朋友">朋友</option>
-                </select>
-            </div>
-
-            <div class="f-item" v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" style="margin-top: 12px;">
-                <label>介紹人 (計算代數)</label>
-                <input v-model="referrerSearch" class="modern-inp" placeholder="🔍 快速搜尋姓名或電話..." style="margin-bottom: 8px; font-size: 14px; padding: 10px;">
-                <select v-model="newClient.referred_by_id" class="modern-select">
-                    <option :value="null">請選擇...</option>
-                    <option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option>
-                </select>
-            </div>
-
-            <div class="f-item" v-if="(newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹') && newClient.referred_by_id" style="margin-top: 15px; background: #faf5ff; border: 1px dashed #c4b5fd; padding: 15px; border-radius: 12px; animation: popIn 0.3s ease-out;">
-               <label style="color: #7c3aed; font-size: 14px;">🎁 是否消耗介紹人的 MyGift？</label>
-               <div style="font-size: 12px; color: #64748b; margin-bottom: 10px; font-weight: 700;">
-                 介紹人目前剩餘: <span style="color: #ef4444; font-size: 14px; font-weight: 900;">{{ getMyGiftStats(store.clients.find(c => c.id === newClient.referred_by_id)).available }}</span> 張
-               </div>
-               <div class="toggle-card" style="margin: 0;" :class="{active: consumeMyGift}" @click="consumeMyGift = !consumeMyGift">
-                 {{ consumeMyGift ? '✅ 是，建立後自動扣減 1 張' : '❌ 否，不扣除' }}
-               </div>
-            </div>
-
-            <!-- 🚀 新增：極速收取 $98 試堂費按鈕 -->
-            <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-top: 15px; background: #f0fdf4; border: 1px dashed #86efac; padding: 15px; border-radius: 12px; animation: popIn 0.3s ease-out;">
-               <label style="color: #16a34a; font-size: 14px;">💰 是否同時收取 $98 留位費？</label>
-               <div style="font-size: 11px; color: #64748b; margin-bottom: 10px; font-weight: 700;">
-                 (將自動寫入一筆 $98 試堂收入流水帳)
-               </div>
-               <div class="toggle-card" style="margin: 0;" :class="{active: autoChargeTrial}" @click="autoChargeTrial = !autoChargeTrial">
-                 {{ autoChargeTrial ? '✅ 是，自動記帳 $98' : '❌ 否，稍後再收' }}
-               </div>
-            </div>
-
-            <div class="f-item" v-if="newClient.status === 'prospect'" style="margin-top: 12px; animation: popIn 0.3s ease-out;">
-              <label>⏰ 預約試堂日期與時間</label>
-              <input type="datetime-local" v-model="newClient.trial_date" class="modern-date" style="margin-bottom: 10px;">
-              <label>📍 預約試堂地點</label>
-              <select v-model="newClient.branch" class="modern-select">
-                <option value="觀塘">觀塘</option><option value="中環">中環</option><option value="佐敦">佐敦</option>
-              </select>
-            </div>
-            
-            <div class="grid-2" style="margin-top: 12px;">
-              <div class="f-item"><label>成為客戶日期</label><input type="date" v-model="newClient.join_date" class="modern-date"></div>
-              <div class="f-item"><label>套票有效期 (選填)</label><input type="date" v-model="newClient.expiry_date" class="modern-date"></div>
-            </div>
-          </div>
-
-          <div v-show="activeTab === 'advanced'" class="tab-pane">
-            <div class="f-item">
-              <label>💬 客戶備註</label>
-              <textarea v-model="newClient.remark" class="modern-inp" style="height: 100px;" placeholder="輸入備註事項 (客戶要求、運動習慣等)..."></textarea>
-            </div>
-
-            <label style="font-size: 12px; font-weight: 800; color: #475569; margin: 15px 0 6px; display:block;">🏆 項目設定</label>
-            <div class="row-flex">
-              <div class="toggle-card" :class="{active: newClient.is_marathon}" @click="newClient.is_marathon = !newClient.is_marathon">🏃 馬拉松</div>
-              <div class="toggle-card" :class="{active: newClient.is_vip}" @click="newClient.is_vip = !newClient.is_vip">💎 VIP 折扣</div>
-            </div>
-
-            <div class="f-item" v-if="newClient.is_vip" style="margin-top: 15px; animation: popIn 0.3s ease-out;">
-              <label>🎖️ 請選擇 VIP 等級</label>
-              <select v-model="newClient.vip_tier" class="modern-select">
-                <option value="銅級(88折)">🥉 銅級 (88折)</option><option value="銀級(75折)">🥈 銀級 (75折)</option>
-                <option value="金級(65折)">🥇 金級 (65折)</option><option value="直接58折">💎 直接58折</option><option value="領班(半折)">👑 領班 (半折)</option>
-              </select>
-            </div>
-          </div>
+          <details class="bz-client-more" :open="showMoreNewClient" @toggle="showMoreNewClient=$event.target.open"><summary>更多資料及選項</summary>
+            <div class="f-item"><label>認識來源</label><select v-model="newClient.source" class="modern-select"><option value="廣告">廣告</option><option value="廣告+朋友介紹">廣告 + 朋友介紹</option><option value="傳單">傳單</option><option value="朋友介紹">朋友介紹</option><option value="IG">IG</option><option value="朋友">朋友</option></select></div>
+            <div v-if="newClient.source === '朋友介紹' || newClient.source === '廣告+朋友介紹'" class="f-item"><label>介紹人</label><input v-model="referrerSearch" class="modern-inp" placeholder="搜尋姓名或電話"><select v-model="newClient.referred_by_id" class="modern-select"><option :value="null">揀介紹人</option><option v-for="c in filteredReferrerOptions" :key="c.id" :value="c.id">{{ c.name }} ({{ c.phone }})</option></select></div>
+            <label v-if="newClient.referred_by_id" class="bz-check-row"><input v-model="consumeMyGift" type="checkbox">消耗介紹人 1 張 MyGift（尚餘 {{ getMyGiftStats(store.clients.find(c => c.id === newClient.referred_by_id)).available }} 張）</label>
+            <label v-if="newClient.status==='prospect'" class="bz-check-row"><input v-model="autoChargeTrial" type="checkbox">同時記錄 $98 試堂收入</label>
+            <div class="grid-2"><div class="f-item"><label>首次上堂／加入日期 <span>唔知可留空，避免舊客當新客</span></label><input v-model="newClient.join_date" type="date" class="modern-date"></div><div class="f-item"><label>套票到期日</label><input v-model="newClient.expiry_date" type="date" class="modern-date"></div></div>
+            <div class="f-item"><label>備註</label><textarea v-model="newClient.remark" class="modern-inp" rows="3" placeholder="客戶要求、習慣等"></textarea></div>
+            <div class="bz-client-extras"><label><input v-model="newClient.is_marathon" type="checkbox">馬拉松</label><label><input v-model="newClient.is_vip" type="checkbox">VIP</label></div>
+            <div v-if="newClient.is_vip" class="f-item"><label>VIP 等級</label><select v-model="newClient.vip_tier" class="modern-select"><option value="銅級(88折)">銅級 (88折)</option><option value="銀級(75折)">銀級 (75折)</option><option value="金級(65折)">金級 (65折)</option><option value="直接58折">直接58折</option><option value="領班(半折)">領班(半折)</option></select></div>
+            <details class="bz-smart-paste"><summary>由訊息快速貼入資料</summary><div class="bz-smart-row"><input v-model="smartInput" class="modern-inp" placeholder="姓名 電話 日期"><button type="button" @click="handleSmartPaste">配對</button></div></details>
+          </details>
         </div>
+        <div class="sticky-action-row"><button type="button" class="btn-confirm" :disabled="isReadOnlyPreview || checkingCourse || addingClient" @click="handleAddClient">{{ isReadOnlyPreview ? '預覽版只供查看' : checkingCourse ? '核對課堂中…' : addingClient ? '儲存中…' : '儲存客戶' }}</button></div>
+      </div>
+    </div>
 
-        <div class="sticky-action-row">
-          <button class="btn-confirm" style="width:100%; margin: 0;" @click="handleAddClient">立即新增客戶</button>
+    <div v-if="quickFlow" class="modal-overlay bz-client-overlay" @click.self="quickFlow=''">
+      <div class="center-modal bz-quick-flow">
+        <div class="m-header"><span>{{ quickFlow === 'trial' ? '記試堂結果' : '一分鐘續卡' }}<small>{{ quickClient?.name }} · {{ quickClient?.branch }}</small></span><button type="button" class="close-x" aria-label="關閉" @click="quickFlow=''">✕</button></div>
+        <div class="bz-quick-flow-body">
+          <template v-if="quickFlow==='trial'">
+            <p class="bz-flow-intro">試完堂揀一個結果；開卡會連收入一齊記。</p>
+            <div class="bz-outcome-list" role="group" aria-label="試堂結果">
+              <button type="button" :class="{active:quickOutcome==='opened_small'}" @click="chooseQuickOutcome('opened_small')">已開 10 點卡</button>
+              <button type="button" :class="{active:quickOutcome==='opened_big'}" @click="chooseQuickOutcome('opened_big')">已開 35 點卡</button>
+              <button type="button" :class="{active:quickOutcome==='no_open_normal'}" @click="chooseQuickOutcome('no_open_normal')">有試堂，未開卡</button>
+              <button type="button" :class="{active:quickOutcome==='no_open_mygift'}" @click="chooseQuickOutcome('no_open_mygift')">MyGift 試堂，未開卡</button>
+              <button type="button" :class="{active:quickOutcome==='no_show'}" @click="chooseQuickOutcome('no_show')">冇出席</button>
+            </div>
+          </template>
+          <p v-else class="bz-flow-intro">揀套票、核對日期同金額，儲存後會自動延長有效期。</p>
+          <template v-if="quickNeedsPackage">
+            <div v-if="quickFlow==='renewal'" class="bz-package-choices" role="group" aria-label="套票"><button v-for="(pkg,key) in quickPackages" :key="key" type="button" :class="{active:quickPackage===key}" @click="quickPackage=key">{{ pkg.label }}<small>${{ pkg.amount }}</small></button></div>
+            <label v-if="quickFlow==='trial'" class="bz-check-row"><input v-model="quickApplyTrialDiscount" type="checkbox">已收 $98 試堂費，今次開卡扣返 $98</label>
+            <div class="grid-2"><div class="f-item"><label>收款日期</label><input v-model="quickDate" type="date" class="modern-date"></div><div class="f-item"><label>處理人</label><input v-model="quickStaff" class="modern-inp" placeholder="處理人"></div></div>
+            <div class="bz-flow-total"><span>{{ quickTotals.label }} · {{ quickClient?.branch }}</span><strong>${{ quickTotals.amount }}</strong><small>成本 ${{ quickTotals.cost }} · 利潤 ${{ quickTotals.profit }}</small></div>
+          </template>
+          <p v-if="quickError" class="bz-flow-error" role="alert">{{ quickError }}</p>
+          <p v-if="isReadOnlyPreview" class="bz-flow-preview">預覽版可以查看流程；正式版先可以儲存。</p>
         </div>
-
+        <div class="sticky-action-row"><button type="button" class="btn-confirm" :disabled="quickSaving || quickSaveLocked || isReadOnlyPreview" @click="saveQuickFlow">{{ quickSaving ? '儲存中…' : isReadOnlyPreview ? '預覽版只供查看' : quickNeedsPackage ? '確認並記錄收入' : '儲存試堂結果' }}</button></div>
       </div>
     </div>
 
@@ -1001,6 +1325,8 @@ async function handleImport(e) {
         </div>
         
         <div class="action-menu-list">
+          <button v-if="selectedClientForAction?.trial_date" class="action-big-btn" type="button" @click="openQuickFlow('trial')"><span class="emoji-icon">✓</span><div class="text-left"><strong>記試堂結果</strong><small>開卡、未開卡或缺席，直接記低</small></div></button>
+          <button class="action-big-btn" type="button" @click="openQuickFlow('renewal')"><span class="emoji-icon">↻</span><div class="text-left"><strong>快捷續卡</strong><small>揀套票後自動記收入同有效期</small></div></button>
           <button class="action-big-btn btn-edit-style" @click="handleActionEdit">
             <span class="emoji-icon">✏️</span>
             <div class="text-left">

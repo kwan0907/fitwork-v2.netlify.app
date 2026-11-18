@@ -1,8 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
+import { isReadOnlyPreviewHost, shouldBlockDemoRequest, shouldBlockPreviewRequest } from './previewSafety.js'
+import { authStorage } from './authStorage.js'
 
 // Supabase project connection
 const SUPABASE_URL = 'https://ajnunehxtiofcphdyhqn.supabase.co'
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_97JBmvmO_GHjxnxy7eZqUA_klkZJvSB'
+export const isReadOnlyPreview = isReadOnlyPreviewHost(globalThis.location?.hostname)
 
 const nativeFetch = globalThis.fetch.bind(globalThis)
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -31,6 +34,9 @@ const getOwnedPatchRpc = (urlString, method) => {
 
   const idFilter = url.searchParams.get('id') || ''
   if (!idFilter.startsWith('eq.')) return null
+  // A join-date compare-and-swap must retain its expected old value. The
+  // single-id RPC cannot enforce that filter, so leave these as PATCH.
+  if (url.searchParams.has('join_date')) return null
   const id = idFilter.slice(3)
   if (!id) return null
 
@@ -71,6 +77,21 @@ async function resilientSupabaseFetch(input, init = {}) {
   const method = String(init?.method || input?.method || 'GET').toUpperCase()
   const url = typeof input === 'string' ? input : String(input?.url || '')
 
+  // The public demo must never request private records or mutate live data.
+  if (shouldBlockDemoRequest(url, globalThis.location?.hostname, globalThis.location?.search, SUPABASE_URL)) {
+    return new Response(JSON.stringify({ code: 'demo_local_only', message: '示範預覽只使用本機資料。' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' }
+    })
+  }
+
+  if (shouldBlockPreviewRequest(url, method, globalThis.location?.hostname, SUPABASE_URL, init?.body)) {
+    return new Response(JSON.stringify({ code: 'preview_read_only', message: '預覽模式只供查看，唔會寫入正式資料。' }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' }
+    })
+  }
+
   // 部分瀏覽器/網絡環境會直接令 PATCH 出現 TypeError: Failed to fetch。
   // clients / transactions 的單筆更新改用 POST RPC，RLS 仍由資料庫照常執行。
   const ownedPatch = getOwnedPatchRpc(url, method)
@@ -103,6 +124,7 @@ async function resilientSupabaseFetch(input, init = {}) {
 const supabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
+    storage: authStorage,
     autoRefreshToken: true,
     detectSessionInUrl: true
   },
