@@ -146,6 +146,7 @@
 
 @media (max-width:600px) {
   #app-main .header-section { margin-bottom:12px !important; }
+  #app-main .main-fab { display:none !important; }
   #app-main .header-section .page-title {
     margin-bottom:2px !important;
     font-size:23px !important;
@@ -168,6 +169,32 @@
   #app-main .search-box .f-btn,
   #app-main .search-box .btn-outline { flex:0 0 auto; }
   #app-main .search-box .sort-select { max-width:180px; }
+  #app-main .filter-row {
+    flex-wrap:wrap !important;
+    overflow:visible !important;
+  }
+  #app-main .filter-row .v-line,
+  #app-main .bottom-scroll-row .v-line { display:none; }
+  #app-main .filter-row .f-btn {
+    flex:1 1 calc(50% - 6px);
+    min-width:0;
+    white-space:normal;
+    text-align:center;
+  }
+  #app-main .filter-row .mygift-btn { flex-basis:100%; }
+  #app-main .bottom-scroll-row {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    overflow:visible !important;
+  }
+  #app-main .bottom-scroll-row > div:first-child { grid-column:1 / -1; min-width:0; }
+  #app-main .bottom-scroll-row > .btn-outline {
+    width:100%;
+    min-width:0;
+    white-space:normal;
+    text-align:center;
+  }
+  #app-main .bottom-scroll-row > .purchase-import-launcher { grid-column:1 / -1; }
   #app-main .client-card {
     padding:12px 10px 12px 13px !important;
     border-radius:18px !important;

@@ -9,6 +9,7 @@ import MonitorReconcile from '../components/MonitorReconcile.vue'
 import { parseClientCsv, classifyClientCsv } from '../clientCsvImport'
 import { downloadOwnedClientsBackup } from '../clientsBackup'
 import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, changedClientFields, conflictingClientFields } from '../clientIntegrity'
+import { updateOwnedClientAndConfirm } from '../clientSave'
 import { cleanPhone } from '../monitorReconcile'
 
 const store = useMainStore()
@@ -657,9 +658,7 @@ async function saveQuickFlow() {
       const base = client.expiry_date && client.expiry_date > quickDate.value ? client.expiry_date : quickDate.value
       if (quickTotals.value.expiryYears) patch.expiry_date = addYear(base)
     }
-    const { data: savedClient, error: clientError } = await supabase.from('clients')
-      .update(patch).eq('id', client.id).eq('owner_email', user.email).select('id').single()
-    if (clientError || !savedClient) throw new Error(clientError?.message || '未能確認客戶更新結果。')
+    await updateOwnedClientAndConfirm(supabase, client.id, user.email, patch)
     clientSaved = true
 
     if (quickFlow.value === 'trial' && ['no_open_normal', 'no_open_mygift'].includes(quickOutcome.value)) {
@@ -676,12 +675,14 @@ async function saveQuickFlow() {
     quickFlow.value = ''
     alert(opened ? '試堂結果同開卡收入已記錄。' : transactionSaved ? '續卡收入同客戶有效期已更新。' : '試堂結果已記錄。')
   } catch (error) {
-    quickError.value = transactionSaved && !clientSaved
+    quickError.value = error.writeMayHaveSucceeded
+      ? `${transactionSaved ? '收入已寫入；' : ''}${error.message}`
+      : transactionSaved && !clientSaved
       ? `收入已寫入，但客戶資料未能同步：${error.message}。請勿再次按儲存，以免重複入帳；可到「修改客戶資料」修正。`
       : clientSaved ? `客戶結果已儲存，但相關帳目更新未完成：${error.message}。請勿再按儲存，避免重複記錄。`
         : `未能儲存：${error.message}`
-    if (transactionSaved || clientSaved) await store.syncAll()
-    if (transactionSaved || clientSaved) quickSaveLocked.value = true
+    if (transactionSaved || clientSaved || error.writeMayHaveSucceeded) await store.syncAll()
+    if (transactionSaved || clientSaved || error.writeMayHaveSucceeded) quickSaveLocked.value = true
   } finally {
     quickSaving.value = false
   }
@@ -879,9 +880,7 @@ async function handleUpdateClient() {
     const conflicts = conflictingClientFields(originalEditingClient.value, normalizedLatest, patch)
     if (conflicts.length) throw new Error('其他裝置已修改呢位客戶嘅同一欄位；請重新載入後再編輯，避免蓋過新資料。')
 
-    const { data: saved, error: saveError } = await supabase.from('clients')
-      .update(patch).eq('id', draft.id).eq('owner_email', user.email).select('id').single()
-    if (saveError || !saved) throw new Error(saveError?.message || '更新未能確認，請重新載入。')
+    await updateOwnedClientAndConfirm(supabase, draft.id, user.email, patch)
     clientSaved = true
 
     if (trialResultChanged && ['no_open_normal', 'no_open_mygift'].includes(editingTrialResult.value)) {
@@ -901,8 +900,9 @@ async function handleUpdateClient() {
     showEditModal.value = false
     setTimeout(() => alert('✅ 修改已儲存'), 100)
   } catch (error) {
-    if (clientSaved) await store.syncAll()
-    alert(`${clientSaved ? '客戶資料已更新，但相關帳目未完成' : '更新失敗'}：${error.message}。${clientSaved ? '請先核對帳目，唔好重複儲存。' : ''}`)
+    if (clientSaved || error.writeMayHaveSucceeded) await store.syncAll()
+    if (error.writeMayHaveSucceeded) showEditModal.value = false
+    alert(`${clientSaved ? '客戶資料已更新，但相關帳目未完成' : error.writeMayHaveSucceeded ? '更新結果待核對' : '更新失敗'}：${error.message}。${clientSaved ? '請先核對帳目，唔好重複儲存。' : ''}`)
   } finally {
     updatingClient.value = false
   }
