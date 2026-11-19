@@ -76,7 +76,8 @@ export function calculateReport(transactions, period, branch = '全部分店') {
       const noteProfit = String(t.note || '').match(/\[淨利:\s*\$\s*(-?\d+(?:\.\d+)?)\]/)
       const noteMismatch = category === '零售收入' && noteProfit && savedProfit !== null &&
         Math.abs(savedProfit - Number(noteProfit[1])) > 0.51
-      const formulaMismatch = category !== '試堂調整' && savedProfit !== null && savedCost !== null && amount !== null &&
+      const intentionalVipMargin = category === '運動套票' && /VIP點數30點/i.test(String(t.note || '')) && savedProfit === 0
+      const formulaMismatch = category !== '試堂調整' && !intentionalVipMargin && savedProfit !== null && savedCost !== null && amount !== null &&
         Math.abs(savedProfit - (amount - savedCost)) > 0.01
       profitNeedsReview = Boolean(noteMismatch || formulaMismatch)
       if (profitNeedsReview) profitReview++

@@ -61,10 +61,13 @@ test('legacy profit mismatches are flagged without changing saved accounting val
       note: '[淨利: $554] 套裝', created_at: '2026-05-01' },
     { id: 'trial-adjustment', type: 'income', category: '試堂調整', amount: 0, cost: 0, profit: 44.6,
       created_at: '2026-05-01' },
+    { id: 'vip', type: 'income', category: '運動套票', amount: 0, cost: 1155, profit: 0,
+      note: '售出 VIP點數30點', created_at: '2026-05-01' },
     { id: 'historic-date', type: 'expense', category: '其他支出', amount: 1, created_at: '0225-05-01' }
   ], { start: '', end: '' })
   assert.equal(report.profitReview, 1)
   assert.equal(report.dateReview, 1)
   assert.equal(report.rows.find(row => row.id === 'trial-adjustment').profitNeedsReview, false)
+  assert.equal(report.rows.find(row => row.id === 'vip').profitNeedsReview, false)
   assert.equal(report.net, 43.6)
 })

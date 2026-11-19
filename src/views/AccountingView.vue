@@ -418,7 +418,7 @@ async function saveTransaction(continueBackfill = false) {
     ? previousTxn.created_at
     : expForm.value.backfill
       ? `${expForm.value.date}T${expForm.value.historyTime || '12:00'}:00+08:00`
-      : hongKongCheckoutTimestamp(expForm.value.date, now)
+      : hongKongCheckoutTimestamp(expForm.value.date, previousTxn ? new Date(previousTxn.created_at) : now)
   
   // 組合準備上傳的資料，並確保刪掉不需要上傳資料庫的 originalTime 變數
   const updatePayload = { ...data, created_at: finalString }
