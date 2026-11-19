@@ -18,7 +18,7 @@ export default async function handler(request) {
   const supabase = createClient(SUPABASE, PUBLISHABLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const { data: { user }, error: authError } = await supabase.auth.getUser(token)
   if (authError || !user?.id) return json({ error: 'BZ 登入已失效，請重新登入。' }, 401)
-  if (!monitorAccessAllowed(user.id, configuredMonitorUserIds())) {
+  if (!monitorAccessAllowed(user, configuredMonitorUserIds())) {
     return json({ error: '呢個 BZ 帳戶未有對應嘅課程監察資料權限；請由管理員設定獨立資料來源。' }, 403)
   }
 

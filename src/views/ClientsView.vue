@@ -12,10 +12,13 @@ import { downloadOwnedClientsBackup } from '../clientsBackup'
 import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, changedClientFields, conflictingClientFields } from '../clientIntegrity'
 import { updateOwnedClientAndConfirm } from '../clientSave'
 import { cleanPhone } from '../monitorReconcile'
+import { monitorEmailAllowed } from '../../shared/monitor-eligibility.mjs'
 import { groupClientTransactions } from '../clientTimeline'
 import { writeTrialProfitAdjustment } from '../trialProfitLedger'
 
 const store = useMainStore()
+const props = defineProps({ currentUserEmail: { type: String, default: '' } })
+const canViewMonitor = computed(() => monitorEmailAllowed(props.currentUserEmail))
 
 const showAddModal = ref(false)
 const showEditModal = ref(false)
@@ -977,7 +980,7 @@ async function handleImport(e) {
       <div><h2 class="page-title">客戶</h2><p class="subtitle">{{ filteredClients.length }} 位符合條件</p></div>
       <button class="btn-primary bz-client-add" type="button" @click="openAddModal">＋ 新客戶</button>
     </div>
-    <MonitorReconcile @select-client="openActionModal" />
+    <MonitorReconcile v-if="canViewMonitor" @select-client="openActionModal" />
     
     <div class="card search-box">
       <!-- 1. 搜尋列 (減少了上下 padding) -->
