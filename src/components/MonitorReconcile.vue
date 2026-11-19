@@ -288,7 +288,7 @@ function displayTime(value) {
 <template>
   <section class="monitor-card">
     <button class="monitor-toggle" type="button" :aria-expanded="open" @click="open = !open">
-      <span><b>課程監察對照</b><small>查卡友點數 · 發現漏咗嘅客戶 · 避免舊客當新客</small></span>
+      <span><b>課程監察對照</b><small>核對來源客戶 · 發現遺漏 · 避免舊客當新客</small></span>
       <span aria-hidden="true">{{ open ? '收起 ↑' : '開啟 →' }}</span>
     </button>
     <div v-if="open" class="monitor-body">
@@ -320,7 +320,7 @@ function displayTime(value) {
           <div v-if="row.kind==='missing'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || Boolean(adding) || staleReports.some(report => report.branch === row.branch)" @click="addMissing(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : staleReports.some(report => report.branch === row.branch) ? '先更新來源資料' : adding===row.key ? '補全中…' : '備份後補全此客戶' }}</button></div>
           <div v-if="reviewing?.key===row.key" class="review-panel">
             <strong>核對同一位客戶，再揀要更新嘅欄位</strong>
-            <p>來源點數 {{ row.remainingPoints ?? '未提供' }} 只供核對；BZ 暫無點數欄，唔會寫入金額或帳目。</p>
+            <p>來源點數 {{ row.remainingPoints ?? '未提供' }} 只供核對；BZ 客戶檔案唔設點數欄，亦唔會將點數寫入金額或帳目。</p>
             <label>搜尋現有 BZ 客戶<input v-model="targetSearch" type="search" placeholder="姓名或電話" @input="targetId=''; confirmedIdentity=false"></label>
             <div v-if="targetCandidates.length" class="target-list">
               <button v-for="candidate in targetCandidates" :key="candidate.id" type="button" :class="{chosen:targetId===candidate.id}" @click="targetId=candidate.id; confirmedIdentity=false">{{ candidate.name }} · {{ candidate.phone || '未填電話' }} · {{ candidate.branch || '未填分店' }}</button>
