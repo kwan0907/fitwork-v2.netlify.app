@@ -35,3 +35,15 @@ export function trialAdjustmentProfit(client, kind, paidRows = []) {
   }
   return round(target - profit)
 }
+
+export function trialAdjustmentRecord(client, profit, note, user, now = new Date()) {
+  if (!user?.id || !user?.email) throw new Error('登入已失效，未能記錄試堂帳目。')
+  return {
+    user_id: user.id,
+    owner_email: user.email,
+    own_email: user.email,
+    type: 'income', category: '試堂調整', amount: 0, cost: 0, profit, note,
+    client_id: client?.id || null, client_name: client?.name || '', branch: client?.branch || '',
+    created_at: client?.trial_date || now.toISOString()
+  }
+}
