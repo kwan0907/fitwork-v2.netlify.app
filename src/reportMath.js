@@ -90,13 +90,20 @@ export function calculateReport(transactions, period, branch = '全部分店') {
         const unlinkedPaidName = !p.client_id && String(t.client_name || '').trim().toLowerCase() &&
           String(t.client_name || '').trim().toLowerCase() === String(p.client_name || '').trim().toLowerCase()
         const days = (Date.parse(`${hkDay(t.created_at)}T00:00:00Z`) - Date.parse(`${hkDay(p.created_at)}T00:00:00Z`)) / 86400000
-        return (sameClient || unlinkedPaidName) && Number.isFinite(days) && days >= 0 && days <= 60
+        return (sameClient || unlinkedPaidName) && (!t.branch || !p.branch || t.branch === p.branch) &&
+          Number.isFinite(days) && days >= 0 && days <= (sameClient ? 180 : 60)
       }) : []
       if (relatedPaidTrials.length) {
         const expectedTotal = /MyGift/i.test(String(t.note || '')) ? -53.4 : 44.6
+        const correctionTag = relatedPaidTrials.length === 1 ?
+          `[TRIAL_CORRECTION:${t.id}:${relatedPaidTrials[0].id}]` : ''
+        const corrections = correctionTag ? allRows.filter(row => row.category === '試堂利潤更正' &&
+          String(row.note || '').includes(correctionTag)) : []
+        const correctionProfit = corrections.reduce((sum, row) => sum + (money(row.profit) ?? 0), 0)
         trialOverlap = relatedPaidTrials.length !== 1 || savedProfit === null ||
           money(relatedPaidTrials[0].profit) === null ||
-          Math.abs(savedProfit + money(relatedPaidTrials[0].profit) - expectedTotal) > 0.01
+          corrections.length > 1 || corrections.some(row => money(row.profit) === null) ||
+          Math.abs(savedProfit + money(relatedPaidTrials[0].profit) + correctionProfit - expectedTotal) > 0.01
       }
       if (trialOverlap) trialOverlapReview++
       profitNeedsReview = Boolean(noteMismatch || formulaMismatch || trialOverlap)

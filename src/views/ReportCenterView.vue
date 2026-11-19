@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { calculateReport, calculateTrialFunnel, reportPeriod } from '../reportMath'
+import { supabase, isReadOnlyPreview } from '../supabase'
+import { downloadOwnedTransactionsBackup } from '../transactionsBackup'
+import { candidatePaidTrials, planTrialCorrection, trialCorrectionRecord, sameTrialSource } from '../trialCorrection'
 
 const store = useMainStore()
 const periodType = ref('month')
@@ -12,6 +15,18 @@ const selectedCategory = ref('')
 const showReviewOnly = ref(false)
 const showAllRows = ref(false)
 const refreshing = ref(false)
+const correctionReview = ref(null)
+const correctionConfirmed = ref(false)
+const correctionBusy = ref(false)
+const correctionError = ref('')
+const correctionMessage = ref('')
+const correctionCandidates = computed(() => correctionReview.value ?
+  candidatePaidTrials(correctionReview.value, store.transactions) : [])
+const correctionPlan = computed(() => {
+  if (!correctionReview.value || correctionCandidates.value.length !== 1) return null
+  try { return planTrialCorrection(correctionReview.value, correctionCandidates.value[0], store.transactions) }
+  catch { return null }
+})
 const period = computed(() => reportPeriod(periodType.value, new Date(), customStart.value, customEnd.value))
 const validPeriod = computed(() => periodType.value !== 'custom' ||
   Boolean(customStart.value && customEnd.value && customStart.value <= customEnd.value))
@@ -32,6 +47,12 @@ const activeClients = computed(() => store.clients.filter(c => c.status === 'act
 const formatMoney = value => value === null || value === undefined ? '—' :
   new Intl.NumberFormat('zh-HK', { style: 'currency', currency: 'HKD', maximumFractionDigits: 2 }).format(value)
 const categoryLabel = kind => kind === 'income' ? '收入' : kind === 'expense' ? '支出' : '其他'
+const trialTime = value => {
+  const raw = String(value || '')
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return raw || '未填'
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? raw : date.toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong', hour12: false })
+}
 
 async function refresh() {
   if (refreshing.value) return
@@ -40,6 +61,61 @@ async function refresh() {
     await store.syncAll()
     await store.loadAllTransactions()
   } finally { refreshing.value = false }
+}
+
+function openCorrection(row) {
+  correctionReview.value = correctionReview.value?.id === row.id ? null : row
+  correctionConfirmed.value = false
+  correctionError.value = ''
+  correctionMessage.value = ''
+}
+
+async function saveTrialCorrection(row) {
+  if (isReadOnlyPreview || correctionBusy.value || !complete.value || !correctionConfirmed.value) return
+  const paid = correctionCandidates.value[0]
+  const plan = correctionPlan.value
+  if (!paid || !plan) { correctionError.value = '配對資料已變，請重新讀取同核對。'; return }
+  if (!confirm(`已核對 ${row.client_name || '呢位客戶'} 嘅兩筆紀錄屬同一次試堂？\n收費試堂：${trialTime(paid.created_at)}，利潤 HK$${plan.paidProfit.toFixed(2)}\n原調整：${trialTime(row.created_at)}，利潤 HK$${plan.adjustmentProfit.toFixed(2)}\n會先下載全份交易備份，再新增 HK$${plan.correction.toFixed(2)} 更正；原有兩筆交易不改。`)) return
+  correctionBusy.value = true
+  correctionError.value = ''
+  let entry = null
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.id || !user?.email) throw new Error('登入已失效，請重新登入。')
+    const freshRows = await downloadOwnedTransactionsBackup(user)
+    const freshAdjustment = freshRows.find(item => item.id === row.id)
+    const freshPaid = freshRows.find(item => item.id === paid.id)
+    if (!sameTrialSource(row, freshAdjustment) || !sameTrialSource(paid, freshPaid)) {
+      throw new Error('原有交易喺核對期間已變；冇寫入更正，請重新讀取。')
+    }
+    const freshPlan = planTrialCorrection(freshAdjustment, freshPaid, freshRows)
+    entry = await trialCorrectionRecord(freshAdjustment, freshPaid, freshPlan, user)
+    const { data: already, error: existingError } = await supabase.from('transactions')
+      .select('id').eq('id', entry.id).eq('owner_email', user.email).maybeSingle()
+    if (existingError) throw existingError
+    if (already) throw new Error('呢次試堂已有更正紀錄，毋須重複入帳。')
+    const { data: created, error: insertError } = await supabase.from('transactions').insert(entry).select().single()
+    if (insertError) throw insertError
+    const { data: verified, error: verifyError } = await supabase.from('transactions')
+      .select('*').eq('id', entry.id).eq('owner_email', user.email).single()
+    if (verifyError || !verified || Number(verified.profit) !== entry.profit || verified.note !== entry.note) {
+      throw new Error('更正已送出，但未能核實；請重新讀取帳目，勿重複操作。')
+    }
+    if (!store.transactions.some(item => item.id === entry.id)) store.transactions.unshift(verified || created)
+    correctionReview.value = null
+    correctionMessage.value = `已新增 HK$${freshPlan.correction.toFixed(2)} 試堂利潤更正；原有交易保留，備份已下載。`
+  } catch (cause) {
+    if (entry) {
+      const { data: confirmed } = await supabase.from('transactions').select('*').eq('id', entry.id).maybeSingle()
+      if (confirmed && confirmed.note === entry.note && Number(confirmed.profit) === entry.profit) {
+        if (!store.transactions.some(item => item.id === entry.id)) store.transactions.unshift(confirmed)
+        correctionReview.value = null
+        correctionMessage.value = '已核實更正紀錄成功保存；原有交易保留。'
+        return
+      }
+    }
+    correctionError.value = cause?.message || '更正未完成，請重新讀取帳目。'
+  } finally { correctionBusy.value = false }
 }
 
 function exportCsv() {
@@ -170,9 +246,26 @@ function exportCsv() {
         <div class="section-heading"><div><p class="eyebrow">AUDIT TRAIL</p><h2>交易明細</h2></div><span>{{ totalRows }} 筆</span></div>
         <button type="button" class="review-filter" :aria-pressed="showReviewOnly" @click="showReviewOnly = !showReviewOnly; showAllRows = false">{{ showReviewOnly ? '顯示全部紀錄' : '只睇待核對紀錄' }}</button>
         <div v-if="selectedCategory" class="active-filter">已篩選 {{ selectedCategory.split(':').slice(1).join(':') }} <button type="button" @click="selectedCategory=''; showAllRows=false">清除篩選 ×</button></div>
-        <div v-for="row in rowsToShow" :key="row.id" class="ledger-row">
-          <div><b>{{ row.category || '未分類' }} <small v-if="row.profitNeedsReview || row.dateNeedsReview">⚠️ {{ row.trialOverlap ? '試堂利潤可能重複' : '待核對' }}</small></b><span>{{ row.day }} · {{ row.branch || '未填分店' }} · {{ row.client_name || '未記名' }}</span></div>
-          <div class="ledger-amount" :class="row.kind"><b>{{ row.kind === 'expense' ? '−' : '+' }}{{ formatMoney(row.amount) }}</b><small v-if="row.kind === 'income'">交易利潤 {{ formatMoney(row.profit) }}</small><small v-else-if="row.excluded">淨利不重扣</small></div>
+        <p v-if="correctionError" class="report-alert" role="alert">{{ correctionError }}</p>
+        <p v-if="correctionMessage" class="report-alert amber" role="status">{{ correctionMessage }}</p>
+        <div v-for="row in rowsToShow" :key="row.id" class="ledger-entry">
+          <div class="ledger-row">
+            <div><b>{{ row.category || '未分類' }} <small v-if="row.profitNeedsReview || row.dateNeedsReview">⚠️ {{ row.trialOverlap ? '試堂利潤可能重複' : '待核對' }}</small></b><span>{{ row.day }} · {{ row.branch || '未填分店' }} · {{ row.client_name || '未記名' }}</span><button v-if="row.trialOverlap && complete" class="correction-open" type="button" @click="openCorrection(row)">{{ correctionReview?.id === row.id ? '收起核對' : '核對試堂利潤' }}</button></div>
+            <div class="ledger-amount" :class="row.kind"><b>{{ row.kind === 'expense' ? '−' : '+' }}{{ formatMoney(row.amount) }}</b><small v-if="row.kind === 'income'">交易利潤 {{ formatMoney(row.profit) }}</small><small v-else-if="row.excluded">淨利不重扣</small></div>
+          </div>
+          <div v-if="correctionReview?.id === row.id" class="correction-panel">
+            <strong>核對同一次試堂</strong>
+            <p>只有你確認兩筆屬同一次試堂，先會新增更正紀錄；原有交易保留。</p>
+            <p v-if="correctionCandidates.length !== 1">找到 {{ correctionCandidates.length }} 筆可能相關收費紀錄，未能唯一配對；請先人手核對帳目。</p>
+            <template v-else-if="correctionPlan">
+              <p>收費：{{ trialTime(correctionCandidates[0].created_at) }} · {{ correctionCandidates[0].branch || '分店未填' }} · 收入 {{ formatMoney(correctionCandidates[0].amount) }} · 利潤 {{ formatMoney(correctionPlan.paidProfit) }}</p>
+              <p>原調整：{{ trialTime(row.created_at) }} · 利潤 {{ formatMoney(correctionPlan.adjustmentProfit) }}。目前合計 {{ formatMoney(correctionPlan.currentTotal) }}；目標 {{ formatMoney(correctionPlan.target) }}；需補 {{ formatMoney(correctionPlan.correction) }}。</p>
+              <p v-if="!correctionCandidates[0].branch">原收費冇分店，更正會跟原收費列作「未填分店」；請同時核對原收費分店。</p>
+              <label><input v-model="correctionConfirmed" type="checkbox">我已核對，兩筆紀錄屬同一次試堂</label>
+              <button type="button" :disabled="isReadOnlyPreview || !correctionConfirmed || correctionBusy" @click="saveTrialCorrection(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : correctionBusy ? '備份及核實中…' : '下載備份並新增更正' }}</button>
+            </template>
+            <p v-else>現有資料未能安全計算更正，請先核對收費、成本同原調整。</p>
+          </div>
         </div>
         <p v-if="!totalRows" class="empty-note">{{ showReviewOnly ? '呢個期間冇待核對紀錄。' : '呢個期間未有交易紀錄。' }}</p>
         <button v-if="!showAllRows && totalRows > 12" class="show-more" type="button" @click="showAllRows=true">顯示其餘 {{ totalRows - 12 }} 筆</button>
@@ -187,4 +280,5 @@ function exportCsv() {
 .review-filter{margin:-3px 0 11px;padding:8px 11px;border:1px solid #dfcdbb;border-radius:11px;background:#fbf2e8;color:#986247;font-size:12px;font-weight:900}
 @media(max-width:600px){.bz-report{padding:13px 13px 115px}.report-hero{padding:18px;border-radius:24px}.report-hero h1{margin-bottom:4px}.report-hero p:not(.eyebrow){margin-bottom:14px}.report-filters select,.custom-dates input{padding:9px 12px}.hero-actions{align-items:flex-start;flex-direction:column;margin-top:10px}.hero-actions>span{display:none}.hero-actions>div{width:100%}.hero-actions button{flex:1}.hero-metric{display:block;margin-top:15px;padding:12px 17px}.hero-metric h2{margin-bottom:3px}.hero-metric p:not(.eyebrow){display:none}.hero-metric strong{display:block;margin-top:3px}.metric-grid{grid-template-columns:1fr 1fr;gap:8px}.metric-grid article{padding:13px}.metric-grid article:first-child{grid-column:1/-1}.metric-grid strong{margin:7px 0;font-size:23px}.report-columns{grid-template-columns:1fr;gap:0}.report-card{padding:17px}.funnel-grid{grid-template-columns:1fr 1fr;gap:8px}.ledger-row span{white-space:normal}.ledger-amount{max-width:45%;white-space:normal}}
 @media(max-width:340px){.report-filters select,.custom-dates input{font-size:13px;padding:10px 7px}.metric-grid strong{font-size:20px}.section-heading h2{font-size:18px}}
+.ledger-entry{border-top:1px solid #f0e7de}.ledger-entry .ledger-row{border-top:0}.correction-open{display:block;margin-top:7px;border:0;background:none;padding:0;color:#ae6745;font-size:12px;font-weight:800;text-decoration:underline}.correction-panel{display:grid;gap:9px;margin:0 0 14px;padding:14px;border:1px solid #e7d5c5;border-radius:14px;background:#fff9f2;font-size:12px;line-height:1.5}.correction-panel p{margin:0}.correction-panel label{display:flex;gap:7px;align-items:flex-start;font-weight:800}.correction-panel input{accent-color:#b86e4a}.correction-panel>button{justify-self:start;border:0;border-radius:10px;background:#b86e4a;color:#fff;padding:10px 14px;font:inherit;font-weight:800}.correction-panel>button:disabled{opacity:.55}
 </style>
