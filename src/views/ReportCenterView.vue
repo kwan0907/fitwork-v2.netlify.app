@@ -58,12 +58,12 @@ function exportCsv() {
     ['現金支出總額', report.value.cashExpense], ['庫存採購及已計提舖頭款', report.value.excludedExpense],
     ['收入筆數', report.value.incomeCount], ['支出筆數', report.value.expenseCount],
     ['缺少利潤資料', report.value.missingProfit], ['未填成本欄位', report.value.missingCost],
-    ['利潤資料待核對', report.value.profitReview], ['日期待核對', report.value.dateReview],
+    ['利潤資料待核對', report.value.profitReview], ['試堂收費與調整可能重複', report.value.trialOverlapReview], ['日期待核對', report.value.dateReview],
     [], ['日期（香港）', '類型', '分類', '分店', '客戶', '金額', '交易利潤', '核對狀態', '備註']
   ]
   const details = report.value.rows.map(t => [t.day, categoryLabel(t.kind), t.category || '未分類',
     t.branch || '', t.client_name || '', t.amount, t.profit,
-    [t.profitNeedsReview ? '利潤' : '', t.dateNeedsReview ? '日期' : ''].filter(Boolean).join('、'), t.note || ''])
+    [t.trialOverlap ? '試堂利潤可能重複' : t.profitNeedsReview ? '利潤' : '', t.dateNeedsReview ? '日期' : ''].filter(Boolean).join('、'), t.note || ''])
   const csv = '\ufeff' + cells([...summary, ...details])
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const link = document.createElement('a')
@@ -105,7 +105,7 @@ function exportCsv() {
     <div v-if="!validPeriod" class="report-alert">請選擇有效嘅開始同結束日期。</div>
     <template v-else>
       <section class="hero-metric" aria-labelledby="net-heading">
-        <div><p class="eyebrow">{{ period.label }} · {{ branch }}</p><h2 id="net-heading">帳面淨利</h2>
+        <div><p class="eyebrow">{{ period.label }} · {{ branch }}</p><h2 id="net-heading">{{ report.profitReview || report.missingCost || report.missingProfit || report.dateReview || !complete ? '帳面淨利（暫算）' : '帳面淨利' }}</h2>
           <p>按已保存交易計算；不將庫存採購或已計入銷售成本嘅舖頭付款重複扣減。</p></div>
         <strong>{{ formatMoney(report.net) }}</strong>
         <small v-if="!complete">資料未齊 · 暫列</small>
@@ -121,7 +121,8 @@ function exportCsv() {
         <strong>有資料需要核對</strong>
         <span v-if="report.missingProfit">{{ report.missingProfit }} 筆收入冇利潤亦冇成本，淨利暫不顯示。</span>
         <span v-if="report.missingCost">{{ report.missingCost }} 筆收入未填成本欄位；已記錄嘅利潤照計，但請核對。</span>
-        <span v-if="report.profitReview">{{ report.profitReview }} 筆收入嘅已存利潤同成本或結帳備註不符；以下淨利只係按舊帳暫算，未完成對帳。</span>
+        <span v-if="report.profitReview">{{ report.profitReview }} 筆收入需要核對；以下淨利只係按已存帳目暫算，未完成對帳。</span>
+        <span v-if="report.trialOverlapReview">其中 {{ report.trialOverlapReview }} 筆未開卡調整連同較早嘅收費試堂利潤，未能對上整次試堂總利潤。普通試堂目標 HK$44.60；請先核對，系統不會暗中改舊帳。</span>
         <span v-if="report.dateReview">{{ report.dateReview }} 筆交易日期異常，請核對原始紀錄。</span>
       </div>
 
@@ -170,7 +171,7 @@ function exportCsv() {
         <button type="button" class="review-filter" :aria-pressed="showReviewOnly" @click="showReviewOnly = !showReviewOnly; showAllRows = false">{{ showReviewOnly ? '顯示全部紀錄' : '只睇待核對紀錄' }}</button>
         <div v-if="selectedCategory" class="active-filter">已篩選 {{ selectedCategory.split(':').slice(1).join(':') }} <button type="button" @click="selectedCategory=''; showAllRows=false">清除篩選 ×</button></div>
         <div v-for="row in rowsToShow" :key="row.id" class="ledger-row">
-          <div><b>{{ row.category || '未分類' }} <small v-if="row.profitNeedsReview || row.dateNeedsReview">⚠️ 待核對</small></b><span>{{ row.day }} · {{ row.branch || '未填分店' }} · {{ row.client_name || '未記名' }}</span></div>
+          <div><b>{{ row.category || '未分類' }} <small v-if="row.profitNeedsReview || row.dateNeedsReview">⚠️ {{ row.trialOverlap ? '試堂利潤可能重複' : '待核對' }}</small></b><span>{{ row.day }} · {{ row.branch || '未填分店' }} · {{ row.client_name || '未記名' }}</span></div>
           <div class="ledger-amount" :class="row.kind"><b>{{ row.kind === 'expense' ? '−' : '+' }}{{ formatMoney(row.amount) }}</b><small v-if="row.kind === 'income'">交易利潤 {{ formatMoney(row.profit) }}</small><small v-else-if="row.excluded">淨利不重扣</small></div>
         </div>
         <p v-if="!totalRows" class="empty-note">{{ showReviewOnly ? '呢個期間冇待核對紀錄。' : '呢個期間未有交易紀錄。' }}</p>

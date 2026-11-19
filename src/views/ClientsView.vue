@@ -13,6 +13,7 @@ import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, cha
 import { updateOwnedClientAndConfirm } from '../clientSave'
 import { cleanPhone } from '../monitorReconcile'
 import { groupClientTransactions } from '../clientTimeline'
+import { writeTrialProfitAdjustment } from '../trialProfitLedger'
 
 const store = useMainStore()
 
@@ -60,8 +61,6 @@ const activeTab = ref('basic') // 🚀 新增：用來控制目前顯示哪一�
 const editingTrialResult = ref('')
 const editingOriginalTrialResult = ref('')
 const TRIAL_RESULT_MARK = '[TRIAL_RESULT]'
-const NORMAL_TRIAL_PROFIT = 44.6
-const MYGIFT_TRIAL_PROFIT = -53.4
 
 function getTrialResultValue(client) {
   const matches = [...String(client?.remark || '').matchAll(/\[TRIAL_RESULT\]\|([^|\n]+)\|([^|\n]+)/g)]
@@ -77,37 +76,7 @@ function replaceTrialResultMarker(remark, outcome) {
 
 async function syncTrialProfitForClient(client, outcome) {
   if (!['no_open_normal', 'no_open_mygift'].includes(outcome)) return
-  const { data: { session } } = await supabase.auth.getSession()
-  const ownerEmail = session?.user?.email
-  if (!ownerEmail) throw new Error('登入已失效，未能記錄試堂帳目。')
-
-  const profit = outcome === 'no_open_mygift' ? MYGIFT_TRIAL_PROFIT : NORMAL_TRIAL_PROFIT
-  const tag = '[TRIAL_PROFIT:' + String(client?.id || 'unknown') + ':' + String(client?.trial_date || '').slice(0,16) + ']'
-  const note = tag + ' ' + (outcome === 'no_open_mygift' ? 'MyGift 試堂未開卡' : '普通試堂未開卡')
-  const existing = store.transactions.find(t => String(t?.note || '').includes(tag))
-
-  if (existing) {
-    const { error } = await supabase.from('transactions').update({ profit, note, client_name: client?.name || '', branch: client?.branch || '' }).eq('id', existing.id)
-    if (error) throw error
-    Object.assign(existing, { profit, note, client_name: client?.name || '', branch: client?.branch || '' })
-    return
-  }
-
-  const row = {
-    owner_email: ownerEmail,
-    type: 'income',
-    category: '試堂調整',
-    amount: 0,
-    profit,
-    note,
-    client_id: client?.id || null,
-    client_name: client?.name || '',
-    branch: client?.branch || '',
-    created_at: client?.trial_date || new Date().toISOString()
-  }
-  const { data, error } = await supabase.from('transactions').insert(row).select().single()
-  if (error) throw error
-  if (data) store.transactions.unshift(data)
+  await writeTrialProfitAdjustment(store, client, outcome === 'no_open_mygift' ? 'mygift' : 'normal', { updateExisting: true })
 }
 
 const getLocalHKDate = () => {

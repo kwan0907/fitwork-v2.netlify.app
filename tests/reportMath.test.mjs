@@ -71,3 +71,17 @@ test('legacy profit mismatches are flagged without changing saved accounting val
   assert.equal(report.rows.find(row => row.id === 'vip').profitNeedsReview, false)
   assert.equal(report.net, 43.6)
 })
+
+test('trial adjustment with an earlier fee is marked as possible double counting', () => {
+  const report = calculateReport([
+    { id: 'paid', type: 'income', category: '試堂', client_name: 'Susana', amount: 98, cost: 52, profit: 46,
+      created_at: '2026-11-06T10:00:00+08:00' },
+    { id: 'adjustment', type: 'income', category: '試堂調整', client_name: 'Susana', client_id: 'client-1',
+      amount: 0, cost: 0, profit: 44.6, note: '[TRIAL_PROFIT:client-1:2026-11-19T02:30] 普通試堂未開卡',
+      created_at: '2026-11-19T02:30:00+08:00' }
+  ], { start: '2026-11-01', end: '2026-11-30' })
+  assert.equal(report.trialOverlapReview, 1)
+  assert.equal(report.profitReview, 1)
+  assert.equal(report.net, 90.6) // retained only as the uncorrected ledger total
+  assert.equal(report.rows.find(row => row.id === 'adjustment').trialOverlap, true)
+})
