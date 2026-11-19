@@ -6,11 +6,13 @@ import { DEFAULT_MOVEMENT_PACKAGES, loadMovementPackages, calculateMovementPacka
 import { sampleClassDate, sampleClasses } from '../demoClassSchedule'
 import { sameCourse, findAvailableCourse } from '../classSchedule'
 import MonitorReconcile from '../components/MonitorReconcile.vue'
+import ClientTimeline from '../components/ClientTimeline.vue'
 import { parseClientCsv, classifyClientCsv } from '../clientCsvImport'
 import { downloadOwnedClientsBackup } from '../clientsBackup'
 import { findPotentialDuplicateClient, firstOpeningJoinDate, quickSaleFlags, changedClientFields, conflictingClientFields } from '../clientIntegrity'
 import { updateOwnedClientAndConfirm } from '../clientSave'
 import { cleanPhone } from '../monitorReconcile'
+import { groupClientTransactions } from '../clientTimeline'
 
 const store = useMainStore()
 
@@ -31,13 +33,19 @@ function consumeNavigation() {
     }
   }
   if (store.pendingQuickEntry?.kind === 'client') {
+    const seed = store.pendingQuickEntry.seed
     store.pendingQuickEntry = null
-    openAddModal()
+    openAddModal(seed)
   }
   if (store.pendingSearch?.kind === 'client') {
-    clientSearch.value = store.pendingSearch.query || ''
+    const target = store.pendingSearch
+    clientSearch.value = target.query || ''
     filterStatus.value = ''
+    filterBranch.value = ''
+    filterMyGiftExpiring.value = false
     store.pendingSearch = null
+    const client = store.clients.find(row => String(row.id) === String(target.id))
+    if (client) openActionModal(client)
   }
 }
 onMounted(consumeNavigation)
@@ -340,28 +348,25 @@ const filteredReferrerOptions = computed(() => {
   })
 })
 
-const getClientPackageStats = (clientName) => {
-  if (!clientName) return { pkg10: 0, pkg35: 0, other: 0 }
+const clientTransactionGroups = computed(() => groupClientTransactions(store.clients, store.transactions))
+const getClientPackageStats = (client) => {
+  if (!client?.id) return { pkg10: 0, pkg35: 0, other: 0, tentative: 0 }
   let pkg10 = 0, pkg35 = 0, other = 0
-  const nameLower = clientName.trim().toLowerCase();
+  const group = clientTransactionGroups.value.get(String(client.id)) || { linked: [], possible: [] }
   
-  store.transactions.forEach(t => {
-    const tClientName = (t.client_name || '').trim().toLowerCase();
-    const tNote = (t.note || '').trim().toLowerCase();
-    const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
-    
-    if (isMatch && t.type === 'income') {
+  group.linked.forEach(t => {
+    if (t.type === 'income') {
       const noteStr = t.note || ''
       if (t.amount === 850 || noteStr.includes('10點') || noteStr.includes('pkg_10')) {
         pkg10++
       } else if (t.amount === 2550 || t.amount === 2800 || noteStr.includes('35點') || noteStr.includes('pkg_35')) {
         pkg35++
-      } else if (t.category === '運動' || t.category === '運動套票' || noteStr.includes('體驗卡') || noteStr.includes('堂')) {
+      } else if (t.category === '運動' || t.category === '運動套票' || noteStr.includes('體驗卡')) {
         other++
       }
     }
   })
-  return { pkg10, pkg35, other }
+  return { pkg10, pkg35, other, tentative: group.possible.length }
 }
 
 const parseLocal = (dateStr) => {
@@ -386,14 +391,14 @@ const toLocalDatetimeString = (dateStr) => {
 }
 
 const getMyGiftStats = (client) => {
-  if (!client || !client.name) return { available: 0, closestExpiry: null };
+  if (!client || !client.name) return { available: 0, closestExpiry: null, tentative: 0 };
   
   let earnedTickets = [];
   let consumedCount = 0;
   
-  store.transactions.forEach(t => {
-    const isMatch = t.client_name === client.name || (t.note && t.note.includes(client.name));
-    if (!isMatch) return;
+  const group = clientTransactionGroups.value.get(String(client.id)) || { linked: [], possible: [] }
+  const tentative = group.possible.length
+  group.linked.forEach(t => {
 
     if (t.category === 'MyGift消耗') {
       consumedCount++;
@@ -427,65 +432,16 @@ const getMyGiftStats = (client) => {
     return expDay >= todayObj;
   });
   
-  if (validTickets.length === 0) return { available: 0, closestExpiry: null };
+  if (validTickets.length === 0) return { available: 0, closestExpiry: null, tentative };
   
   const closest = validTickets[0];
   const cYMD = `${closest.getFullYear()}-${String(closest.getMonth()+1).padStart(2,'0')}-${String(closest.getDate()).padStart(2,'0')}`;
-  return { available: validTickets.length, closestExpiry: cYMD };
+  return { available: validTickets.length, closestExpiry: cYMD, tentative };
 }
 
-// 🟢 新增：智能尋找該客戶最早購買套票/運動的日期 (忽略大小寫與空格)
-const getEarliestTxnDate = (clientName) => {
-  if (!clientName) return null;
-  let earliest = null;
-  const nameLower = clientName.trim().toLowerCase();
-  
-  store.transactions.forEach(t => {
-    const tClientName = (t.client_name || '').trim().toLowerCase();
-    const tNote = (t.note || '').trim().toLowerCase();
-    const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
-    
-    if (isMatch && t.type === 'income' && (t.category === '運動套票' || t.category === '運動' || t.category === '試堂')) {
-      const d = String(t.created_at).slice(0, 10);
-      if (!earliest || d < earliest) earliest = d;
-    }
-  });
-  return earliest;
-}
-
-// 🟢 替換原本的 filteredClients
 const filteredClients = computed(() => {
-  // 1️⃣ 智能修復：遍歷所有客戶，校正加入日期與狀態
-  let list = store.clients.map(c => {
-    let fixedClient = { ...c }
-    
-    // 🚀 終極防彈裝甲：無論是空值、大寫、還是多咗空格，全部強制轉做標準小寫！
-    fixedClient.status = String(fixedClient.status || 'active').trim().toLowerCase()
-
-    let earliest = getEarliestTxnDate(c.name)
-    
-    if (earliest) {
-        if (!fixedClient.join_date || fixedClient.join_date > earliest) {
-            fixedClient.join_date = earliest
-        }
-
-        const nameLower = c.name.trim().toLowerCase();
-        const hasRealPackage = store.transactions.some(t => {
-            const tClientName = (t.client_name || '').trim().toLowerCase();
-            const tNote = (t.note || '').trim().toLowerCase();
-            const isMatch = (tClientName === nameLower) || tNote.includes(nameLower);
-            return isMatch && t.type === 'income' && (t.category === '運動套票' || t.category === '運動');
-        });
-
-        if (hasRealPackage && (fixedClient.status === 'prospect' || fixedClient.status === 'absent')) {
-            fixedClient.status = 'active'
-        }
-    }
-    return fixedClient
-  })
-  
-
-  // 2️⃣ 接下來走原本的搜尋與過濾邏輯
+  // Display the saved profile as-is; name-only transactions cannot silently change a client's join date or status.
+  let list = store.clients.map(c => ({ ...c, status: String(c.status || 'active').trim().toLowerCase() }))
   const rawQ = clientSearch.value.toLowerCase()
   const q = rawQ.replace(/\s+/g, '') // 🚀 搜尋字串去除空格
   if (q) {
@@ -567,6 +523,13 @@ const quickNeedsPackage = computed(() => quickFlow.value === 'renewal' || quickO
 const quickTotals = computed(() => {
   return quickPackages.value[quickPackage.value] || { label: '未有可用套票', amount: 0, cost: 0, profit: 0 }
 })
+const quickReview = computed(() => {
+  if (!quickNeedsPackage.value || !quickClient.value || !quickDate.value) return ''
+  const base = quickClient.value.expiry_date && quickClient.value.expiry_date > quickDate.value
+    ? quickClient.value.expiry_date : quickDate.value
+  const expiry = quickTotals.value.expiryYears ? addYear(base) : (quickClient.value.expiry_date || '不變')
+  return `儲存後：${quickClient.value.name} 會列為有效客戶；套票到期日 ${expiry}。請先核對收款日期同金額。`
+})
 
 async function openQuickFlow(kind) {
   quickClient.value = selectedClientForAction.value
@@ -581,7 +544,9 @@ async function openQuickFlow(kind) {
   quickSaveLocked.value = false
   showActionModal.value = false
   try {
-    const rows = isReadOnlyPreview && new URLSearchParams(window.location.search).has('demo')
+    const params = new URLSearchParams(window.location.search)
+    const localDemo = import.meta.env.DEV && params.has('bz-preview')
+    const rows = (isReadOnlyPreview && params.has('demo')) || localDemo
       ? DEFAULT_MOVEMENT_PACKAGES : await loadMovementPackages({ ensureDefaults: false })
     quickPackageRows.value = rows.length ? rows : DEFAULT_MOVEMENT_PACKAGES
   } catch (error) {
@@ -665,7 +630,7 @@ async function saveQuickFlow() {
       await syncTrialProfitForClient({ ...client, ...patch }, quickOutcome.value)
     }
     if (quickFlow.value === 'trial' && quickOutcome.value === 'no_show') {
-      const trialTxn = store.transactions.find(t => t.client_name === client.name && t.category === '試堂' && t.amount === 98 && Number(t.cost) > 0)
+      const trialTxn = store.transactions.find(t => String(t.client_id) === String(client.id) && t.category === '試堂' && Number(t.amount) === 98 && Number(t.cost) > 0)
       if (trialTxn) {
         const { error: trialError } = await supabase.from('transactions').update({ cost: 0, profit: 98 }).eq('id', trialTxn.id)
         if (trialError) throw trialError
@@ -689,7 +654,7 @@ async function saveQuickFlow() {
 }
 
 function openActionModal(client) {
-  selectedClientForAction.value = client
+  selectedClientForAction.value = store.clients.find(row => String(row.id) === String(client?.id)) || client
   showActionModal.value = true
 }
 
@@ -710,8 +675,11 @@ function handleActionRetail() {
   store.view = 'retail' 
 }
 
-function openAddModal() {
+function openAddModal(seed = '') {
     newClient.value = { ...defaultNewClient, branch: savedBranch(), handled_by: store.currentUser || 'kwan' }
+    const text = typeof seed === 'string' ? seed.trim().slice(0, 80) : ''
+    if (/^[+()\d\s-]{4,20}$/.test(text)) newClient.value.phone = text.replace(/\D/g, '')
+    else if (text && !/[\r\n]/.test(text)) newClient.value.name = text
     consumeMyGift.value = false 
     autoChargeTrial.value = false // 預設不勾選
     referrerSearch.value = ''
@@ -1111,12 +1079,13 @@ async function handleImport(e) {
 
           <div class="c-packages" v-if="c.status !== 'prospect' && c.status !== 'absent'">
             🎟️ 買卡: 
-            <span class="pkg-tag t-10" v-if="getClientPackageStats(c.name).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg10 }}</b></span>
-            <span class="pkg-tag t-35" v-if="getClientPackageStats(c.name).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).pkg35 }}</b></span>
+            <span class="pkg-tag t-10" v-if="getClientPackageStats(c).pkg10 > 0">10點 <b style="font-size:12px;">x{{ getClientPackageStats(c).pkg10 }}</b></span>
+            <span class="pkg-tag t-35" v-if="getClientPackageStats(c).pkg35 > 0">35點 <b style="font-size:12px;">x{{ getClientPackageStats(c).pkg35 }}</b></span>
             
-            <span class="pkg-tag" style="background: #0ea5e9;" v-if="getClientPackageStats(c.name).other > 0">其他套票 <b style="font-size:12px;">x{{ getClientPackageStats(c.name).other }}</b></span>
+            <span class="pkg-tag" style="background: #8d9161;" v-if="getClientPackageStats(c).other > 0">其他套票 <b style="font-size:12px;">x{{ getClientPackageStats(c).other }}</b></span>
             
-            <span class="pkg-zero" v-if="getClientPackageStats(c.name).pkg10 === 0 && getClientPackageStats(c.name).pkg35 === 0 && getClientPackageStats(c.name).other === 0">尚未買卡</span>
+            <span class="pkg-zero" v-if="getClientPackageStats(c).pkg10 === 0 && getClientPackageStats(c).pkg35 === 0 && getClientPackageStats(c).other === 0">{{ getClientPackageStats(c).tentative ? '未有已連結買卡紀錄' : '尚未買卡' }}</span>
+            <span v-if="getClientPackageStats(c).tentative || getMyGiftStats(c).tentative" class="bz-client-possible">同名舊帳待核對</span>
             
             <span class="pkg-tag mygift-tag" v-if="getMyGiftStats(c).available > 0">
               🎁 MyGift: {{ getMyGiftStats(c).available }}張 
@@ -1309,6 +1278,7 @@ async function handleImport(e) {
             <label v-if="quickFlow==='trial'" class="bz-check-row"><input v-model="quickApplyTrialDiscount" type="checkbox">已收 $98 試堂費，今次開卡扣返 $98</label>
             <div class="grid-2"><div class="f-item"><label>收款日期</label><input v-model="quickDate" type="date" class="modern-date"></div><div class="f-item"><label>處理人</label><input v-model="quickStaff" class="modern-inp" placeholder="處理人"></div></div>
             <div class="bz-flow-total"><span>{{ quickTotals.label }} · {{ quickClient?.branch }}</span><strong>${{ quickTotals.amount }}</strong><small>成本 ${{ quickTotals.cost }} · 利潤 ${{ quickTotals.profit }}</small></div>
+            <p class="bz-quick-review">{{ quickReview }}</p>
           </template>
           <p v-if="quickError" class="bz-flow-error" role="alert">{{ quickError }}</p>
           <p v-if="isReadOnlyPreview" class="bz-flow-preview">預覽版可以查看流程；正式版先可以儲存。</p>
@@ -1351,6 +1321,7 @@ async function handleImport(e) {
             </div>
           </button>
         </div>
+        <ClientTimeline :client="selectedClientForAction" :clients="store.clients" :transactions="store.transactions" :incomplete="store.hasMoreTxn || store.isFetchingMore || Boolean(store.transactionsLoadError)" />
       </div>
     </div>
 
@@ -1470,7 +1441,8 @@ async function handleImport(e) {
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 
-.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 0; }
+.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 0; max-height:calc(100dvh - 36px - env(safe-area-inset-bottom)); overflow-y:auto; box-sizing:border-box; }
+.bz-client-possible { display:inline-block; padding:4px 7px; border-radius:8px; background:#fbf1dc; color:#8b642f; font-size:11px; font-weight:800; }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .action-big-btn { display: flex; align-items: center; gap: 15px; width: 100%; padding: 18px; border-radius: 20px; border: none; cursor: pointer; transition: 0.2s all; background: #f8fafc; text-align: left; }
 .action-big-btn:active { transform: scale(0.96); }

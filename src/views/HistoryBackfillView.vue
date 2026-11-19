@@ -22,6 +22,7 @@ const backupMessage = ref('')
 const selectedRows = computed(() => review.value?.rows.filter(row => row.selected && row.duplicate !== 'exact') || [])
 const exactCount = computed(() => review.value?.rows.filter(row => row.duplicate === 'exact').length || 0)
 const possibleCount = computed(() => review.value?.rows.filter(row => row.duplicate === 'possible').length || 0)
+const missingCostCount = computed(() => selectedRows.value.filter(row => row.type === 'income' && row.cost === null).length)
 
 function singleEntry() {
   if (!normalizeHistoryDate(singleDate.value) || singleDate.value > today) {
@@ -127,7 +128,8 @@ async function saveSelected() {
       return
     }
     const possible = selected.filter(row => row.duplicate === 'possible').length
-    if (!confirm(`準備新增 ${selected.length} 筆舊收支紀錄${possible ? `，當中 ${possible} 筆同日同額需要你再核對` : ''}。\n\n只會新增交易，不會修改客戶或庫存。確認繼續？`)) {
+    const withoutCost = selected.filter(row => row.type === 'income' && row.cost === null).length
+    if (!confirm(`準備新增 ${selected.length} 筆舊收支紀錄${possible ? `，當中 ${possible} 筆同日同額需要你再核對` : ''}。${withoutCost ? `\n${withoutCost} 筆收入未填成本，利潤會標為待核對。` : ''}\n\n只會新增交易，不會修改客戶或庫存。確認繼續？`)) {
       message.value = '已取消匯入，資料未有改動。'
       return
     }
@@ -186,10 +188,11 @@ async function backup() {
       <div v-if="review" class="bz-history-review">
         <h2>3. 睇清楚先儲存</h2>
         <p class="bz-history-summary">讀到 {{ review.rows.length }} 筆 · 可新增 {{ selectedRows.length }} 筆 · 重複 {{ exactCount }} 筆 · 要核對 {{ possibleCount }} 筆</p>
+        <p v-if="missingCostCount" class="bz-history-cost-note" role="status">{{ missingCostCount }} 筆選中收入未填成本。會保留收入金額，利潤顯示「待核對」；唔會當成零成本。</p>
         <div v-if="review.errors.length" class="bz-history-errors" role="alert"><strong>{{ review.errors.length }} 行未能讀取，唔會匯入：</strong><span v-for="error in review.errors.slice(0, 10)" :key="error.line">第 {{ error.line }} 行：{{ error.reason }}</span><small v-if="review.errors.length>10">仲有 {{ review.errors.length-10 }} 行；請分批修正。</small></div>
         <div class="bz-history-rows"><label v-for="row in review.rows" :key="row.id" class="bz-history-row" :class="row.duplicate">
           <input v-model="row.selected" type="checkbox" :disabled="row.duplicate==='exact'">
-          <span><strong>{{ row.date }} · {{ row.type==='income'?'收入':'支出' }} HK$ {{ row.amount }}</strong><small>{{ row.category }} · {{ row.client_name || '無客戶' }} · {{ row.branch }}</small><em>{{ row.duplicate==='exact'?'已有相同紀錄，已排除':row.duplicate==='possible'?'同日同額，請核對後先勾選':'可新增' }}</em></span>
+          <span><strong>{{ row.date }} · {{ row.type==='income'?'收入':'支出' }} HK$ {{ row.amount }}</strong><small>{{ row.category }} · {{ row.client_name || '無客戶' }} · {{ row.branch }}{{ row.type==='income' && row.cost===null ? ' · 成本未填' : '' }}</small><em>{{ row.duplicate==='exact'?'已有相同紀錄，已排除':row.duplicate==='possible'?'同日同額，請核對後先勾選':'可新增' }}</em></span>
         </label></div>
         <button class="bz-history-primary" type="button" :disabled="busy || isReadOnlyPreview || !selectedRows.length || review.errors.length>0" @click="saveSelected">{{ isReadOnlyPreview ? '預覽版只供查看，正式版先可儲存' : `確認新增 ${selectedRows.length} 筆` }}</button>
         <p v-if="review.errors.length" class="bz-history-hint">請先修正錯誤行，再按「檢查資料」；系統唔會靜靜漏掉嗰啲紀錄。</p>
@@ -212,6 +215,7 @@ async function backup() {
 .bz-history-primary { width:100%; min-height:48px; border:0; border-radius:13px; background:var(--p); color:white; font-size:15px; font-weight:800; }.bz-history-primary:disabled { opacity:.55; }.bz-history-primary span { margin-left:5px; }
 .bz-history-file-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }.bz-history-file-actions button,.bz-history-file-actions label { min-height:43px; display:grid; place-items:center; margin:0; border:1px solid #d6baa7; border-radius:11px; background:#f8ece2; color:var(--pd); font-size:12px; font-weight:800; text-align:center; }.bz-history-file-actions input { display:none; }.bz-history-defaults { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .bz-history-review { margin-top:22px; padding-top:18px; border-top:1px solid var(--border); }.bz-history-summary { padding:10px 12px; border-radius:11px; background:#f5eee7; font-weight:700; }.bz-history-errors { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; padding:12px; border-radius:11px; background:#fff0e9; color:#a54731; font-size:12px; }.bz-history-rows { max-height:360px; overflow:auto; margin:12px 0; border:1px solid var(--border); border-radius:12px; }.bz-history-card .bz-history-row { display:flex; flex-direction:row; align-items:flex-start; gap:10px; margin:0; padding:11px; border-bottom:1px solid var(--border); }.bz-history-row:last-child { border:0; }.bz-history-row input { width:18px; height:18px; flex:none; accent-color:var(--p); }.bz-history-row > span { display:flex; flex-direction:column; gap:3px; min-width:0; }.bz-history-row strong { color:var(--t); font-size:13px; }.bz-history-row small { color:var(--t3); font-size:11px; }.bz-history-row em { color:var(--g); font-size:11px; font-style:normal; }.bz-history-row.exact { background:#fff1ed; }.bz-history-row.exact em { color:#a54731; }.bz-history-row.possible { background:#fff9e8; }.bz-history-row.possible em { color:#9a692c; }.bz-history-hint { margin:9px 0 0!important; }
+.bz-history-card .bz-history-cost-note { margin:0 0 12px; padding:10px 12px; border:1px solid #ead8ae; border-radius:11px; background:#fbf3e1; color:#735632; font-size:12px; font-weight:700; }
 .bz-history-message { margin:12px 0; padding:12px; border:1px solid #e5c6ae; border-radius:12px; background:#fff4ea; color:var(--pd); font-size:12px; line-height:1.5; }.bz-history-next,.bz-history-backup { margin-top:13px; }.bz-history-next-actions { display:flex; gap:8px; flex-wrap:wrap; }.bz-history-next button,.bz-history-backup button { min-height:40px; padding:0 14px; border:1px solid #d6baa7; border-radius:11px; background:#f8ece2; color:var(--pd); font-size:12px; font-weight:800; }.bz-history-next p,.bz-history-backup p { margin-bottom:9px; }.bz-history-backup { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }.bz-history-backup small { width:100%; color:var(--g); font-size:11px; }
 @media(max-width:430px) { .bz-history { padding:17px 13px 65px; }.bz-history-card,.bz-history-next,.bz-history-backup { padding:15px; }.bz-history-head h1 { font-size:26px; }.bz-history-file-actions { grid-template-columns:1fr; } }
 </style>
