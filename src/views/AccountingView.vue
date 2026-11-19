@@ -4,6 +4,8 @@ import { useMainStore } from '../stores/mainStore'
 import { supabase, isReadOnlyPreview } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
 import { hkCalendarDate } from '../homeTasks'
+import { incomeAccountingValues } from '../accountingEntry'
+import { hongKongCheckoutTimestamp } from '../retailLedger'
 
 const store = useMainStore()
 
@@ -112,7 +114,7 @@ function openExpForm() {
     type: 'expense', amount: '', note: '', client_name: '', staff: staffList.value[0],
     category: '廣告費用', ad_inquiries: 0, ad_phones: 0, 
     branch: '觀塘', 
-    date: getLocalYMD(),
+    date: getLocalYMD(), cost: '',
     originalTime: '' // 🚀 補丁 1：新增時清空時間記憶
   }
   showExpModal.value = true
@@ -129,7 +131,7 @@ function consumeNavigation() {
       expForm.value.date = quick.date
       expForm.value.backfill = true
       expForm.value.historyTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(quick.time || '') ? quick.time : '12:00'
-      expForm.value.cost = 0
+      expForm.value.cost = ''
       backfillSavedCount.value = 0
     }
     if (['觀塘', '中環', '佐敦'].includes(quick.branch)) expForm.value.branch = quick.branch
@@ -169,7 +171,7 @@ function openEditTransaction(t) {
     staff: t?.staff || t?.handled_by || '',
     category: t?.category, ad_inquiries: t?.ad_inquiries || 0, ad_phones: t?.ad_phones || 0,
     branch: t?.branch || '觀塘', 
-    date: String(t?.created_at || '').slice(0, 10),
+    date: transactionDay(t), cost: t?.cost ?? '',
     originalTime: originalTimePart // 🚀 補丁 2：記住它！
   }
   showExpModal.value = true
@@ -374,9 +376,13 @@ function handleRepeatOrder(t) {
 async function saveTransaction(continueBackfill = false) {
   if (isSavingTransaction.value) return
   if (!expForm.value.amount) return alert('請輸入金額！')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expForm.value.date || '')) return alert('請先選擇有效日期。')
   if (expForm.value.backfill && (!Number.isFinite(Number(expForm.value.amount)) || Number(expForm.value.amount) <= 0)) return alert('金額請填大過 0 嘅數字。')
-  const enteredCost = Number(expForm.value.cost || 0)
-  if (expForm.value.backfill && (!Number.isFinite(enteredCost) || enteredCost < 0)) return alert('成本請填 0 或正數。')
+  const previousTxn = editingTxn.value ? store.transactions.find(row => row.id === editingTxn.value) : null
+  let incomeValues = null
+  try {
+    if (expForm.value.type === 'income') incomeValues = incomeAccountingValues(expForm.value.amount, expForm.value.cost, previousTxn)
+  } catch (error) { return alert(error.message) }
   isSavingTransaction.value = true
   try {
   
@@ -393,35 +399,33 @@ async function saveTransaction(continueBackfill = false) {
   
   const data = { 
     ...expForm.value, 
-    amount: amt, 
+    amount: incomeValues?.amount ?? amt,
     note: finalNote, 
     client_name: expForm.value.client_name || null, 
     own_email: userEmail, 
-    profit: expForm.value.type === 'income' ? amt - (expForm.value.backfill ? enteredCost : 0) : -amt,
-    ...(expForm.value.backfill ? { cost: enteredCost } : {}),
+    profit: expForm.value.type === 'income' ? incomeValues.profit : -amt,
+    ...(expForm.value.type === 'income' ? { cost: incomeValues.cost } : {}),
     handled_by: expForm.value.staff 
   }
+  if (expForm.value.type !== 'income') delete data.cost
   
   delete data.date 
 
   if (data.category !== '廣告費用') { data.ad_inquiries = 0; data.ad_phones = 0 }
   
   const now = new Date()
-  const hh = String(now.getHours()).padStart(2, '0')
-  const mm = String(now.getMinutes()).padStart(2, '0')
-  const ss = String(now.getSeconds()).padStart(2, '0')
-  
-  // 🚀 補丁 3：智能判斷！如果是編輯舊紀錄且有舊時間，就沿用；否則用現在時間
-  const timeString = (editingTxn.value && expForm.value.originalTime) 
-    ? expForm.value.originalTime 
-    : `${hh}:${mm}:${ss}`
-
-  const finalString = expForm.value.backfill
-    ? `${expForm.value.date}T${expForm.value.historyTime || '12:00'}:00+08:00`
-    : `${expForm.value.date}T${timeString}`
+  const finalString = previousTxn && expForm.value.date === transactionDay(previousTxn)
+    ? previousTxn.created_at
+    : expForm.value.backfill
+      ? `${expForm.value.date}T${expForm.value.historyTime || '12:00'}:00+08:00`
+      : hongKongCheckoutTimestamp(expForm.value.date, now)
   
   // 組合準備上傳的資料，並確保刪掉不需要上傳資料庫的 originalTime 變數
   const updatePayload = { ...data, created_at: finalString }
+  if (!editingTxn.value) {
+    updatePayload.owner_email = userEmail
+    updatePayload.user_id = authData.session.user.id
+  }
   delete updatePayload.originalTime
   delete updatePayload.backfill
   delete updatePayload.historyTime
@@ -453,9 +457,11 @@ async function saveTransaction(continueBackfill = false) {
       expForm.value.amount = ''
       expForm.value.note = ''
       expForm.value.client_name = ''
-      expForm.value.cost = 0
+      expForm.value.cost = ''
     } else alert('✅ 紀錄已儲存')
   }
+  } catch (error) {
+    alert(`儲存結果未能核實：${error?.message || error}。請先搜尋帳目，避免重複入帳。`)
   } finally { isSavingTransaction.value = false }
 }
 
@@ -784,8 +790,8 @@ function exportMovement() {
           <option v-if="expForm.type==='income' && !incCategories.includes('零售收入')" value="零售收入">零售收入</option>
         </select>
       </div>
-      <div v-if="expForm.backfill && expForm.type==='income'" class="form-item" style="margin-top:15px;">
-        <label>當時成本（唔知可填 0，利潤會按呢度計）</label>
+      <div v-if="expForm.type==='income'" class="form-item" style="margin-top:15px;">
+        <label>成本（唔知請留空；確定冇成本先填 0）</label>
         <input class="modern-inp" type="number" min="0" step="0.01" inputmode="decimal" v-model="expForm.cost">
       </div>
 
