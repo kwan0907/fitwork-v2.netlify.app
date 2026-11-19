@@ -1,6 +1,8 @@
-export function monitorAccessAllowed(userId, configuredIds) {
-  if (!userId || !configuredIds) return false
-  return String(configuredIds).split(',').map(id => id.trim()).filter(Boolean).includes(String(userId))
+import { monitorEmailAllowed } from '../../shared/monitor-eligibility.mjs'
+
+export function monitorAccessAllowed(user, configuredIds) {
+  if (!user?.id || !monitorEmailAllowed(user.email) || !configuredIds) return false
+  return String(configuredIds).split(',').map(id => id.trim()).filter(Boolean).includes(String(user.id))
 }
 
 export function configuredMonitorUserIds() {

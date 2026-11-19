@@ -28,6 +28,9 @@ const store = useMainStore()
 
 // --- 系統狀態 ---
 const session = ref(null)
+watch(() => session.value?.user?.email, (email, previousEmail) => {
+  if (email !== previousEmail) store.monitorProfiles = []
+})
 const email = ref('')
 const password = ref('')
 const isLoggingIn = ref(false)
@@ -57,6 +60,7 @@ function enterDemoPreview() {
   }
   const demo = makeDemoPreviewData()
   isDemoMode.value = true
+  store.monitorProfiles = []
   session.value = { user: { id: 'local-demo-preview' } }
   store.currentUser = '示範預覽'
   store.view = 'home'
@@ -385,7 +389,7 @@ const scrollToTop = () => {
       <ReportCenterView v-else-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
       <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
-      <ClientsView v-else-if="store.view === 'clients'" />
+      <ClientsView v-else-if="store.view === 'clients'" :current-user-email="session?.user?.email || ''" />
       <MovementView v-else-if="store.view === 'movement'" />
       <RetailView v-else-if="store.view === 'retail'" />
       <InventoryView v-else-if="store.view === 'inventory'" />
