@@ -6,7 +6,7 @@ import { makeDemoPreviewData } from './demoPreview'
 import { getRememberLogin, setRememberLogin } from './authStorage'
 
 // 視圖組件引入
-import DashboardView from './views/DashboardView.vue'
+import ReportCenterView from './views/ReportCenterView.vue'
 import HomeView from './views/HomeView.vue'
 import MoreView from './views/MoreView.vue'
 import GlobalSearch from './components/GlobalSearch.vue'
@@ -382,7 +382,7 @@ const scrollToTop = () => {
     <div class="content" ref="contentRef" @scroll="checkScroll">
       <HomeView v-if="store.view === 'home'" @search="searchOpen=true" />
       <MoreView v-else-if="store.view === 'more'" />
-      <DashboardView v-else-if="store.view === 'dashboard'" />
+      <ReportCenterView v-else-if="store.view === 'dashboard'" />
       <PromoView v-else-if="store.view === 'promo'" />
       <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
       <ClientsView v-else-if="store.view === 'clients'" />
@@ -402,7 +402,7 @@ const scrollToTop = () => {
       <button type="button" class="nav-item" :class="{active: store.view==='dashboard'}" @click="go('dashboard')"><BzIcon name="chart"/><span>報表</span></button>
       <button type="button" class="nav-item" :class="{active: ['more','promo','herbalife','movement','retail','settings','accounting','history'].includes(store.view)}" @click="go('more')"><BzIcon name="more"/><span>更多</span></button>
     </nav>
-    <button v-if="store.view !== 'home'" type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
+    <button v-if="!['home','dashboard','clients'].includes(store.view)" type="button" class="bz-quick-trigger" aria-label="快速新增" :aria-expanded="quickOpen" @click="quickOpen=!quickOpen">{{ quickOpen ? '×' : '+' }}</button>
     <div v-if="quickOpen" class="bz-quick-backdrop" @click.self="quickOpen=false">
       <section class="bz-quick-sheet" role="dialog" aria-modal="true" aria-label="快速新增">
         <div class="bz-quick-head"><div><small>最常用嘅操作</small><h2>快速新增</h2></div><button type="button" @click="quickOpen=false">關閉</button></div>
@@ -421,7 +421,7 @@ const scrollToTop = () => {
 
   <!-- 🟢 將按鈕搬出 Modal，放喺最外層，咁先會全域顯示！ -->
   <Transition name="fab-fade">
-    <button v-if="showBackToTop" class="fab-back-to-top" @click="scrollToTop">
+    <button v-if="showBackToTop && store.view !== 'dashboard'" class="fab-back-to-top" @click="scrollToTop">
       <span style="font-size: 22px;">⬆️</span>
     </button>
   </Transition>

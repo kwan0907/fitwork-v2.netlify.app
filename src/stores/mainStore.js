@@ -35,6 +35,7 @@ export const useMainStore = defineStore('main', () => {
   const isFetchingMore = ref(false) 
   const hasMoreTxn = ref(true) 
   const transactionsLoadError = ref('')
+  const clientsLoadError = ref('')
   let nextTxnOffset = 0
   let loadedOwnerEmail = ''
 
@@ -78,11 +79,20 @@ export const useMainStore = defineStore('main', () => {
         ])
 
         // 1. 處理客戶資料
-        if (c.error) console.error('❌ 客戶抓取失敗:', c.error)
-        else clients.value = c.data || []
+        if (c.error) {
+          clientsLoadError.value = c.error.message || '客戶資料讀取失敗'
+          console.error('❌ 客戶抓取失敗:', c.error)
+        } else {
+          clients.value = c.data || []
+          clientsLoadError.value = ''
+        }
 
         // 2. 處理交易資料
-        if (t.error) console.error('❌ 交易抓取失敗:', t.error)
+        if (t.error) {
+          transactionsLoadError.value = t.error.message || '交易資料讀取失敗'
+          hasMoreTxn.value = true
+          console.error('❌ 交易抓取失敗:', t.error)
+        }
         else {
           transactions.value = t.data || []
           nextTxnOffset = transactions.value.length
@@ -242,6 +252,6 @@ export const useMainStore = defineStore('main', () => {
     deviceUsers, currentUser, setDeviceUsers, switchUser,
     pendingRepeatOrder, quickActionClient, pendingQuickEntry, pendingSearch, pendingClientTask, pendingOpenPurchaseImport,
     isInitialLoading, isSyncing,
-    isFetchingMore, hasMoreTxn, transactionsLoadError, loadMoreTransactions, loadAllTransactions, fetchTransactionsByDateRange
+    isFetchingMore, hasMoreTxn, transactionsLoadError, clientsLoadError, loadMoreTransactions, loadAllTransactions, fetchTransactionsByDateRange
   }
 })
