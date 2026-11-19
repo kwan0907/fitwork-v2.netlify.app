@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
+import { hongKongCheckoutTimestamp, retailCheckoutAmounts } from '../retailLedger'
 
 const store = useMainStore()
 
@@ -390,15 +391,27 @@ function executeDelete() {
 
 // 🟢 支援套裝的利潤計算
 const totalItems = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
-const totalRevenue = computed(() => cartWithPrices.value.reduce((sum, item) => sum + (item.active_price * item.qty), 0))
-const totalCost = computed(() => cart.value.reduce((sum, item) => {
-  if (item.isCombo) return sum + ((item.fixedPrice - item.fixedProfit) * item.qty)
-  return sum + ((Number(item.price_50) || 0) * item.qty)
-}, 0))
-const netProfit = computed(() => totalRevenue.value - totalCost.value)
+const ledgerAmounts = computed(() => retailCheckoutAmounts(cartWithPrices.value))
+const totalRevenue = computed(() => ledgerAmounts.value.amount)
+const totalCost = computed(() => ledgerAmounts.value.cost)
+const netProfit = computed(() => ledgerAmounts.value.profit)
+const checkoutSaving = ref(false)
 
 async function finalizeCheckout(payeeName) {
+  if (checkoutSaving.value) return
+  checkoutSaving.value = true
+  try {
+    await commitCheckout(payeeName)
+  } catch (error) {
+    alert(`未能核實結帳結果：${error?.message || error}。請先到帳目同庫存核對，避免重複入帳。`)
+  } finally {
+    checkoutSaving.value = false
+  }
+}
+
+async function commitCheckout(payeeName) {
   if (!selectedClient.value && !searchClient.value) return alert('請在上方先選擇紀錄對象！')
+  if (!cart.value.length) return alert('請先選擇產品。')
   
   // 🟢 智能轉換購物車文字
   const itemsStr = cart.value.map(i => {
@@ -419,28 +432,27 @@ async function finalizeCheckout(payeeName) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return alert('⚠️ 無法讀取登入帳號資訊，請重新登入！')
 
-const [yyyy, mm, dd] = checkoutDate.value.split('-')
-  const now = new Date()
-  
-  // 🟢 終極時區修正：強制組合成香港時間的格式，防止凌晨結帳被推回昨天
-  const hh = String(now.getHours()).padStart(2, '0')
-  const min = String(now.getMinutes()).padStart(2, '0')
-  const ss = String(now.getSeconds()).padStart(2, '0')
-  const correctIsoString = `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`
+  const correctIsoString = hongKongCheckoutTimestamp(checkoutDate.value)
+  const checkoutAmounts = ledgerAmounts.value
+  if (checkoutAmounts.amount <= 0) return alert('售價必須大於 0，請核對購物車。')
 
   // 1. 寫入流水帳
   const { error: txnError } = await supabase.from('transactions').insert([{
     type: 'income', 
     category: '零售收入', 
-    amount: Math.round(totalRevenue.value * 100) / 100, 
+    amount: checkoutAmounts.amount,
+    cost: checkoutAmounts.cost,
+    profit: checkoutAmounts.profit,
     branch: branchKey, 
     client_id: selectedClient.value?.id || null, 
     client_name: clientNameStr, 
     handled_by: payeeName, 
     staff: payeeName, 
-    created_at: correctIsoString, // 🟢 改用修正後的時間
-    own_email: user.email, 
-    note: `[淨利: $${Math.round(netProfit.value)}] ${clientNameStr} (${itemsStr})`
+    created_at: correctIsoString,
+    owner_email: user.email,
+    own_email: user.email,
+    user_id: user.id,
+    note: `${checkoutAmounts.profit === null ? '[成本待補]' : `[淨利: $${checkoutAmounts.profit}]`} ${clientNameStr} (${itemsStr})`
   }])
 
   if (txnError) return alert('結帳失敗: ' + txnError.message)
@@ -483,7 +495,9 @@ const [yyyy, mm, dd] = checkoutDate.value.split('-')
     }
   }
 
-  if (stockUpdateFailed) {
+  if (checkoutAmounts.missingCostItems.length) {
+      alert(`⚠️ 結帳已入帳，但有 ${checkoutAmounts.missingCostItems.length} 款產品未填成本，呢筆利潤會標示「待補」，請到產品管理補成本後核對帳目。${stockUpdateFailed ? '部分庫存扣減亦失敗，請一併核對。' : ''}`)
+  } else if (stockUpdateFailed) {
       alert(`⚠️ 結帳成功，但部分私人庫存扣減失敗！請手動至「庫存管理」確認。\n(可能是因為部分組合品項您尚未建立庫存紀錄)\n日期: ${checkoutDate.value}\n收現金 $${totalRevenue.value}`)
   } else {
       alert(`✅ 結帳成功！(您的私人庫存及套裝內含物已自動扣除)\n日期: ${checkoutDate.value}\n由 ${payeeName} 收取實收現金 $${totalRevenue.value}`)
@@ -628,15 +642,15 @@ const [yyyy, mm, dd] = checkoutDate.value.split('-')
 
         <div class="summary-box">
           <div class="s-row"><span style="color:#1e293b; font-weight:800;">總營業額</span> <span style="font-weight:900; font-size:18px;">$ {{ Math.round(totalRevenue * 100) / 100 }}</span></div>
-          <div class="s-row"><span style="color:#ef4444; font-weight:800;">總產品成本 (預估)</span> <span style="color:#ef4444; font-weight:900;">- $ {{ Math.round(totalCost) }}</span></div>
+          <div class="s-row"><span style="color:#ef4444; font-weight:800;">總產品成本 (預估)</span> <span style="color:#ef4444; font-weight:900;">{{ totalCost === null ? '待補成本' : '- $ ' + totalCost }}</span></div>
           <div class="divider-dash"></div>
-          <div class="s-row" style="margin-top:10px;"><span style="color:#4f46e2; font-weight:900; font-size:16px;">🚀 實收淨利潤</span> <span style="color:#4f46e2; font-weight:900; font-size:26px;">$ {{ Math.round(netProfit) }}</span></div>
+          <div class="s-row" style="margin-top:10px;"><span style="color:#4f46e2; font-weight:900; font-size:16px;">🚀 實收淨利潤</span> <span style="color:#4f46e2; font-weight:900; font-size:26px;">{{ netProfit === null ? '待補成本' : '$ ' + netProfit }}</span></div>
         </div>
 
         <div class="confirm-section">
           <p class="confirm-label">💳 選擇收款人完成結帳</p>
           <div class="payee-buttons">
-            <button v-for="(payee, index) in payees" :key="payee" class="payee-btn" :class="'style-' + (index % 2)" @click="finalizeCheckout(payee)">
+            <button v-for="(payee, index) in payees" :key="payee" class="payee-btn" :class="'style-' + (index % 2)" :disabled="checkoutSaving" @click="finalizeCheckout(payee)">
               ✅ {{ payee }} 收款
             </button>
           </div>

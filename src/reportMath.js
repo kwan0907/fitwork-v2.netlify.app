@@ -48,19 +48,22 @@ export function calculateReport(transactions, period, branch = '全部分店') {
     .filter(t => inPeriod(t.created_at, period) && (branch === '全部分店' || t.branch === branch))
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
   let income = 0, cashExpense = 0, operatingExpense = 0, recordedGross = 0
-  let missingProfit = 0, missingCost = 0, incomeCount = 0, expenseCount = 0
+  let missingProfit = 0, missingCost = 0, profitReview = 0, dateReview = 0, incomeCount = 0, expenseCount = 0
   const packages = { new: 0, renewal: 0, unknown: 0 }
   const categories = new Map()
   const details = rows.map(t => {
     const amount = money(t.amount)
     const category = t.category || '未分類'
     const kind = t.type === 'income' ? 'income' : t.type === 'expense' ? 'expense' : 'other'
+    const dateNeedsReview = Number(hkDay(t.created_at).slice(0, 4)) < 2024
+    if (dateNeedsReview) dateReview++
     const bucketKey = `${kind}:${category}`
     if (!categories.has(bucketKey)) categories.set(bucketKey, { kind, category, count: 0, amount: 0 })
     const bucket = categories.get(bucketKey)
     bucket.count++
     bucket.amount += amount ?? 0
     let profit = null
+    let profitNeedsReview = false
     if (kind === 'income') {
       incomeCount++
       income += amount ?? 0
@@ -70,6 +73,13 @@ export function calculateReport(transactions, period, branch = '全部分店') {
       if (profit === null) missingProfit++
       else recordedGross += profit
       if (savedCost === null && amount !== null && amount > 0) missingCost++
+      const noteProfit = String(t.note || '').match(/\[淨利:\s*\$\s*(-?\d+(?:\.\d+)?)\]/)
+      const noteMismatch = category === '零售收入' && noteProfit && savedProfit !== null &&
+        Math.abs(savedProfit - Number(noteProfit[1])) > 0.51
+      const formulaMismatch = category !== '試堂調整' && savedProfit !== null && savedCost !== null && amount !== null &&
+        Math.abs(savedProfit - (amount - savedCost)) > 0.01
+      profitNeedsReview = Boolean(noteMismatch || formulaMismatch)
+      if (profitNeedsReview) profitReview++
       if (category === '運動套票' || category === '運動') {
         if (t.is_renewal === true) packages.renewal++
         else if (t.is_new_client === true) packages.new++
@@ -80,13 +90,14 @@ export function calculateReport(transactions, period, branch = '全部分店') {
       cashExpense += amount ?? 0
       if (!excludedExpense.has(category)) operatingExpense += amount ?? 0
     }
-    return { ...t, day: hkDay(t.created_at), kind, amount, profit, excluded: kind === 'expense' && excludedExpense.has(category) }
+    return { ...t, day: hkDay(t.created_at), kind, amount, profit, profitNeedsReview, dateNeedsReview,
+      excluded: kind === 'expense' && excludedExpense.has(category) }
   })
   return {
     rows: details, categories: [...categories.values()].map(x => ({ ...x, amount: round(x.amount) })),
     income: round(income), cashExpense: round(cashExpense), operatingExpense: round(operatingExpense),
     recordedGross: round(recordedGross), net: missingProfit ? null : round(recordedGross - operatingExpense),
-    partialNet: round(recordedGross - operatingExpense), missingProfit, missingCost, incomeCount, expenseCount,
+    partialNet: round(recordedGross - operatingExpense), missingProfit, missingCost, profitReview, dateReview, incomeCount, expenseCount,
     excludedExpense: round(cashExpense - operatingExpense), packages
   }
 }
