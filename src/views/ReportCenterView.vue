@@ -173,7 +173,7 @@ function exportCsv() {
           <div><b>{{ row.category || '未分類' }} <small v-if="row.profitNeedsReview || row.dateNeedsReview">⚠️ 待核對</small></b><span>{{ row.day }} · {{ row.branch || '未填分店' }} · {{ row.client_name || '未記名' }}</span></div>
           <div class="ledger-amount" :class="row.kind"><b>{{ row.kind === 'expense' ? '−' : '+' }}{{ formatMoney(row.amount) }}</b><small v-if="row.kind === 'income'">交易利潤 {{ formatMoney(row.profit) }}</small><small v-else-if="row.excluded">淨利不重扣</small></div>
         </div>
-        <p v-if="!totalRows" class="empty-note">呢個期間未有交易紀錄。</p>
+        <p v-if="!totalRows" class="empty-note">{{ showReviewOnly ? '呢個期間冇待核對紀錄。' : '呢個期間未有交易紀錄。' }}</p>
         <button v-if="!showAllRows && totalRows > 12" class="show-more" type="button" @click="showAllRows=true">顯示其餘 {{ totalRows - 12 }} 筆</button>
       </section>
       <p class="report-foot">數字取自你帳戶內已載入交易，按香港日期同選定分店統計。報表唔會更改任何帳目或客戶資料。</p>
