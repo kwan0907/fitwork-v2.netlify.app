@@ -32,6 +32,15 @@ test('payload appends a dated ledger entry and links only an unambiguous existin
   assert.equal(payload.created_at, '2024-04-02T12:00:00+08:00')
   assert.equal(payload.client_id, 'client-1')
   assert.equal(payload.owner_email, 'owner@example.com')
+  assert.equal(payload.cost, null)
+  assert.equal(payload.profit, null)
+  assert.equal(payload.note, '[BZ_BACKFILL:CSV]')
+})
+
+test('an explicit zero cost remains a real zero and its profit is calculable', () => {
+  const { rows } = parseHistoryImport('日期,收支,金額,成本\n2024-04-02,收入,98,0', { today: '2026-11-16' })
+  const payload = historyImportPayload(rows[0], { id: 'user-1', email: 'owner@example.com' })
+  assert.equal(payload.cost, 0)
   assert.equal(payload.profit, 98)
 })
 

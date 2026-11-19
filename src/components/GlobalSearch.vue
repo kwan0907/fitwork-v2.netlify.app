@@ -29,8 +29,14 @@ window.addEventListener('keydown', onKeydown)
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 function openResult(kind, row) {
-  store.pendingSearch = { kind, query: kind === 'client' || kind === 'product' ? row.name : (row.client_name || row.category || row.note || '') }
+  store.pendingSearch = { kind, id: kind === 'client' ? row.id : undefined,
+    query: kind === 'client' || kind === 'product' ? row.name : (row.client_name || row.category || row.note || '') }
   store.view = kind === 'client' ? 'clients' : kind === 'product' ? 'inventory' : 'accounting'
+  emit('close')
+}
+function addClientFromSearch() {
+  store.pendingQuickEntry = { kind: 'client', seed: query.value.trim() }
+  store.view = 'clients'
   emit('close')
 }
 </script>
@@ -45,7 +51,12 @@ function openResult(kind, row) {
           <section v-if="clients.length"><h3>客戶 <span>{{ clients.length }}</span></h3><button v-for="c in clients" :key="c.id" type="button" @click="openResult('client', c)"><span class="bz-result-dot client">{{ (c.name || '?').charAt(0) }}</span><span><b>{{ c.name }}</b><small>{{ c.phone || '無電話' }} · {{ c.branch || '未設定分店' }}</small></span><strong>→</strong></button></section>
           <section v-if="transactions.length"><h3>交易 <span>{{ transactions.length }}</span></h3><button v-for="t in transactions" :key="t.id" type="button" @click="openResult('transaction', t)"><span class="bz-result-dot" :class="t.type">{{ t.type === 'expense' ? '−' : '+' }}</span><span><b>{{ t.client_name || t.category || '未分類' }}</b><small>{{ t.category }} · {{ String(t.created_at || '').slice(0, 10) }}</small></span><strong>HK$ {{ Number(t.amount || 0).toLocaleString() }}</strong></button></section>
           <section v-if="products.length"><h3>產品 <span>{{ products.length }}</span></h3><button v-for="p in products" :key="p.id" type="button" @click="openResult('product', p)"><span class="bz-result-dot stock">▤</span><span><b>{{ p.name }}</b><small>{{ p.name_en || p.id }}</small></span><strong>→</strong></button></section>
-          <p v-if="term && !clients.length && !transactions.length && !products.length && !loadingHistory" class="bz-empty">搵唔到相關資料，試吓其他字眼或電話號碼。</p>
+          <div v-if="term.length >= 2 && !clients.length && !loadingHistory" class="bz-search-add">
+            <p>客戶檔案暫時搵唔到相同姓名或電話。</p>
+            <button type="button" @click="addClientFromSearch">＋ 用「{{ query.trim() }}」新增客戶</button>
+            <small>儲存前仍會再核對正式客戶資料，避免重複。</small>
+          </div>
+          <p v-else-if="term && !clients.length && !transactions.length && !products.length && !loadingHistory" class="bz-empty">搵唔到相關資料，試吓其他字眼或電話號碼。</p>
         </div>
       </section>
     </div>

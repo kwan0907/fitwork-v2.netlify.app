@@ -101,7 +101,8 @@ export function parseHistoryImport(text, { branch = '觀塘', staff = '', today 
     const time = normalizeTime(pick('time'))
     const type = normalizeType(pick('type'))
     const amount = positiveAmount(pick('amount'))
-    const cost = positiveAmount(pick('cost'), true)
+    const costText = pick('cost')
+    const cost = costText ? positiveAmount(costText, true) : null
     const rowBranch = normalizeBranch(pick('branch'), branch)
     let reason = ''
     if (!date) reason = '日期格式錯誤，請用 YYYY-MM-DD'
@@ -109,7 +110,7 @@ export function parseHistoryImport(text, { branch = '觀塘', staff = '', today 
     else if (!time) reason = '時間格式錯誤，請用 HH:MM 或留空'
     else if (!type) reason = '收支只可填「收入」或「支出」'
     else if (amount === null) reason = '金額要係大過 0 嘅數字'
-    else if (cost === null) reason = '成本要係 0 或正數，最多兩位小數'
+    else if (costText && cost === null) reason = '成本要係 0 或正數，最多兩位小數'
     else if (!rowBranch) reason = '分店只可填觀塘、中環或佐敦'
     if (reason) { errors.push({ line, reason }); return }
     rows.push({
@@ -172,10 +173,13 @@ export function historyImportPayload(row, user, clients = []) {
   return {
     created_at: `${row.date}T${row.time}:00+08:00`,
     type: row.type, category: row.category, amount: row.amount,
-    cost: row.cost, profit: row.type === 'income' ? row.amount - row.cost : -row.amount,
+    cost: row.cost, profit: row.type === 'income'
+      ? row.cost === null || row.cost === undefined ? null : row.amount - row.cost
+      : -row.amount,
     client_name: row.client_name || null,
     client_id: names.length === 1 ? names[0].id : null,
     branch: row.branch, staff: row.staff || null, handled_by: row.staff || null,
-    note: row.note || null, owner_email: user.email, own_email: user.email, user_id: user.id
+    note: [row.note, '[BZ_BACKFILL:CSV]'].filter(Boolean).join(' '),
+    owner_email: user.email, own_email: user.email, user_id: user.id
   }
 }
