@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue' 
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
+import { hongKongCheckoutTimestamp } from '../retailLedger'
 
 const store = useMainStore()
 
@@ -22,6 +23,7 @@ const getLocalHKDate = () => {
 }
 
 const checkoutDate = ref(getLocalHKDate())
+const checkoutSaving = ref(false)
 
 const staffList = computed(() => store.settings?.payees || ['kwan', 'Cat'])
 
@@ -126,7 +128,11 @@ const exCalc = computed(() => {
 })
 
 async function handleCheckout(staff) {
+  if (checkoutSaving.value) return
   if (!selectedClient.value) return alert('請先搜尋並選擇客戶！')
+  checkoutSaving.value = true
+  let transactionSaved = false
+  try {
 
   const { data: authData } = await supabase.auth.getSession()
   const userEmail = authData?.session?.user?.email
@@ -141,10 +147,7 @@ async function handleCheckout(staff) {
   if (selectedPkg.value === 'referral_free' || selectedPkg.value === 'pkg_1_free') categoryStr = '贈堂'
   if (selectedPkg.value === 'redeem_50' || selectedPkg.value === 'redeem_100') categoryStr = '積分兌換'
 
-  const [yyyy, mm, dd] = checkoutDate.value.split('-')
-  const now = new Date()
-  const txnDate = new Date(yyyy, mm - 1, dd, now.getHours(), now.getMinutes(), now.getSeconds())
-  const fullIsoCreatedAt = txnDate.toISOString()
+  const fullIsoCreatedAt = hongKongCheckoutTimestamp(checkoutDate.value)
 
 // ==========================================
   // 🟢 核心邏輯修正：免費贈堂轉化為實質「支出」
@@ -172,11 +175,14 @@ async function handleCheckout(staff) {
     staff: staff, 
     handled_by: staff,
     created_at: fullIsoCreatedAt,
+    owner_email: userEmail,
     own_email: userEmail, 
+    user_id: authData.session.user.id,
     note: `售出 ${pkgName} ${isNewCustomer.value && selectedPkg.value !== 'trial' && selectedPkg.value !== 'referral_free' ? '(新客扣98)' : ''} ${isReferral.value && selectedPkg.value !== 'referral_free' ? '(轉介)' : ''}`.trim()
   }])
 
-  if (txnError) return alert('結帳失敗: ' + txnError.message)
+  if (txnError) throw txnError
+  transactionSaved = true
 
   // 🟢 確保免費贈格與積分兌換不會錯誤地給客戶續命 365 天
   const noExpiryUpdate = ['trial', 'referral_free', 'pkg_1_free', 'redeem_50', 'redeem_100']
@@ -191,22 +197,18 @@ async function handleCheckout(staff) {
     const newExpiryDateStr = `${y}-${m}-${d}`
 
     // 🟢 自動化引擎 2：檢查加入日期是否需要「時光倒流」
-    let finalJoinDate = selectedClient.value.join_date
-    const purchaseDateObj = new Date(checkoutDate.value)
-    const currentJoinDateObj = new Date(finalJoinDate || '2100-01-01') // 防呆：如果無日期就當成未來
-    
-    // 如果客底無加入日期，或者今次買卡日期早過原本個加入日期，就直接覆蓋！
-    if (!finalJoinDate || purchaseDateObj < currentJoinDateObj) {
-        finalJoinDate = checkoutDate.value
-    }
+    const finalJoinDate = selectedClient.value.join_date
+    const earlierKnownJoinDate = finalJoinDate && checkoutDate.value < finalJoinDate
+      ? checkoutDate.value : finalJoinDate
 
     // 🚀 執行客底資料全面自動更新！
-    await supabase.from('clients').update({ 
+    const { error: clientError } = await supabase.from('clients').update({
       status: 'active', 
       pkg_count: (selectedClient.value.pkg_count || 0) + 1,
-      join_date: finalJoinDate,        // ✨ 自動對齊第一日
+      ...(earlierKnownJoinDate ? { join_date: earlierKnownJoinDate } : {}),
       expiry_date: newExpiryDateStr    // ✨ 自動續命 365 日
     }).eq('id', selectedClient.value.id)
+    if (clientError) throw clientError
   }
 
   // 💡 動態提示：讓結帳成功視窗更明確告訴你這是收入還是支出
@@ -220,7 +222,13 @@ async function handleCheckout(staff) {
   alert(alertMsg)
   
   selectedClient.value = null; searchClient.value = ''; isNewCustomer.value = false; isReferral.value = false;
-  store.syncAll() 
+  await store.syncAll()
+  } catch (error) {
+    alert(`${transactionSaved ? '交易已入帳，但客戶資料或同步未完成；請勿再按結帳，以免重複入帳。' : '結帳結果未能核實；請先到帳目搜尋，避免重複入帳。'}\n${error?.message || error}`)
+    if (transactionSaved) await store.syncAll()
+  } finally {
+    checkoutSaving.value = false
+  }
 }
 </script>
 
@@ -331,7 +339,7 @@ async function handleCheckout(staff) {
     </div>
 
     <div class="payee-buttons" style="margin-top:15px;" v-if="staffList.length > 0">
-      <button v-for="(staff, index) in staffList" :key="staff" class="payee-btn" :class="'style-' + (index % 2)" @click="handleCheckout(staff)">
+      <button v-for="(staff, index) in staffList" :key="staff" class="payee-btn" :class="'style-' + (index % 2)" :disabled="checkoutSaving" @click="handleCheckout(staff)">
         💰 {{ staff }} 結帳
       </button>
     </div>
