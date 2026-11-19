@@ -19,6 +19,18 @@ const correcting = ref('')
 const message = ref('')
 const attendanceBusy = ref(false)
 const attendanceMessage = ref('')
+const reviewing = ref(null)
+const targetSearch = ref('')
+const targetId = ref('')
+const confirmedIdentity = ref(false)
+const updateChoices = ref({ name: false, phone: false, expiry_date: false, join_date: false })
+const savingReview = ref(false)
+const targetCandidates = computed(() => {
+  const q = String(targetSearch.value || '').trim().toLowerCase()
+  if (!q) return []
+  return store.clients.filter(c => String(c.name || '').toLowerCase().includes(q) || String(c.phone || '').includes(q)).slice(0, 12)
+})
+const selectedTarget = computed(() => store.clients.find(c => String(c.id) === String(targetId.value)) || null)
 
 const rows = computed(() => reconcileMonitorClients(normalizeMonitorRows(reports.value), store.clients))
 const counts = computed(() => ({
@@ -165,6 +177,66 @@ async function addMissing(row) {
   }
 }
 
+function openReview(row) {
+  reviewing.value = row
+  targetId.value = row.client?.id || ''
+  targetSearch.value = row.client?.name || ''
+  confirmedIdentity.value = false
+  updateChoices.value = {
+    name: false,
+    phone: false,
+    expiry_date: Boolean(row.validUntil && row.client && row.validUntil !== row.client.expiry_date),
+    join_date: Boolean(row.client && historicalJoinDateCorrection(row))
+  }
+}
+
+async function saveReviewedFields(row) {
+  if (isReadOnlyPreview || savingReview.value) return
+  const target = selectedTarget.value
+  if (!target || !confirmedIdentity.value) { error.value = '請先揀定 BZ 客戶，並確認係同一人。'; return }
+  if (staleReports.value.some(report => report.branch === row.branch)) { error.value = '來源資料已過時，請更新課程監察後重新讀取。'; return }
+  const source = { name: row.name, phone: row.phone, expiry_date: row.validUntil,
+    join_date: historicalClassDate(row.firstClassAt) }
+  const patch = {}
+  for (const field of Object.keys(updateChoices.value)) {
+    if (updateChoices.value[field] && source[field] && source[field] !== target[field]) patch[field] = source[field]
+  }
+  if (patch.join_date && target.join_date && patch.join_date >= target.join_date) delete patch.join_date
+  if (!Object.keys(patch).length) { error.value = '請勾選至少一個有差異嘅欄位。'; return }
+  const lines = Object.entries(patch).map(([key, value]) => `${{ name: '姓名', phone: '電話', expiry_date: '到期日', join_date: '加入日期' }[key]}：${target[key] || '未填'} → ${value}`)
+  if (!confirm(`已核對 ${row.name} 同 ${target.name} 係同一人？\n${lines.join('\n')}\n只更新以上欄位；帳目、交易同點數不變。`)) return
+  savingReview.value = true
+  error.value = ''
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user?.email) throw new Error('登入已失效，請重新登入。')
+    await downloadOwnedClientsBackup(user)
+    const { data: latest, error: readError } = await supabase.from('clients')
+      .select('id,name,phone,expiry_date,join_date,owner_email').eq('id', target.id).eq('owner_email', user.email).single()
+    if (readError || !latest) throw new Error('搵唔到呢位客戶嘅最新檔案。')
+    for (const field of Object.keys(patch)) {
+      if (String(latest[field] || '') !== String(target[field] || '')) throw new Error('呢位客戶嘅資料已變，請重新讀取後再更新。')
+    }
+    if (patch.join_date && latest.join_date && patch.join_date >= latest.join_date) delete patch.join_date
+    if (!Object.keys(patch).length) throw new Error('最新資料已經相同或更早，毋須更新。')
+    let query = supabase.from('clients').update(patch, { count: 'exact' }).eq('id', latest.id).eq('owner_email', user.email)
+    for (const field of Object.keys(patch)) query = latest[field] == null ? query.is(field, null) : query.eq(field, latest[field])
+    const { count, error: updateError } = await query
+    if (updateError) throw updateError
+    if (count !== 1) throw new Error('資料更新期間有變，冇覆蓋新版本；請重新讀取。')
+    const { data: saved, error: verifyError } = await supabase.from('clients')
+      .select('id,name,phone,expiry_date,join_date').eq('id', latest.id).eq('owner_email', user.email).single()
+    if (verifyError || !saved || Object.entries(patch).some(([key, value]) => saved[key] !== value)) {
+      throw new Error('更新已送出，但未能核實結果；請重新讀取客戶檔案。')
+    }
+    Object.assign(target, patch)
+    message.value = `已核對並更新 ${target.name}：${Object.keys(patch).length} 個欄位。原有帳目同交易保持不變。`
+    reviewing.value = null
+  } catch (cause) {
+    error.value = cause.message || '更新失敗'
+  } finally { savingReview.value = false }
+}
+
 async function correctJoinDate(row) {
   if (isReadOnlyPreview) return
   const proposed = historicalJoinDateCorrection(row)
@@ -243,8 +315,26 @@ function displayTime(value) {
           <div class="match-head"><strong>{{ row.name }}</strong><span>{{ row.branch }} · {{ row.memberId || '未有會員 ID' }}</span></div>
           <div class="match-data"><span>電話 {{ row.phone || '未提供' }}</span><span>剩餘點數 <b>{{ row.remainingPoints ?? '未提供' }}</b></span><span>到期 {{ row.validUntil || '未提供' }}</span></div>
           <small>{{ row.reason }}<template v-if="row.firstClassAt"> · 最早上堂 {{ row.firstClassAt }}</template></small>
-          <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button><template v-if="historicalJoinDateCorrection(row)"><span class="date-change">加入日期 {{ row.client.join_date || '未填' }} → {{ historicalJoinDateCorrection(row) }}</span><button type="button" :disabled="isReadOnlyPreview || Boolean(correcting)" @click="correctJoinDate(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : correcting===row.key ? '修正中…' : '備份後修正日期' }}</button></template></div>
+          <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button><button type="button" :disabled="isReadOnlyPreview || staleReports.some(report => report.branch === row.branch)" @click="openReview(row)">核對來源並更新</button></div>
+          <div v-if="row.kind==='review'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || staleReports.some(report => report.branch === row.branch)" @click="openReview(row)">人手配對／更新 BZ</button></div>
           <div v-if="row.kind==='missing'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || Boolean(adding) || staleReports.some(report => report.branch === row.branch)" @click="addMissing(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : staleReports.some(report => report.branch === row.branch) ? '先更新來源資料' : adding===row.key ? '補全中…' : '備份後補全此客戶' }}</button></div>
+          <div v-if="reviewing?.key===row.key" class="review-panel">
+            <strong>核對同一位客戶，再揀要更新嘅欄位</strong>
+            <p>來源點數 {{ row.remainingPoints ?? '未提供' }} 只供核對；BZ 暫無點數欄，唔會寫入金額或帳目。</p>
+            <label>搜尋現有 BZ 客戶<input v-model="targetSearch" type="search" placeholder="姓名或電話" @input="targetId=''; confirmedIdentity=false"></label>
+            <div v-if="targetCandidates.length" class="target-list">
+              <button v-for="candidate in targetCandidates" :key="candidate.id" type="button" :class="{chosen:targetId===candidate.id}" @click="targetId=candidate.id; confirmedIdentity=false">{{ candidate.name }} · {{ candidate.phone || '未填電話' }} · {{ candidate.branch || '未填分店' }}</button>
+            </div>
+            <p v-if="selectedTarget">已選：{{ selectedTarget.name }} · {{ selectedTarget.phone || '未填電話' }}</p>
+            <div v-if="selectedTarget" class="field-choices">
+              <label><input v-model="updateChoices.name" type="checkbox" :disabled="!row.name || row.name===selectedTarget.name">姓名：{{ selectedTarget.name || '未填' }} → {{ row.name || '未提供' }}</label>
+              <label><input v-model="updateChoices.phone" type="checkbox" :disabled="!row.phone || cleanPhone(selectedTarget.phone)===row.phone">電話：{{ selectedTarget.phone || '未填' }} → {{ row.phone || '未提供' }}</label>
+              <label><input v-model="updateChoices.expiry_date" type="checkbox" :disabled="!row.validUntil || row.validUntil===selectedTarget.expiry_date">到期日：{{ selectedTarget.expiry_date || '未填' }} → {{ row.validUntil || '未提供' }}</label>
+              <label><input v-model="updateChoices.join_date" type="checkbox" :disabled="!historicalClassDate(row.firstClassAt) || Boolean(selectedTarget.join_date && historicalClassDate(row.firstClassAt)>=selectedTarget.join_date)">加入日期：{{ selectedTarget.join_date || '未填' }} → {{ historicalClassDate(row.firstClassAt) || '未提供' }}</label>
+              <label class="identity-check"><input v-model="confirmedIdentity" type="checkbox">我已核對來源同 BZ 係同一人</label>
+            </div>
+            <div class="row-actions"><button type="button" :disabled="!selectedTarget || !confirmedIdentity || savingReview" @click="saveReviewedFields(row)">{{ savingReview ? '核對儲存中…' : '下載備份並更新所選欄位' }}</button><button type="button" class="cancel-review" @click="reviewing=null">取消</button></div>
+          </div>
         </div>
       </template>
     </div>
@@ -263,5 +353,6 @@ function displayTime(value) {
 .categories{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px}.categories button{white-space:nowrap;border:1px solid #e6d6c8;border-radius:100px;background:#fff;padding:8px 12px;color:#74594a;font:inherit;font-size:12px;font-weight:700;cursor:pointer}.categories .selected{background:#775c47;color:#fff;border-color:#775c47}
 .match-row{background:#fff;border:1px solid #ebddd0;border-radius:14px;padding:12px 14px;margin-top:9px}.match-head,.match-data{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.match-head strong{font-size:14px}.match-head span,.match-row small{font-size:12px;color:#8b7869}.match-data{justify-content:flex-start;margin:8px 0;font-size:12px;gap:8px 15px}.match-data b{color:#a95732}.match-row small{line-height:1.5}.row-actions{margin-top:10px}.row-actions button{min-height:34px;padding:7px 11px;font-size:12px}.empty{color:#8b7869;font-size:13px}
 .date-note{font-size:13px;line-height:1.6;padding:11px 13px;border-radius:11px;margin:10px 0;background:#eef3e6;color:#51663d}.row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.date-change{font-size:12px;color:#705747;font-weight:700}
+.review-panel{margin-top:12px;padding:14px;border:1px solid #e6d2c1;border-radius:14px;background:#fffaf5;display:grid;gap:10px}.review-panel>strong{font-size:14px}.review-panel p{margin:0;font-size:12px;color:#705d4f}.review-panel>label{display:grid;gap:5px;font-size:12px;font-weight:700}.review-panel input[type=search]{width:100%;min-height:42px;border:1px solid #dcc9b8;border-radius:10px;padding:8px 11px;font:inherit}.target-list{display:grid;gap:5px;max-height:160px;overflow:auto}.target-list button{border:1px solid #e4d6c9;border-radius:9px;background:#fff;color:#4b392f;text-align:left;padding:8px;font:inherit;font-size:12px}.target-list button.chosen{border-color:#b86e4a;background:#faeee6}.field-choices{display:grid;gap:9px}.field-choices label{font-size:12px;line-height:1.5;display:flex;gap:7px;align-items:flex-start}.field-choices input{margin-top:2px;accent-color:#b86e4a}.identity-check{font-weight:700}.row-actions .cancel-review{background:#eee3d9;color:#6b5548}
 @media(max-width:700px){.inputs{grid-template-columns:1fr 1fr}.read-btn{grid-column:1/-1}.monitor-body{padding:15px}.monitor-toggle{padding:16px}.monitor-toggle small{max-width:240px}}
 </style>
