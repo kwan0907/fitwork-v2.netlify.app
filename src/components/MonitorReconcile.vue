@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase, isReadOnlyPreview } from '../supabase'
 import { downloadOwnedClientsBackup } from '../clientsBackup'
-import { MONITOR_BRANCHES, monitorBranchCode, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload, historicalJoinDateCorrection, historicalClassDate, cleanName, cleanPhone } from '../monitorReconcile'
+import { MONITOR_BRANCHES, monitorBranchCode, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload, historicalJoinDateCorrection, historicalClassDate, cleanName, cleanPhone, canSaveMonitorReview } from '../monitorReconcile'
 
 const emit = defineEmits(['select-client'])
 const store = useMainStore()
@@ -44,6 +44,13 @@ const staleReports = computed(() => reports.value.filter(report => {
   const updated = Date.parse(report.profileUpdatedAt || '')
   return !Number.isFinite(updated) || Date.now() - updated > 6 * 60 * 60 * 1000
 }))
+const isStaleBranch = row => staleReports.value.some(report => report.branch === row.branch)
+const reviewReady = () => canSaveMonitorReview({
+  isPreview: isReadOnlyPreview,
+  hasTarget: Boolean(selectedTarget.value),
+  confirmedIdentity: confirmedIdentity.value,
+  saving: savingReview.value
+})
 const reportTimes = computed(() => reports.value.map(report => `${report.branch}：${displayTime(report.profileUpdatedAt)}`).join(' · '))
 const attendanceLatest = computed(() => reports.value.map(report => report.attendanceUpdatedAt).filter(Boolean).sort().at(-1) || '')
 const attendanceStale = computed(() => {
@@ -90,6 +97,7 @@ async function autoRefreshAttendance(token, pinValue, branchNames, previousUpdat
         const refreshed = [first]
         for (const item of branchNames.slice(1)) refreshed.push(await fetchBranchReport(item, token, pinValue))
         reports.value = refreshed
+        reviewing.value = null
         store.monitorProfiles = normalizeMonitorRows(refreshed)
         attendanceMessage.value = `最近 7 日上堂資料已更新：${displayTime(first.attendanceUpdatedAt)}。`
         return
@@ -113,6 +121,7 @@ async function readMonitor() {
   const pinValue = pin.value
   busy.value = true
   reports.value = []
+  reviewing.value = null
   store.monitorProfiles = []
   const branches = branch.value === '全部三店' ? MONITOR_BRANCHES : [branch.value]
   const failures = []
@@ -194,7 +203,6 @@ async function saveReviewedFields(row) {
   if (isReadOnlyPreview || savingReview.value) return
   const target = selectedTarget.value
   if (!target || !confirmedIdentity.value) { error.value = '請先揀定 BZ 客戶，並確認係同一人。'; return }
-  if (staleReports.value.some(report => report.branch === row.branch)) { error.value = '來源資料已過時，請更新課程監察後重新讀取。'; return }
   const source = { name: row.name, phone: row.phone, expiry_date: row.validUntil,
     join_date: historicalClassDate(row.firstClassAt) }
   const patch = {}
@@ -303,7 +311,7 @@ function displayTime(value) {
       <p v-if="attendanceMessage" class="message" role="status">{{ attendanceMessage }}</p>
       <template v-if="reports.length">
         <p class="source-note">來源：課程空位監察 · 課卡 {{ reportTimes }} · 上堂 {{ displayTime(attendanceLatest) }}。只涵蓋監察已匯入嘅 Cat &amp; Kwan 卡友；未列出唔代表對方唔係會員。跨卡點數可能經來源合併，請以原網站核對。</p>
-        <p v-if="staleReports.length" class="freshness-note" role="status">{{ staleReports.map(report => report.branch).join('、') }} 嘅資料超過 6 小時或未有更新時間，點數及到期日可能已變。請先喺 <a href="https://class-seat-monitor.yimwingkwan0907.workers.dev/app" target="_blank" rel="noopener noreferrer">課程監察網站</a> 更新，再按「讀取及對照」；更新前暫停補全呢啲分店嘅客戶。</p>
+        <p v-if="staleReports.length" class="freshness-note" role="status">{{ staleReports.map(report => report.branch).join('、') }} 嘅資料超過 6 小時或未有更新時間，點數及到期日可能已變。人手配對／更新唔受時間限制，請按你喺 <a href="https://class-seat-monitor.yimwingkwan0907.workers.dev/app" target="_blank" rel="noopener noreferrer">課程監察網站</a> 核對嘅資料決定更新欄位。新增遺漏客戶仍須先更新來源，再按「讀取及對照」。</p>
         <div class="categories">
           <button type="button" :class="{selected:category==='review'}" @click="category='review'">待核對 {{ counts.review }}</button>
           <button type="button" :class="{selected:category==='missing'}" @click="category='missing'">BZ 疑似遺漏 {{ counts.missing }}</button>
@@ -315,12 +323,14 @@ function displayTime(value) {
           <div class="match-head"><strong>{{ row.name }}</strong><span>{{ row.branch }} · {{ row.memberId || '未有會員 ID' }}</span></div>
           <div class="match-data"><span>電話 {{ row.phone || '未提供' }}</span><span>剩餘點數 <b>{{ row.remainingPoints ?? '未提供' }}</b></span><span>到期 {{ row.validUntil || '未提供' }}</span></div>
           <small>{{ row.reason }}<template v-if="row.firstClassAt"> · 最早上堂 {{ row.firstClassAt }}</template></small>
-          <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button><button type="button" :disabled="isReadOnlyPreview || staleReports.some(report => report.branch === row.branch)" @click="openReview(row)">核對來源並更新</button></div>
-          <div v-if="row.kind==='review'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || staleReports.some(report => report.branch === row.branch)" @click="openReview(row)">人手配對／更新 BZ</button></div>
+          <div v-if="row.kind==='matched'" class="row-actions"><button type="button" @click="emit('select-client',row.client)">查看 BZ 客戶</button><button type="button" @click="openReview(row)">核對來源並更新</button></div>
+          <div v-if="row.kind==='review'" class="row-actions"><button type="button" @click="openReview(row)">人手配對／更新 BZ</button></div>
           <div v-if="row.kind==='missing'" class="row-actions"><button type="button" :disabled="isReadOnlyPreview || Boolean(adding) || staleReports.some(report => report.branch === row.branch)" @click="addMissing(row)">{{ isReadOnlyPreview ? '預覽版只供核對' : staleReports.some(report => report.branch === row.branch) ? '先更新來源資料' : adding===row.key ? '補全中…' : '備份後補全此客戶' }}</button></div>
           <div v-if="reviewing?.key===row.key" class="review-panel">
             <strong>核對同一位客戶，再揀要更新嘅欄位</strong>
             <p>來源點數 {{ row.remainingPoints ?? '未提供' }} 只供核對；BZ 客戶檔案唔設點數欄，亦唔會將點數寫入金額或帳目。</p>
+            <p v-if="isReadOnlyPreview" class="review-warning">呢個係只讀預覽版，可以核對配對方法；要儲存，請開啟 <a href="https://dynamic-gumption-005003.netlify.app/" target="_blank" rel="noopener noreferrer">BZ 正式版</a> 登入後重新讀取。</p>
+            <p v-if="isStaleBranch(row)" class="review-warning">{{ row.branch }} 嘅來源更新時間：{{ displayTime(row.profileUpdatedAt) }}。呢度唔設時間限制；請按你人手核對嘅資料揀更新欄位。</p>
             <label>搜尋現有 BZ 客戶<input v-model="targetSearch" type="search" placeholder="姓名或電話" @input="targetId=''; confirmedIdentity=false"></label>
             <div v-if="targetCandidates.length" class="target-list">
               <button v-for="candidate in targetCandidates" :key="candidate.id" type="button" :class="{chosen:targetId===candidate.id}" @click="targetId=candidate.id; confirmedIdentity=false">{{ candidate.name }} · {{ candidate.phone || '未填電話' }} · {{ candidate.branch || '未填分店' }}</button>
@@ -333,7 +343,7 @@ function displayTime(value) {
               <label><input v-model="updateChoices.join_date" type="checkbox" :disabled="!historicalClassDate(row.firstClassAt) || Boolean(selectedTarget.join_date && historicalClassDate(row.firstClassAt)>=selectedTarget.join_date)">加入日期：{{ selectedTarget.join_date || '未填' }} → {{ historicalClassDate(row.firstClassAt) || '未提供' }}</label>
               <label class="identity-check"><input v-model="confirmedIdentity" type="checkbox">我已核對來源同 BZ 係同一人</label>
             </div>
-            <div class="row-actions"><button type="button" :disabled="!selectedTarget || !confirmedIdentity || savingReview" @click="saveReviewedFields(row)">{{ savingReview ? '核對儲存中…' : '下載備份並更新所選欄位' }}</button><button type="button" class="cancel-review" @click="reviewing=null">取消</button></div>
+            <div class="row-actions"><button type="button" :disabled="!reviewReady()" @click="saveReviewedFields(row)">{{ isReadOnlyPreview ? '預覽版不能儲存' : savingReview ? '核對儲存中…' : '下載備份並更新所選欄位' }}</button><button type="button" class="cancel-review" @click="reviewing=null">取消</button></div>
           </div>
         </div>
       </template>
@@ -354,5 +364,6 @@ function displayTime(value) {
 .match-row{background:#fff;border:1px solid #ebddd0;border-radius:14px;padding:12px 14px;margin-top:9px}.match-head,.match-data{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.match-head strong{font-size:14px}.match-head span,.match-row small{font-size:12px;color:#8b7869}.match-data{justify-content:flex-start;margin:8px 0;font-size:12px;gap:8px 15px}.match-data b{color:#a95732}.match-row small{line-height:1.5}.row-actions{margin-top:10px}.row-actions button{min-height:34px;padding:7px 11px;font-size:12px}.empty{color:#8b7869;font-size:13px}
 .date-note{font-size:13px;line-height:1.6;padding:11px 13px;border-radius:11px;margin:10px 0;background:#eef3e6;color:#51663d}.row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.date-change{font-size:12px;color:#705747;font-weight:700}
 .review-panel{margin-top:12px;padding:14px;border:1px solid #e6d2c1;border-radius:14px;background:#fffaf5;display:grid;gap:10px}.review-panel>strong{font-size:14px}.review-panel p{margin:0;font-size:12px;color:#705d4f}.review-panel>label{display:grid;gap:5px;font-size:12px;font-weight:700}.review-panel input[type=search]{width:100%;min-height:42px;border:1px solid #dcc9b8;border-radius:10px;padding:8px 11px;font:inherit}.target-list{display:grid;gap:5px;max-height:160px;overflow:auto}.target-list button{border:1px solid #e4d6c9;border-radius:9px;background:#fff;color:#4b392f;text-align:left;padding:8px;font:inherit;font-size:12px}.target-list button.chosen{border-color:#b86e4a;background:#faeee6}.field-choices{display:grid;gap:9px}.field-choices label{font-size:12px;line-height:1.5;display:flex;gap:7px;align-items:flex-start}.field-choices input{margin-top:2px;accent-color:#b86e4a}.identity-check{font-weight:700}.row-actions .cancel-review{background:#eee3d9;color:#6b5548}
+.review-panel .review-warning{padding:9px 11px;border-radius:10px;background:#fff0e7;color:#904b32;line-height:1.5}.review-warning a{color:inherit;font-weight:700;text-decoration:underline}
 @media(max-width:700px){.inputs{grid-template-columns:1fr 1fr}.read-btn{grid-column:1/-1}.monitor-body{padding:15px}.monitor-toggle{padding:16px}.monitor-toggle small{max-width:240px}}
 </style>

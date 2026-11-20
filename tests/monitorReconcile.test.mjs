@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cleanPhone, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload, historicalJoinDateCorrection } from '../src/monitorReconcile.js'
+import { cleanPhone, normalizeMonitorRows, reconcileMonitorClients, safeMissingClientPayload, historicalJoinDateCorrection, canSaveMonitorReview } from '../src/monitorReconcile.js'
 import { verifiedConversionDate, classifyPackageSale } from '../src/clientHistory.js'
 
 test('normalizes Hong Kong phone and source points without turning blanks into zero', () => {
@@ -37,6 +37,15 @@ test('duplicate phones and name-only candidates stay in manual review', () => {
   ] }])
   const result = reconcileMonitorClients(source, [{ id: 'x', name: '林小姐', phone: '' }])
   assert.deepEqual(result.map(row => row.kind), ['review', 'review', 'review'])
+})
+
+test('manual monitor review has no source age limit but remains read only in preview', () => {
+  const ready = { isPreview: false, hasTarget: true, confirmedIdentity: true, saving: false }
+  assert.equal(canSaveMonitorReview(ready), true)
+  assert.equal(canSaveMonitorReview({ ...ready, isPreview: true }), false)
+  assert.equal(canSaveMonitorReview({ ...ready, confirmedIdentity: false }), false)
+  assert.equal(canSaveMonitorReview({ ...ready, hasTarget: false }), false)
+  assert.equal(canSaveMonitorReview({ ...ready, saving: true }), false)
 })
 
 test('missing client payload leaves original joining date unknown', () => {

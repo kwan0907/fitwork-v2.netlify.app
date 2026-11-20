@@ -36,6 +36,10 @@ export function historicalJoinDateCorrection(row) {
   return !current || firstClassAt < current ? firstClassAt : null
 }
 
+export function canSaveMonitorReview({ isPreview, hasTarget, confirmedIdentity, saving }) {
+  return !isPreview && hasTarget && confirmedIdentity && !saving
+}
+
 export function normalizeMonitorRows(reports) {
   const rows = []
   for (const report of reports || []) {
