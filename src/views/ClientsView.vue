@@ -1413,7 +1413,7 @@ async function handleImport(e) {
 .btn-del { background: #fff1f2; color: #e11d48; border: none; padding: 16px; border-radius: 16px; font-weight: 800; cursor: pointer;}
 .main-fab { position: fixed; bottom: 100px; right: 25px; width: 64px; height: 64px; background: #6366f1; color: white; border-radius: 22px; font-size: 32px; border: none; box-shadow: 0 15px 30px rgba(99,102,241,0.4); z-index: 99; cursor: pointer;}
 
-.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 0; max-height:calc(100dvh - 36px - env(safe-area-inset-bottom)); overflow-y:auto; box-sizing:border-box; }
+.action-modal { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); margin-top: 0; max-height:100%; min-height:0; overflow-y:auto; box-sizing:border-box; }
 .bz-client-possible { display:inline-block; padding:4px 7px; border-radius:8px; background:#fbf1dc; color:#8b642f; font-size:11px; font-weight:800; }
 .action-menu-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
 .action-big-btn { display: flex; align-items: center; gap: 15px; width: 100%; padding: 18px; border-radius: 20px; border: none; cursor: pointer; transition: 0.2s all; background: #f8fafc; text-align: left; }

@@ -1,0 +1,52 @@
+/* Keep legacy dialogs inside the visible browser viewport, including after mobile
+   browser chrome or the keyboard changes the available height. Dialog content
+   scrolls inside its card; the fixed bottom navigation stays behind the mask. */
+#app-main .modal-overlay,
+#app-main .modal-mask,
+#app-main .quick-overlay,
+#app-main .bz-product-overlay,
+#app-main .welcome-overlay {
+  height: 100dvh;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#app-main .modal-overlay > .action-modal,
+#app-main .modal-overlay > .edit-modal,
+#app-main .modal-overlay > .checkout-modal,
+#app-main .modal-overlay > .confirm-modal,
+#app-main .modal-overlay > .center-modal:not(.scrollable-modal):not(.bz-client-form):not(.bz-quick-flow),
+#app-main .quick-overlay > .quick-modal,
+#app-main .bz-product-overlay > .bz-product-modal {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+#app-main .modal-mask {
+  padding: 16px;
+}
+#app-main .modal-mask > .modal-container {
+  min-height: 0;
+  max-height: min(85dvh, 100%);
+}
+
+#app-main .welcome-overlay {
+  padding: 16px;
+}
+#app-main .welcome-overlay > .welcome-modal {
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+#app-main .bz-quick-backdrop,
+#app-main .report-modal-overlay {
+  height: 100dvh;
+}
+#app-main .bz-quick-sheet {
+  max-height: calc(100dvh - env(safe-area-inset-top));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
