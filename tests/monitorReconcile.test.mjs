@@ -39,15 +39,13 @@ test('duplicate phones and name-only candidates stay in manual review', () => {
   assert.deepEqual(result.map(row => row.kind), ['review', 'review', 'review'])
 })
 
-test('stale monitor data can be reviewed but only saved after explicit source confirmation outside preview', () => {
-  const ready = { isPreview: false, hasTarget: true, confirmedIdentity: true, staleSource: true, confirmedSource: true, saving: false }
+test('manual monitor review has no source age limit but remains read only in preview', () => {
+  const ready = { isPreview: false, hasTarget: true, confirmedIdentity: true, saving: false }
   assert.equal(canSaveMonitorReview(ready), true)
-  assert.equal(canSaveMonitorReview({ ...ready, confirmedSource: false }), false)
   assert.equal(canSaveMonitorReview({ ...ready, isPreview: true }), false)
   assert.equal(canSaveMonitorReview({ ...ready, confirmedIdentity: false }), false)
   assert.equal(canSaveMonitorReview({ ...ready, hasTarget: false }), false)
   assert.equal(canSaveMonitorReview({ ...ready, saving: true }), false)
-  assert.equal(canSaveMonitorReview({ ...ready, staleSource: false, confirmedSource: false }), true)
 })
 
 test('missing client payload leaves original joining date unknown', () => {

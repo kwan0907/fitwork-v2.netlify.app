@@ -23,7 +23,6 @@ const reviewing = ref(null)
 const targetSearch = ref('')
 const targetId = ref('')
 const confirmedIdentity = ref(false)
-const confirmedSource = ref(false)
 const updateChoices = ref({ name: false, phone: false, expiry_date: false, join_date: false })
 const savingReview = ref(false)
 const targetCandidates = computed(() => {
@@ -46,12 +45,10 @@ const staleReports = computed(() => reports.value.filter(report => {
   return !Number.isFinite(updated) || Date.now() - updated > 6 * 60 * 60 * 1000
 }))
 const isStaleBranch = row => staleReports.value.some(report => report.branch === row.branch)
-const reviewReady = row => canSaveMonitorReview({
+const reviewReady = () => canSaveMonitorReview({
   isPreview: isReadOnlyPreview,
   hasTarget: Boolean(selectedTarget.value),
   confirmedIdentity: confirmedIdentity.value,
-  staleSource: isStaleBranch(row),
-  confirmedSource: confirmedSource.value,
   saving: savingReview.value
 })
 const reportTimes = computed(() => reports.value.map(report => `${report.branch}：${displayTime(report.profileUpdatedAt)}`).join(' · '))
@@ -194,7 +191,6 @@ function openReview(row) {
   targetId.value = row.client?.id || ''
   targetSearch.value = row.client?.name || ''
   confirmedIdentity.value = false
-  confirmedSource.value = false
   updateChoices.value = {
     name: false,
     phone: false,
@@ -207,7 +203,6 @@ async function saveReviewedFields(row) {
   if (isReadOnlyPreview || savingReview.value) return
   const target = selectedTarget.value
   if (!target || !confirmedIdentity.value) { error.value = '請先揀定 BZ 客戶，並確認係同一人。'; return }
-  if (isStaleBranch(row) && !confirmedSource.value) { error.value = '來源資料超過 6 小時；請先喺原網站核對今次要更新嘅資料，再勾選確認。'; return }
   const source = { name: row.name, phone: row.phone, expiry_date: row.validUntil,
     join_date: historicalClassDate(row.firstClassAt) }
   const patch = {}
@@ -217,7 +212,7 @@ async function saveReviewedFields(row) {
   if (patch.join_date && target.join_date && patch.join_date >= target.join_date) delete patch.join_date
   if (!Object.keys(patch).length) { error.value = '請勾選至少一個有差異嘅欄位。'; return }
   const lines = Object.entries(patch).map(([key, value]) => `${{ name: '姓名', phone: '電話', expiry_date: '到期日', join_date: '加入日期' }[key]}：${target[key] || '未填'} → ${value}`)
-  if (!confirm(`已核對 ${row.name} 同 ${target.name} 係同一人？\n${isStaleBranch(row) ? '來源資料超過 6 小時；你已在原網站確認以下數值仍然正確。\n' : ''}${lines.join('\n')}\n只更新以上欄位；帳目、交易同點數不變。`)) return
+  if (!confirm(`已核對 ${row.name} 同 ${target.name} 係同一人？\n${lines.join('\n')}\n只更新以上欄位；帳目、交易同點數不變。`)) return
   savingReview.value = true
   error.value = ''
   try {
@@ -316,7 +311,7 @@ function displayTime(value) {
       <p v-if="attendanceMessage" class="message" role="status">{{ attendanceMessage }}</p>
       <template v-if="reports.length">
         <p class="source-note">來源：課程空位監察 · 課卡 {{ reportTimes }} · 上堂 {{ displayTime(attendanceLatest) }}。只涵蓋監察已匯入嘅 Cat &amp; Kwan 卡友；未列出唔代表對方唔係會員。跨卡點數可能經來源合併，請以原網站核對。</p>
-        <p v-if="staleReports.length" class="freshness-note" role="status">{{ staleReports.map(report => report.branch).join('、') }} 嘅資料超過 6 小時或未有更新時間，點數及到期日可能已變。可先打開人手配對；寫入前要喺 <a href="https://class-seat-monitor.yimwingkwan0907.workers.dev/app" target="_blank" rel="noopener noreferrer">課程監察網站</a> 核對該會員今次要更新嘅數值。新增遺漏客戶仍須先更新來源，再按「讀取及對照」。</p>
+        <p v-if="staleReports.length" class="freshness-note" role="status">{{ staleReports.map(report => report.branch).join('、') }} 嘅資料超過 6 小時或未有更新時間，點數及到期日可能已變。人手配對／更新唔受時間限制，請按你喺 <a href="https://class-seat-monitor.yimwingkwan0907.workers.dev/app" target="_blank" rel="noopener noreferrer">課程監察網站</a> 核對嘅資料決定更新欄位。新增遺漏客戶仍須先更新來源，再按「讀取及對照」。</p>
         <div class="categories">
           <button type="button" :class="{selected:category==='review'}" @click="category='review'">待核對 {{ counts.review }}</button>
           <button type="button" :class="{selected:category==='missing'}" @click="category='missing'">BZ 疑似遺漏 {{ counts.missing }}</button>
@@ -335,7 +330,7 @@ function displayTime(value) {
             <strong>核對同一位客戶，再揀要更新嘅欄位</strong>
             <p>來源點數 {{ row.remainingPoints ?? '未提供' }} 只供核對；BZ 客戶檔案唔設點數欄，亦唔會將點數寫入金額或帳目。</p>
             <p v-if="isReadOnlyPreview" class="review-warning">呢個係只讀預覽版，可以核對配對方法；要儲存，請開啟 <a href="https://dynamic-gumption-005003.netlify.app/" target="_blank" rel="noopener noreferrer">BZ 正式版</a> 登入後重新讀取。</p>
-            <p v-if="isStaleBranch(row)" class="review-warning">{{ row.branch }} 嘅來源更新時間：{{ displayTime(row.profileUpdatedAt) }}。請喺原網站核對此會員最新資料；舊報表唔代表資料仍然正確。</p>
+            <p v-if="isStaleBranch(row)" class="review-warning">{{ row.branch }} 嘅來源更新時間：{{ displayTime(row.profileUpdatedAt) }}。呢度唔設時間限制；請按你人手核對嘅資料揀更新欄位。</p>
             <label>搜尋現有 BZ 客戶<input v-model="targetSearch" type="search" placeholder="姓名或電話" @input="targetId=''; confirmedIdentity=false"></label>
             <div v-if="targetCandidates.length" class="target-list">
               <button v-for="candidate in targetCandidates" :key="candidate.id" type="button" :class="{chosen:targetId===candidate.id}" @click="targetId=candidate.id; confirmedIdentity=false">{{ candidate.name }} · {{ candidate.phone || '未填電話' }} · {{ candidate.branch || '未填分店' }}</button>
@@ -347,9 +342,8 @@ function displayTime(value) {
               <label><input v-model="updateChoices.expiry_date" type="checkbox" :disabled="!row.validUntil || row.validUntil===selectedTarget.expiry_date">到期日：{{ selectedTarget.expiry_date || '未填' }} → {{ row.validUntil || '未提供' }}</label>
               <label><input v-model="updateChoices.join_date" type="checkbox" :disabled="!historicalClassDate(row.firstClassAt) || Boolean(selectedTarget.join_date && historicalClassDate(row.firstClassAt)>=selectedTarget.join_date)">加入日期：{{ selectedTarget.join_date || '未填' }} → {{ historicalClassDate(row.firstClassAt) || '未提供' }}</label>
               <label class="identity-check"><input v-model="confirmedIdentity" type="checkbox">我已核對來源同 BZ 係同一人</label>
-              <label v-if="isStaleBranch(row)" class="identity-check"><input v-model="confirmedSource" type="checkbox">我已喺原網站核對今次勾選嘅來源數值，確認仍然正確</label>
             </div>
-            <div class="row-actions"><button type="button" :disabled="!reviewReady(row)" @click="saveReviewedFields(row)">{{ isReadOnlyPreview ? '預覽版不能儲存' : savingReview ? '核對儲存中…' : '下載備份並更新所選欄位' }}</button><button type="button" class="cancel-review" @click="reviewing=null">取消</button></div>
+            <div class="row-actions"><button type="button" :disabled="!reviewReady()" @click="saveReviewedFields(row)">{{ isReadOnlyPreview ? '預覽版不能儲存' : savingReview ? '核對儲存中…' : '下載備份並更新所選欄位' }}</button><button type="button" class="cancel-review" @click="reviewing=null">取消</button></div>
           </div>
         </div>
       </template>
