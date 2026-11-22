@@ -13,8 +13,8 @@ export function retailCheckoutAmounts(items) {
     revenue += price * quantity
     const unitCost = item.isCombo
       ? Number(item.fixedPrice) - Number(item.fixedProfit)
-      : Number(item.price_50)
-    if (!Number.isFinite(unitCost) || unitCost <= 0 || (!item.isCombo && (item.price_50 === null || item.price_50 === ''))) {
+      : Number(item.cost)
+    if (!Number.isFinite(unitCost) || unitCost <= 0 || (!item.isCombo && (item.cost === null || item.cost === ''))) {
       missingCostItems.push(item.name || '未命名產品')
     } else {
       cost += unitCost * quantity

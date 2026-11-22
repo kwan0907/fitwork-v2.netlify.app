@@ -391,7 +391,7 @@ const scrollToTop = () => {
       <HerbalifePromo v-else-if="store.view === 'herbalife'" /> 
       <ClientsView v-else-if="store.view === 'clients'" :current-user-email="session?.user?.email || ''" />
       <MovementView v-else-if="store.view === 'movement'" />
-      <RetailView v-else-if="store.view === 'retail'" />
+      <RetailView v-else-if="store.view === 'retail'" :account-id="session?.user?.id || ''" />
       <InventoryView v-else-if="store.view === 'inventory'" />
       <ProductsView v-else-if="store.view === 'products'" />
       <HistoryBackfillView v-else-if="store.view === 'history'" />
