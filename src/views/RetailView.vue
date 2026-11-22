@@ -753,12 +753,12 @@ async function commitCheckout(payeeName) {
       <div class="btn-gorgeous">+</div>
     </div>
 
-    <div v-if="cart.length > 0" class="float-bar" @click="showCheckoutModal = true">
+    <button v-if="cart.length > 0" type="button" class="float-bar retail-cart-float" aria-label="開啟購物車結帳" @click="showCheckoutModal = true">
       <div class="badge-num">{{ totalItems }}</div>
       <div style="flex:1; margin-left:15px; font-weight:800; color:white;">件商品</div>
       <div class="float-total">$ {{ totalRevenue }}</div>
       <div class="float-btn">結帳 ➔</div>
-    </div>
+    </button>
 
     <BaseModal :show="showComboModal" title="挑選套裝口味" @close="showComboModal = false">
         <div v-if="selectedCombo">
@@ -1049,6 +1049,12 @@ async function commitCheckout(payeeName) {
 .badge-num { background: #4f46e2; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: 900; font-size: 16px; }
 .float-total { font-size: clamp(18px, 5vw, 24px); font-weight: 900; color: white; margin-right: 15px; }
 .float-btn { font-size: clamp(13px, 3.5vw, 16px); font-weight: 800; color: #cbd5e1; }
+@media (max-width: 600px) {
+  #app-main .retail-cart-float { left: 12px !important; right: 82px !important; width: auto !important; max-width: none; margin: 0; bottom: calc(88px + env(safe-area-inset-bottom)) !important; padding: 10px 13px !important; border: 0; text-align: left; }
+  #app-main .retail-cart-float > div:nth-child(2) { display: none !important; }
+  .float-total { margin-left: auto; margin-right: 8px; white-space: nowrap; }
+  .float-btn { white-space: nowrap; }
+}
 
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: flex-end; justify-content: center; }
 .checkout-modal { background: white; width: 100%; max-width: 600px; border-radius: 28px 28px 0 0; padding: 30px; box-shadow: 0 -10px 40px rgba(0,0,0,0.2); animation: slideUp 0.3s ease-out; max-height: 88vh; overflow-y: auto; }
