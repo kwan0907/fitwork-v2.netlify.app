@@ -35,4 +35,7 @@ test('older trial and expired card records stay visible for review without auto 
   assert.deepEqual(getOverdueHomeTasks(clients, now).map(task => [task.id, task.action]), [
     [2, 'client'], [1, 'client']
   ])
+  assert.deepEqual(getOverdueHomeTasks(clients, now).map(task => [task.kind, task.detail]), [
+    ['expiry', '2026-11-15'], ['trial', '2026-10-30']
+  ])
 })

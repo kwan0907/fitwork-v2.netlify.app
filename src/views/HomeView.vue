@@ -15,6 +15,20 @@ const todayRows = computed(() => store.transactions.filter(t => hkCalendarDate(t
 const tasks = computed(() => getHomeTasks(store.clients))
 const visibleTasks = computed(() => tasks.value.slice(0, 3))
 const overdueTasks = computed(() => getOverdueHomeTasks(store.clients))
+const showOverdue = ref(false)
+const overdueQuery = ref('')
+const overdueKind = ref('all')
+const overdueCounts = computed(() => ({
+  trial: overdueTasks.value.filter(task => task.kind === 'trial').length,
+  expiry: overdueTasks.value.filter(task => task.kind === 'expiry').length
+}))
+const reviewedOverdueTasks = computed(() => {
+  const query = overdueQuery.value.trim().toLocaleLowerCase()
+  return overdueTasks.value.filter(task =>
+    (overdueKind.value === 'all' || task.kind === overdueKind.value) &&
+    (!query || `${task.name} ${task.branch} ${task.label} ${task.detail}`.toLocaleLowerCase().includes(query))
+  )
+})
 const isNewAccount = computed(() => !store.isInitialLoading && !store.clients.length && !store.transactions.length)
 const monthReport = computed(() => {
   const [year, month] = selectedMonth.value.split('-').map(Number)
@@ -72,9 +86,26 @@ function openTask(task) {
       </div>
       <p v-else class="bz-home-tasks-empty">試堂結果同 7 日內到期嘅套票，會自動喺呢度提醒你。</p>
       <button v-if="tasks.length > visibleTasks.length" class="bz-home-tasks-all" type="button" @click="store.view='clients'">去客戶管理 <BzIcon name="chevronRight" :size="15"/></button>
-      <button v-if="overdueTasks.length" class="bz-overdue-link" type="button" @click="openTask(overdueTasks[0])">
-        <span><strong>{{ overdueTasks.length }} 項較早資料待核對</strong><small>{{ overdueTasks[0].name }} · {{ overdueTasks[0].label }}；先睇清楚再補記</small></span><BzIcon name="chevronRight" :size="17"/>
+      <button v-if="overdueTasks.length" class="bz-overdue-link" type="button" :aria-expanded="showOverdue" aria-controls="bz-overdue-review" @click="showOverdue = !showOverdue">
+        <span><strong>{{ overdueTasks.length }} 筆較早資料可核對</strong><small>舊試堂 {{ overdueCounts.trial }} · 舊套票到期 {{ overdueCounts.expiry }}；按此查看完整清單</small></span><span class="bz-overdue-chevron" aria-hidden="true">{{ showOverdue ? '⌃' : '⌄' }}</span>
       </button>
+      <div v-if="showOverdue && overdueTasks.length" id="bz-overdue-review" class="bz-overdue-review">
+        <p>以下係按客戶檔案日期列出嘅舊紀錄，未必係今日要處理。請先核實原始資料，再逐項更新。</p>
+        <div class="bz-overdue-filters" role="group" aria-label="較早資料類型">
+          <button type="button" :class="{ active: overdueKind === 'all' }" @click="overdueKind = 'all'">全部 {{ overdueTasks.length }}</button>
+          <button type="button" :class="{ active: overdueKind === 'trial' }" @click="overdueKind = 'trial'">舊試堂 {{ overdueCounts.trial }}</button>
+          <button type="button" :class="{ active: overdueKind === 'expiry' }" @click="overdueKind = 'expiry'">舊套票 {{ overdueCounts.expiry }}</button>
+        </div>
+        <input v-model="overdueQuery" type="search" class="bz-overdue-search" aria-label="搜尋較早資料" placeholder="搜尋姓名、分店或日期" />
+        <span class="bz-overdue-result-count">顯示 {{ reviewedOverdueTasks.length }} / {{ overdueTasks.length }} 筆 · 向下捲動可查看全部</span>
+        <div class="bz-overdue-list">
+          <button v-for="task in reviewedOverdueTasks" :key="`${task.kind}-${task.id}`" type="button" @click="openTask(task)">
+            <span class="bz-home-task-text"><strong>{{ task.name }}</strong><small>{{ task.label }} · {{ task.branch || '未填分店' }} · {{ task.detail }}</small></span>
+            <BzIcon name="chevronRight" :size="17" />
+          </button>
+          <p v-if="!reviewedOverdueTasks.length" class="bz-overdue-empty">冇符合搜尋條件嘅紀錄。可清除搜尋或轉返「全部」。</p>
+        </div>
+      </div>
     </section>
 
     <section class="bz-metrics" aria-label="每月財務概況">
