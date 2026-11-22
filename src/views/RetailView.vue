@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useMainStore } from '../stores/mainStore'
 import { supabase } from '../supabase'
 import BaseModal from '../components/BaseModal.vue'
+import MatchSearchPicker from '../components/MatchSearchPicker.vue'
 import { hongKongCheckoutTimestamp, retailCheckoutAmounts } from '../retailLedger'
 import { matchRetailProducts, normalizeProductAlias, parseRetailOrderPaste, productSku, readProductAliases, rememberProductAliases } from '../retailPaste'
 
@@ -263,6 +264,40 @@ function selectClient(c) {
 }
 
 const matchName = value => String(value || '').trim().toLowerCase().replace(/[\s\-–—_]+/g, '')
+const clientMatchOptions = computed(() => store.clients.map(client => ({
+  value: String(client.id),
+  label: [client.name, client.phone, client.branch].filter(Boolean).join(' · '),
+  searchText: [client.name, client.phone, String(client.phone || '').replace(/\D/g, ''), client.branch].filter(Boolean).join(' ')
+})))
+const productMatchOptions = computed(() => {
+  const nameCounts = new Map()
+  for (const product of store.products) {
+    const key = matchName(product.name)
+    nameCounts.set(key, (nameCounts.get(key) || 0) + 1)
+  }
+  return store.products.map(product => {
+    const sku = productSku(product)
+    const duplicateHint = nameCounts.get(matchName(product.name)) > 1 ? `編號 ${String(product.id).slice(-6)}` : ''
+    return {
+      value: String(product.id),
+      label: [product.name, sku ? `SKU ${sku}` : product.name_en || duplicateHint].filter(Boolean).join(' · '),
+      searchText: [product.name, product.name_en, sku, String(sku).replace(/[\s\-–—_]/g, ''), product.id].filter(Boolean).join(' ')
+    }
+  })
+})
+
+function setPastedClient(order, id) {
+  order.clientId = id
+  if (!order.tier && !order.tierEdited) {
+    const client = store.clients.find(row => String(row.id) === id)
+    order.tierChoice = pastedTier('', client)
+  }
+}
+
+function setPastedProduct(item, id) {
+  item.productId = id
+  item.remembered = false
+}
 
 function pastedTier(raw, client) {
   const value = String(raw || client?.vip_tier || '').trim()
@@ -287,6 +322,7 @@ function previewPastedOrders() {
         ...order,
         clientId: client ? String(client.id) : '',
         tierChoice: pastedTier(order.tier, client),
+        tierEdited: false,
         status: 'pending',
         items: order.items.map(item => {
           const rememberedId = productAliases.value[normalizeProductAlias(item.sourceName)]
@@ -887,11 +923,11 @@ async function commitCheckout(payeeName) {
           <div v-if="pasteOrders.length" class="paste-order-review-head">{{ pasteOrders.length }} 張訂單待核對 <small>揀啱客戶同產品，先載入購物車</small></div>
           <article v-for="order in pasteOrders" :key="order.id" class="paste-order-card">
             <div class="paste-order-card-title"><strong>{{ order.date }} · {{ order.clientName }}</strong><small>{{ order.payee || '未填收款人' }} · {{ order.items.length }} 款 · {{ order.status === 'saved' ? '已入帳' : order.status === 'loaded' ? '已載入' : '待核對' }}</small></div>
-            <label>對應 BZ 客戶<select v-model="order.clientId"><option value="">請揀現有客戶</option><option v-for="client in store.clients" :key="client.id" :value="String(client.id)">{{ client.name }}{{ client.phone ? ` · ${client.phone}` : '' }}{{ client.branch ? ` · ${client.branch}` : '' }}</option></select></label>
-            <label>本單折扣<select v-model="order.tierChoice"><option v-for="tier in Object.keys(tierMapping)" :key="tier" :value="tier">{{ tier }}</option></select></label>
+            <div class="paste-match-field"><span>對應 BZ 客戶</span><MatchSearchPicker :model-value="order.clientId" :options="clientMatchOptions" :label="`${order.clientName}對應 BZ 客戶`" placeholder="搜尋姓名、電話或分店" @update:model-value="id => setPastedClient(order, id)" /></div>
+            <label>本單折扣<select v-model="order.tierChoice" @change="order.tierEdited = true"><option v-for="tier in Object.keys(tierMapping)" :key="tier" :value="tier">{{ tier }}</option></select></label>
             <div v-for="(item, index) in order.items" :key="index" class="paste-product-match">
-              <div><b>原表：{{ item.sourceName }}</b><small>× {{ item.qty }} <em v-if="item.remembered">上次配對</em></small></div>
-              <select v-model="item.productId" :aria-label="`${item.sourceName}對應產品`"><option value="">請揀對應產品</option><option v-for="product in store.products" :key="product.id" :value="String(product.id)">{{ product.name }}{{ productSku(product) ? ` · SKU ${productSku(product)}` : product.name_en ? ` · ${product.name_en}` : '' }}</option></select>
+              <div class="paste-product-source"><b>原表：{{ item.sourceName }}</b><small>× {{ item.qty }} <em v-if="item.remembered">上次配對</em></small></div>
+              <MatchSearchPicker :model-value="item.productId" :options="productMatchOptions" :label="`${item.sourceName}對應產品`" placeholder="搜尋產品名、英文名或 SKU" @update:model-value="id => setPastedProduct(item, id)" />
             </div>
             <button type="button" class="paste-order-load" :disabled="Boolean(cart.length) || order.status === 'saved' || order.status === 'loaded' || !order.clientId || order.items.some(item => !item.productId)" @click="loadPastedOrder(order)">{{ order.status === 'saved' ? '已入帳' : order.status === 'loaded' ? '已載入購物車' : '載入購物車，核對價錢' }}</button>
           </article>
@@ -996,8 +1032,10 @@ async function commitCheckout(payeeName) {
 .paste-order-card { display: grid; gap: 12px; margin-bottom: 12px; padding: 15px; border: 1px solid #e8d7c9; border-radius: 15px; background: #fff; }
 .paste-order-card-title { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px; color: #3b2d25; }
 .paste-order-card-title small { color: #977b68; }
+.paste-match-field { display: grid; gap: 5px; min-width: 0; }
+.paste-match-field > span { color: #665346; font-size: 12px; font-weight: 800; }
 .paste-product-match { display: grid; gap: 5px; padding-top: 9px; border-top: 1px solid #f0e7e1; }
-.paste-product-match > div { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; color: #544235; font-size: 12px; }
+.paste-product-source { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; color: #544235; font-size: 12px; }
 .paste-product-match small { white-space: nowrap; color: #967d6a; }
 .paste-product-match em { margin-left: 6px; color: #627c4e; font-style: normal; }
 .pasted-payee-note { margin: 0; padding: 11px; border-radius: 10px; background: #f4efe5; color: #74543d; font-size: 12px; font-weight: 800; line-height: 1.4; }
