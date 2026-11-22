@@ -391,7 +391,7 @@ const sortedProducts = computed(() => {
 const quickProductResults = computed(() => {
   const query = quickProductQuery.value.trim().toLowerCase()
   const matches = query
-    ? sortedProducts.value.filter(product => [product.name, product.name_en, product.id]
+    ? sortedProducts.value.filter(product => [product.name, product.name_en, productSku(product), product.id]
       .some(value => String(value || '').toLowerCase().includes(query)))
     : sortedProducts.value
   return matches.slice(0, 6)
@@ -459,7 +459,7 @@ const displayProducts = computed(() => {
 
   if (searchProduct.value) {
     const q = searchProduct.value.toLowerCase()
-    list = list.filter(p => (p.name?.toLowerCase().includes(q)) || (p.name_en?.toLowerCase().includes(q)) || (p.id?.toLowerCase().includes(q)))
+    list = list.filter(p => [p.name, p.name_en, productSku(p), p.id].some(value => String(value || '').toLowerCase().includes(q)))
   }
   
   return list
