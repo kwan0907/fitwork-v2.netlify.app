@@ -16,13 +16,19 @@
 #app-main .modal-overlay > .checkout-modal,
 #app-main .modal-overlay > .confirm-modal,
 #app-main .modal-overlay > .center-modal:not(.scrollable-modal):not(.bz-client-form):not(.bz-quick-flow),
-#app-main .quick-overlay > .quick-modal,
-#app-main .bz-product-overlay > .bz-product-modal {
+#app-main .quick-overlay > .quick-modal {
   min-height: 0;
   max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Product form keeps its action visible while only the fields scroll. */
+#app-main .bz-product-overlay > .bz-product-modal {
+  box-sizing: border-box;
+  max-height: min(720px, 100%);
+  overflow: hidden;
 }
 
 #app-main .modal-mask {
