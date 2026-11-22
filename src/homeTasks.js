@@ -94,13 +94,13 @@ export function getOverdueHomeTasks(clients, now = new Date()) {
     const trial = trialKey(client.trial_date)
     if (status === 'prospect' && trial && trial.slice(0, 10) < recentTrialStart &&
       !String(client.remark || '').includes('[TRIAL_RESULT]')) {
-      tasks.push({ id: client.id, name: client.name, branch: client.branch || '', action: 'client',
-        label: '舊試堂結果待核對', detail: displayDay(trial.slice(0, 10)), sort: trial })
+      tasks.push({ id: client.id, name: client.name, branch: client.branch || '', action: 'client', kind: 'trial',
+        label: '舊試堂結果待核對', detail: trial.slice(0, 10), sort: trial })
     }
     const expiry = validDay(client.expiry_date)
     if (status === 'active' && expiry && expiry < today) {
-      tasks.push({ id: client.id, name: client.name, branch: client.branch || '', action: 'client',
-        label: '套票已過期，請核對', detail: displayDay(expiry), sort: `${expiry}T00:00` })
+      tasks.push({ id: client.id, name: client.name, branch: client.branch || '', action: 'client', kind: 'expiry',
+        label: '舊套票到期日待核對', detail: expiry, sort: `${expiry}T00:00` })
     }
   }
   return tasks.sort((a, b) => b.sort.localeCompare(a.sort))
