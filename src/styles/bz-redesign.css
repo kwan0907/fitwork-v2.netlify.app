@@ -117,6 +117,9 @@ body > .tf-tools { display:none !important; }
 .bz-overdue-list button { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; min-height:58px; padding:9px 2px; border:0; border-bottom:1px solid #eee3d8; background:none; color:var(--t); text-align:left; cursor:pointer; }
 .bz-overdue-list button > svg { flex:none; color:#a48a75; }
 .bz-overdue-empty { padding:9px 2px; color:#806d5d; font-size:12px; }
+.bz-overdue-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:12px; color:#6d5b4c; font-size:12px; font-weight:700; }
+.bz-overdue-pagination button { min-height:38px; padding:7px 11px; border:1px solid #d9bca5; border-radius:10px; background:#fff; color:#935638; font:inherit; cursor:pointer; }
+.bz-overdue-pagination button:disabled { opacity:.45; cursor:default; }
 .bz-management { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:23px; }
 .bz-management button { min-width:0; min-height:73px; border:0; border-radius:17px; display:flex; align-items:center; gap:10px; text-align:left; padding:12px; color:#a65e3b; cursor:pointer; }
 .bz-management button.clients { background:#f9ede5; }.bz-management button.stock { background:#f1f0e5; color:#6b7042; }.bz-management button.products { background:#f9eee5; color:#a76536; }.bz-management button.reports { background:#edeee8; color:#707a4d; }
@@ -270,3 +273,10 @@ body .tf-tools .tf-tool:first-child { background:var(--p) !important; color:whit
 .bz-preview-banner button { margin-left:10px; border:0; background:none; color:#865032; text-decoration:underline; font:inherit; font-weight:800; cursor:pointer; }
 .bz-backup-card { padding:20px; margin-bottom:16px; }.bz-backup-card .btn-save { max-width:100%; }.bz-backup-card .btn-save:disabled { opacity:.6; cursor:wait; }.bz-backup-result { color:var(--g); font-size:13px; font-weight:800; line-height:1.5; }
 .bz-client-add { padding:10px 14px; font-size:13px; white-space:nowrap; }.bz-inventory-count { font-size:11px; font-weight:800; color:var(--t3); margin:9px 4px 1px; }.bz-empty { color:var(--t3); font-size:13px; text-align:center; padding:20px 8px; }
+
+.bz-product-overlay { padding:max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+.bz-product-modal { box-sizing:border-box; max-height:min(720px, 100%); overflow:hidden; gap:0; padding:0; }
+.bz-product-modal-head { flex:none; padding:17px 18px 10px; }
+.bz-product-modal-body { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:13px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding:0 18px 16px; }
+.bz-product-modal-actions { flex:none; padding:11px 18px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--border); background:#fffaf5; }
+.bz-product-modal-actions .btn-primary { width:100%; }

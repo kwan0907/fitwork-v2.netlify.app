@@ -82,14 +82,17 @@ async function save() {
     </div>
 
     <div v-if="formOpen" class="bz-product-overlay" @click.self="formOpen=false">
-      <form class="bz-product-modal" @submit.prevent="save"><div class="bz-product-modal-head"><h2>{{ editingId ? '編輯產品' : '新增產品' }}</h2><button type="button" aria-label="關閉" @click="formOpen=false">×</button></div>
-        <label>產品名稱<input v-model="form.name" required maxlength="120"></label>
-        <label>分類<input v-model="form.category" list="bz-product-categories"><datalist id="bz-product-categories"><option v-for="cat in categories.slice(1)" :key="cat" :value="cat"/></datalist></label>
-        <label>單位<input v-model="form.unit" maxlength="20"></label>
-        <div class="bz-product-fields"><label v-for="[key, label] in priceFields" :key="key">{{ label }}（HK$）<input v-model="form[key]" type="number" inputmode="decimal" min="0" step="0.01" placeholder="未設定"></label></div>
-        <p class="bz-product-hint">只會儲存以上產品欄位；現有交易同庫存數量唔會改動。</p>
-        <p v-if="errorMessage" role="alert" class="bz-product-error">{{ errorMessage }}</p>
-        <button type="submit" class="btn-primary" :disabled="busy">{{ busy ? '儲存中…' : '儲存產品' }}</button>
+      <form class="bz-product-modal" role="dialog" aria-modal="true" aria-labelledby="bz-product-form-title" @submit.prevent="save">
+        <div class="bz-product-modal-head"><h2 id="bz-product-form-title">{{ editingId ? '編輯產品' : '新增產品' }}</h2><button type="button" aria-label="關閉" @click="formOpen=false">×</button></div>
+        <div class="bz-product-modal-body">
+          <label>產品名稱<input v-model="form.name" required maxlength="120"></label>
+          <label>分類<input v-model="form.category" list="bz-product-categories"><datalist id="bz-product-categories"><option v-for="cat in categories.slice(1)" :key="cat" :value="cat"/></datalist></label>
+          <label>單位<input v-model="form.unit" maxlength="20"></label>
+          <div class="bz-product-fields"><label v-for="[key, label] in priceFields" :key="key">{{ label }}（HK$）<input v-model="form[key]" type="number" inputmode="decimal" min="0" step="0.01" placeholder="未設定"></label></div>
+          <p class="bz-product-hint">只會儲存以上產品欄位；現有交易同庫存數量唔會改動。</p>
+          <p v-if="errorMessage" role="alert" class="bz-product-error">{{ errorMessage }}</p>
+        </div>
+        <div class="bz-product-modal-actions"><button type="submit" class="btn-primary" :disabled="busy">{{ busy ? '儲存中…' : '儲存產品' }}</button></div>
       </form>
     </div>
   </div>
