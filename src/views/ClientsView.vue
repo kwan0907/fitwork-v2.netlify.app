@@ -1188,6 +1188,7 @@ async function handleImport(e) {
       <div class="center-modal bz-client-form">
         <div class="m-header"><span>新增客戶<small>先記低，其他資料可以稍後補</small></span><button class="close-x" type="button" aria-label="關閉" @click="showAddModal=false">✕</button></div>
         <div class="bz-client-form-body">
+          <details class="bz-smart-paste" open><summary>快速配對姓名、電話</summary><div class="bz-smart-row"><input v-model="smartInput" class="modern-inp" aria-label="快速配對資料" placeholder="貼入姓名、電話或日期" @keyup.enter="handleSmartPaste"><button type="button" @click="handleSmartPaste">配對</button></div></details>
           <div class="bz-client-status" role="group" aria-label="客戶類型">
             <button type="button" :class="{active:newClient.status==='prospect'}" @click="newClient.status='prospect'">準備試堂</button>
             <button type="button" :class="{active:newClient.status==='active'}" @click="newClient.status='active'">已是會員</button>
@@ -1224,7 +1225,6 @@ async function handleImport(e) {
             <div class="f-item"><label>備註</label><textarea v-model="newClient.remark" class="modern-inp" rows="3" placeholder="客戶要求、習慣等"></textarea></div>
             <div class="bz-client-extras"><label><input v-model="newClient.is_marathon" type="checkbox">馬拉松</label><label><input v-model="newClient.is_vip" type="checkbox">VIP</label></div>
             <div v-if="newClient.is_vip" class="f-item"><label>VIP 等級</label><select v-model="newClient.vip_tier" class="modern-select"><option value="銅級(88折)">銅級 (88折)</option><option value="銀級(75折)">銀級 (75折)</option><option value="金級(65折)">金級 (65折)</option><option value="直接58折">直接58折</option><option value="領班(半折)">領班(半折)</option></select></div>
-            <details class="bz-smart-paste"><summary>由訊息快速貼入資料</summary><div class="bz-smart-row"><input v-model="smartInput" class="modern-inp" placeholder="姓名 電話 日期"><button type="button" @click="handleSmartPaste">配對</button></div></details>
           </details>
         </div>
         <div class="sticky-action-row"><button type="button" class="btn-confirm" :disabled="isReadOnlyPreview || checkingCourse || addingClient" @click="handleAddClient">{{ isReadOnlyPreview ? '預覽版只供查看' : checkingCourse ? '核對課堂中…' : addingClient ? '儲存中…' : '儲存客戶' }}</button></div>
