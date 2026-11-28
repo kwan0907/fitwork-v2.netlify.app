@@ -474,6 +474,11 @@ const quickOutcome = ref('')
 const quickPackage = ref('pkg_10')
 const quickDate = ref('')
 const quickStaff = ref('')
+const quickPayees = computed(() => {
+  const names = store.settings?.payees?.length ? store.settings.payees
+    : store.deviceUsers?.length ? store.deviceUsers : ['Kwan', 'Cat']
+  return [...new Set(names.map(name => String(name).trim()).filter(Boolean))]
+})
 const quickSaving = ref(false)
 const addingClient = ref(false)
 const quickError = ref('')
@@ -509,7 +514,7 @@ async function openQuickFlow(kind) {
   quickOutcome.value = kind === 'trial' ? getTrialResultValue(quickClient.value) : ''
   quickPackage.value = quickOutcome.value === 'opened_big' ? 'pkg_35' : 'pkg_10'
   quickDate.value = getLocalHKDate()
-  quickStaff.value = store.currentUser || store.settings?.payees?.[0] || '系統'
+  quickStaff.value = quickPayees.value.find(name => name.toLowerCase() === String(store.currentUser || '').trim().toLowerCase()) || ''
   quickApplyTrialDiscount.value = kind === 'trial' && store.transactions.some(t =>
     String(t.client_id) === String(quickClient.value?.id) && t.category === '試堂' && Number(t.amount) === 98)
   quickError.value = ''
@@ -543,7 +548,7 @@ async function saveQuickFlow() {
   if (quickSaving.value || quickSaveLocked.value || !quickClient.value) return
   if (isReadOnlyPreview) { quickError.value = '預覽版只供查看，儲存操作要喺正式版進行。'; return }
   if (quickFlow.value === 'trial' && !quickOutcome.value) { quickError.value = '請先揀試堂結果。'; return }
-  if (quickNeedsPackage.value && !quickStaff.value.trim()) { quickError.value = '請填寫處理人。'; return }
+  if (quickNeedsPackage.value && !quickPayees.value.includes(quickStaff.value)) { quickError.value = '請選擇收款人。'; return }
   if (quickNeedsPackage.value && !quickPackages.value[quickPackage.value]) { quickError.value = '呢款套票未啟用或未能讀取，請先到設定核對。'; return }
   if (quickNeedsPackage.value && !/^\d{4}-\d{2}-\d{2}$/.test(quickDate.value)) { quickError.value = '請揀有效日期。'; return }
   quickSaving.value = true
@@ -1249,7 +1254,7 @@ async function handleImport(e) {
           <template v-if="quickNeedsPackage">
             <div v-if="quickFlow==='renewal'" class="bz-package-choices" role="group" aria-label="套票"><button v-for="(pkg,key) in quickPackages" :key="key" type="button" :class="{active:quickPackage===key}" @click="quickPackage=key">{{ pkg.label }}<small>${{ pkg.amount }}</small></button></div>
             <label v-if="quickFlow==='trial'" class="bz-check-row"><input v-model="quickApplyTrialDiscount" type="checkbox">已收 $98 試堂費，今次開卡扣返 $98</label>
-            <div class="grid-2"><div class="f-item"><label>收款日期</label><input v-model="quickDate" type="date" class="modern-date"></div><div class="f-item"><label>處理人</label><input v-model="quickStaff" class="modern-inp" placeholder="處理人"></div></div>
+            <div class="grid-2"><div class="f-item"><label>收款日期</label><input v-model="quickDate" type="date" class="modern-date"></div><div class="f-item"><label for="quick-payment-payee">收款人</label><select id="quick-payment-payee" v-model="quickStaff" class="modern-select"><option disabled value="">請選擇收款人</option><option v-for="payee in quickPayees" :key="payee" :value="payee">{{ payee }}</option></select></div></div>
             <div class="bz-flow-total"><span>{{ quickTotals.label }} · {{ quickClient?.branch }}</span><strong>${{ quickTotals.amount }}</strong><small>成本 ${{ quickTotals.cost }} · 利潤 ${{ quickTotals.profit }}</small></div>
             <p class="bz-quick-review">{{ quickReview }}</p>
           </template>
