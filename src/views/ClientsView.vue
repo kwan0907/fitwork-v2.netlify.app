@@ -1183,7 +1183,8 @@ async function handleImport(e) {
 
       </div>
     </div>
-   <div v-if="showAddModal" class="modal-overlay bz-client-overlay" @click.self="showAddModal = false">
+   <Teleport to="#app-main">
+   <div v-if="showAddModal" class="modal-overlay bz-client-overlay" role="dialog" aria-modal="true" aria-label="新增客戶" @click.self="showAddModal = false">
       <div class="center-modal bz-client-form">
         <div class="m-header"><span>新增客戶<small>先記低，其他資料可以稍後補</small></span><button class="close-x" type="button" aria-label="關閉" @click="showAddModal=false">✕</button></div>
         <div class="bz-client-form-body">
@@ -1258,6 +1259,8 @@ async function handleImport(e) {
         <div class="sticky-action-row"><button type="button" class="btn-confirm" :disabled="quickSaving || quickSaveLocked || isReadOnlyPreview" @click="saveQuickFlow">{{ quickSaving ? '儲存中…' : isReadOnlyPreview ? '預覽版只供查看' : quickNeedsPackage ? '確認並記錄收入' : '儲存試堂結果' }}</button></div>
       </div>
     </div>
+
+    </Teleport>
 
     <div v-if="showActionModal" class="modal-overlay" @click.self="showActionModal = false">
       <div class="center-modal action-modal" style="max-width: 350px;">

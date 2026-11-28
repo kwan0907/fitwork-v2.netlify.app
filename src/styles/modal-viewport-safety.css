@@ -56,3 +56,40 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* Client dialogs are teleported into the shell, above its header/navigation.
+   Override the legacy mobile overlay's 10dvh padding and bound the flex card
+   to the actual visible viewport so the action row never scrolls away. */
+#app-main > .modal-overlay.bz-client-overlay {
+  top: var(--client-modal-top, 0px) !important;
+  bottom: auto !important;
+  height: var(--client-modal-height, 100dvh) !important;
+  padding: max(16px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)) !important;
+  z-index: 2147483000 !important;
+}
+
+#app-main > .bz-client-overlay > .bz-client-form,
+#app-main > .bz-client-overlay > .bz-quick-flow {
+  height: min(760px, 100%);
+  max-height: 100%;
+  min-height: 0;
+  width: min(480px, 100%);
+  margin: 0;
+}
+
+#app-main > .bz-client-overlay .bz-client-form-body,
+#app-main > .bz-client-overlay .bz-quick-flow-body {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+#app-main > .bz-client-overlay .sticky-action-row {
+  position: static;
+  flex: 0 0 auto;
+  padding: 12px 0 15px;
+}
+
+#app-main > .bz-client-overlay .btn-confirm {
+  min-height: 48px;
+}

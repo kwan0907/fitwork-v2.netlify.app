@@ -6,7 +6,15 @@ export function installClientModalMobileFix() {
   let savedScrollY = 0
   let previousBodyStyle = null
 
-  const getClientModal = () => document.querySelector('#app-main .modal-overlay .scrollable-modal')
+  const getClientModal = () => document.querySelector('#app-main .modal-overlay .scrollable-modal, #app-main .bz-client-overlay')
+
+  const syncViewport = () => {
+    const viewport = window.visualViewport
+    const shell = document.getElementById('app-main')
+    if (!shell) return
+    shell.style.setProperty('--client-modal-height', `${viewport?.height || window.innerHeight}px`)
+    shell.style.setProperty('--client-modal-top', `${viewport?.offsetTop || 0}px`)
+  }
 
   const renameReferralOptions = () => {
     document.querySelectorAll('#app-main .modal-overlay select option').forEach(option => {
@@ -55,6 +63,7 @@ export function installClientModalMobileFix() {
 
   const sync = () => {
     const modalOpen = Boolean(getClientModal())
+    if (modalOpen) syncViewport()
     if (modalOpen) renameReferralOptions()
     if (modalOpen && media.matches) lockBackground()
     else unlockBackground()
@@ -63,11 +72,17 @@ export function installClientModalMobileFix() {
   const observer = new MutationObserver(sync)
   observer.observe(document.body, { childList: true, subtree: true })
   media.addEventListener?.('change', sync)
+  window.addEventListener('resize', syncViewport)
+  window.visualViewport?.addEventListener('resize', syncViewport)
+  window.visualViewport?.addEventListener('scroll', syncViewport)
   sync()
 
   return () => {
     observer.disconnect()
     media.removeEventListener?.('change', sync)
+    window.removeEventListener('resize', syncViewport)
+    window.visualViewport?.removeEventListener('resize', syncViewport)
+    window.visualViewport?.removeEventListener('scroll', syncViewport)
     unlockBackground()
   }
 }
